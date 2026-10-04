@@ -1,5 +1,5 @@
 # =====================================================================
-#  .gitignore —— 无人机巡查数据 · 轨迹视频地图
+#  .gitignore —— 视频地图（无人机巡查 · 轨迹视频地图）
 # =====================================================================
 #  原则：仓库只放「代码 + 测试 + 文档」，不放数据和任何密钥。
 # =====================================================================
@@ -17,6 +17,7 @@ video_proxy/
 tile_cache/
 lens_probe/
 _backup/
+_upload/
 _acl_reports/
 Project/
 *.mp4
@@ -26,12 +27,16 @@ Project/
 *.avi
 *.srt
 *.SRT
-*.3d.geojson
+*.geojson
 
-# —— ③ 旧版本快照：历史归档，不属于当前代码 ——
+# —— ③ 运行产物：缓存与迁移记录 ——
+Code/geocode_cache/
+_migration/
+
+# —— ④ 旧版本快照：历史归档，不属于当前代码 ——
 Code/Backup Version/
 
-# —— ④ 杂项 ——
+# —— ⑤ 杂项 ——
 _dsh_write_probe.txt
 __pycache__/
 *.pyc
@@ -39,12 +44,3 @@ __pycache__/
 *.tmp
 Thumbs.db
 desktop.ini
-
-# 上传暂存副本（与 Code/ 和 tests/ 重复）
-_upload/
-
-
-# —— 数据和运行产物：仓库只放代码与文档 ——
-*.geojson
-Code/geocode_cache/
-_migration/
