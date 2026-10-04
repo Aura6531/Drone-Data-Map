@@ -1,0 +1,2121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>无人机巡查数据管理</title>
+
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        body {
+
+            margin: 0;
+
+            background: #f3f5f7;
+
+            color: #111827;
+
+            font-family:
+                "Microsoft YaHei",
+                "Segoe UI",
+                Arial,
+                sans-serif;
+        }
+
+
+        /* =====================================================
+           顶部
+           ===================================================== */
+
+        .header {
+
+            height: 78px;
+
+            background: #1f2937;
+
+            color: white;
+
+            display: flex;
+
+            align-items: center;
+
+            padding: 0 36px;
+        }
+
+
+        .header-title {
+
+            font-size: 27px;
+
+            font-weight: 700;
+        }
+
+
+        /* =====================================================
+           页面主体
+           ===================================================== */
+
+        .container {
+
+            max-width: 1500px;
+
+            margin: 0 auto;
+
+            padding: 36px 24px 80px;
+        }
+
+
+        .card {
+
+            background: white;
+
+            border-radius: 14px;
+
+            box-shadow:
+                0 5px 18px
+                rgba(0, 0, 0, 0.06);
+
+            padding: 34px;
+
+            margin-bottom: 26px;
+        }
+
+
+        .card-title {
+
+            margin: 0 0 10px;
+
+            font-size: 30px;
+
+            font-weight: 700;
+        }
+
+
+        .card-description {
+
+            margin: 0 0 32px;
+
+            color: #64748b;
+
+            font-size: 18px;
+
+            line-height: 1.7;
+        }
+
+
+        /* =====================================================
+           表单
+           ===================================================== */
+
+        .form-label {
+
+            display: block;
+
+            margin-bottom: 10px;
+
+            font-size: 18px;
+
+            font-weight: 700;
+        }
+
+
+        select {
+
+            width: 100%;
+
+            height: 58px;
+
+            border:
+                1px solid #cbd5e1;
+
+            border-radius: 9px;
+
+            padding: 0 20px;
+
+            background: white;
+
+            font-size: 17px;
+
+            outline: none;
+        }
+
+
+        select:focus {
+
+            border-color: #2563eb;
+        }
+
+
+        /* =====================================================
+           当前项目
+           ===================================================== */
+
+        .current-project {
+
+            margin-top: 18px;
+
+            padding: 20px;
+
+            border:
+                1px solid #a7f3d0;
+
+            border-radius: 9px;
+
+            background: #ecfdf5;
+
+            color: #047857;
+
+            font-size: 18px;
+        }
+
+
+        /* =====================================================
+           文件夹选择区域
+           ===================================================== */
+
+        .folder-row {
+
+            display: flex;
+
+            gap: 12px;
+
+            align-items: stretch;
+        }
+
+
+        .folder-path {
+
+            flex: 1;
+
+            min-width: 0;
+
+            height: 58px;
+
+            display: flex;
+
+            align-items: center;
+
+            padding: 0 18px;
+
+            border:
+                1px solid #cbd5e1;
+
+            border-radius: 9px;
+
+            background: #f8fafc;
+
+            color: #475569;
+
+            font-size: 16px;
+
+            overflow: hidden;
+
+            white-space: nowrap;
+
+            text-overflow: ellipsis;
+        }
+
+
+        .folder-path.empty {
+
+            color: #94a3b8;
+        }
+
+
+        button {
+
+            border: none;
+
+            border-radius: 9px;
+
+            padding: 0 25px;
+
+            font-size: 17px;
+
+            font-weight: 600;
+
+            cursor: pointer;
+
+            transition:
+                background 0.15s,
+                transform 0.05s;
+        }
+
+
+        button:active {
+
+            transform: translateY(1px);
+        }
+
+
+        .button-primary {
+
+            min-width: 145px;
+
+            background: #2563eb;
+
+            color: white;
+        }
+
+
+        .button-primary:hover {
+
+            background: #1d4ed8;
+        }
+
+
+        .button-success {
+
+            background: #dcfce7;
+
+            color: #15803d;
+
+            min-width: 150px;
+
+            height: 50px;
+        }
+
+
+        .button-success:hover {
+
+            background: #bbf7d0;
+        }
+
+
+        button:disabled {
+
+            opacity: 0.55;
+
+            cursor: not-allowed;
+        }
+
+
+        /* =====================================================
+           状态提示
+           ===================================================== */
+
+        .message {
+
+            display: none;
+
+            margin-top: 18px;
+
+            padding: 18px;
+
+            border-radius: 9px;
+
+            font-size: 17px;
+
+            line-height: 1.6;
+        }
+
+
+        .message.success {
+
+            display: block;
+
+            background: #ecfdf5;
+
+            border:
+                1px solid #a7f3d0;
+
+            color: #047857;
+        }
+
+
+        .message.error {
+
+            display: block;
+
+            background: #fef2f2;
+
+            border:
+                1px solid #fecaca;
+
+            color: #dc2626;
+        }
+
+
+        .message.loading {
+
+            display: block;
+
+            background: #eff6ff;
+
+            border:
+                1px solid #bfdbfe;
+
+            color: #1d4ed8;
+        }
+
+
+        /* =====================================================
+           扫描结果
+           ===================================================== */
+
+        .scan-result {
+
+            display: none;
+        }
+
+
+        .scan-header {
+
+            display: flex;
+
+            justify-content: space-between;
+
+            align-items: center;
+
+            gap: 20px;
+
+            padding-bottom: 22px;
+
+            border-bottom:
+                1px solid #e5e7eb;
+        }
+
+
+        .scan-folder-name {
+
+            font-size: 20px;
+
+            font-weight: 700;
+
+            margin-bottom: 6px;
+        }
+
+
+        .scan-folder-path {
+
+            color: #64748b;
+
+            font-size: 14px;
+
+            word-break: break-all;
+        }
+
+
+        /* =====================================================
+           统计数字
+           ===================================================== */
+
+        .statistics {
+
+            display: flex;
+
+            flex-wrap: wrap;
+
+            gap: 10px;
+
+            padding: 18px 0;
+        }
+
+
+        .stat {
+
+            padding: 8px 14px;
+
+            border:
+                1px solid #e2e8f0;
+
+            border-radius: 7px;
+
+            background: white;
+
+            font-size: 15px;
+
+            color: #475569;
+        }
+
+
+        .stat strong {
+
+            color: #111827;
+
+            margin-left: 4px;
+        }
+
+
+        /* =====================================================
+           文件表格
+           ===================================================== */
+
+        .table-wrapper {
+
+            border:
+                1px solid #e2e8f0;
+
+            border-radius: 10px;
+
+            overflow: auto;
+
+            max-height: 650px;
+        }
+
+
+        table {
+
+            width: 100%;
+
+            border-collapse: collapse;
+
+            min-width: 850px;
+        }
+
+
+        thead {
+
+            position: sticky;
+
+            top: 0;
+
+            z-index: 2;
+
+            background: #f8fafc;
+        }
+
+
+        th {
+
+            text-align: left;
+
+            padding: 14px;
+
+            border-bottom:
+                1px solid #e2e8f0;
+
+            color: #475569;
+
+            font-size: 15px;
+
+            font-weight: 700;
+        }
+
+
+        td {
+
+            padding: 12px 14px;
+
+            border-bottom:
+                1px solid #eef2f7;
+
+            font-size: 15px;
+
+            vertical-align: middle;
+        }
+
+
+        tbody tr:hover {
+
+            background: #f8fafc;
+        }
+
+
+        .file-type {
+
+            font-weight: 700;
+
+            text-transform: lowercase;
+        }
+
+
+        .type-video {
+
+            color: #2563eb;
+        }
+
+
+        .type-photo {
+
+            color: #9333ea;
+        }
+
+
+        .type-srt {
+
+            color: #0891b2;
+        }
+
+
+        .type-other {
+
+            color: #64748b;
+        }
+
+
+        .file-name {
+
+            font-weight: 500;
+
+            word-break: break-all;
+        }
+
+
+        .relative-path {
+
+            color: #64748b;
+
+            word-break: break-all;
+        }
+
+
+        .file-size {
+
+            white-space: nowrap;
+
+            color: #475569;
+        }
+
+
+        /* =====================================================
+           已加入项目的文件夹
+           ===================================================== */
+
+        .project-folders {
+
+            margin-top: 20px;
+        }
+
+
+        .folder-item {
+
+            border:
+                1px solid #e2e8f0;
+
+            border-radius: 10px;
+
+            padding: 18px;
+
+            margin-bottom: 12px;
+
+            background: #f8fafc;
+        }
+
+
+        .folder-item-name {
+
+            font-size: 17px;
+
+            font-weight: 700;
+
+            margin-bottom: 6px;
+        }
+
+
+        .folder-item-path {
+
+            color: #64748b;
+
+            font-size: 14px;
+
+            word-break: break-all;
+
+            line-height: 1.5;
+        }
+
+
+        .folder-item-stats {
+
+            margin-top: 10px;
+
+            color: #475569;
+
+            font-size: 14px;
+        }
+
+
+        .empty-state {
+
+            padding: 30px;
+
+            text-align: center;
+
+            color: #94a3b8;
+
+            border:
+                1px dashed #cbd5e1;
+
+            border-radius: 10px;
+        }
+
+
+        /* =====================================================
+           响应式
+           ===================================================== */
+
+        @media (max-width: 800px) {
+
+            .header {
+
+                padding: 0 20px;
+            }
+
+
+            .container {
+
+                padding: 20px 12px 60px;
+            }
+
+
+            .card {
+
+                padding: 22px;
+            }
+
+
+            .folder-row {
+
+                flex-direction: column;
+            }
+
+
+            .folder-path {
+
+                width: 100%;
+            }
+
+
+            .button-primary {
+
+                height: 54px;
+
+                width: 100%;
+            }
+
+
+            .scan-header {
+
+                flex-direction: column;
+
+                align-items: flex-start;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+    <!-- =====================================================
+         顶部
+         ===================================================== -->
+
+    <header class="header">
+
+        <div class="header-title">
+            无人机巡查数据管理
+        </div>
+
+    </header>
+
+
+    <main class="container">
+
+
+        <!-- =================================================
+             项目选择
+             ================================================= -->
+
+        <section class="card">
+
+            <h1 class="card-title">
+                项目数据导入
+            </h1>
+
+            <p class="card-description">
+                将已有的无人机数据文件夹加入项目。
+                原始数据不会被复制，只记录其所在位置。
+            </p>
+
+
+            <label
+                class="form-label"
+                for="projectSelect"
+            >
+                选择项目
+            </label>
+
+
+            <select id="projectSelect">
+
+                <option value="">
+                    正在读取项目……
+                </option>
+
+            </select>
+
+
+            <div
+                id="currentProject"
+                class="current-project"
+            >
+                当前项目：未选择
+            </div>
+
+        </section>
+
+
+
+        <!-- =================================================
+             文件夹选择
+             ================================================= -->
+
+        <section class="card">
+
+            <h2 class="card-title">
+                添加数据文件夹
+            </h2>
+
+
+            <p class="card-description">
+                选择包含无人机原始数据的文件夹。
+                选择完成后将自动扫描。
+            </p>
+
+
+            <label class="form-label">
+                文件夹
+            </label>
+
+
+            <div class="folder-row">
+
+
+                <div
+                    id="folderPath"
+                    class="folder-path empty"
+                >
+                    未选择文件夹
+                </div>
+
+
+                <button
+                    id="selectFolderButton"
+                    class="button-primary"
+                >
+                    选择文件夹
+                </button>
+
+
+            </div>
+
+
+            <div
+                id="scanMessage"
+                class="message"
+            >
+            </div>
+
+        </section>
+
+
+
+        <!-- =================================================
+             扫描结果
+             ================================================= -->
+
+        <section
+            id="scanResult"
+            class="card scan-result"
+        >
+
+            <div class="scan-header">
+
+                <div>
+
+                    <div
+                        id="scanFolderName"
+                        class="scan-folder-name"
+                    >
+                    </div>
+
+
+                    <div
+                        id="scanFolderPath"
+                        class="scan-folder-path"
+                    >
+                    </div>
+
+                </div>
+
+
+                <button
+                    id="addFolderButton"
+                    class="button-success"
+                >
+                    加入当前项目
+                </button>
+
+            </div>
+
+
+            <!-- 统计 -->
+
+            <div class="statistics">
+
+                <div class="stat">
+                    文件
+                    <strong id="fileCount">
+                        0
+                    </strong>
+                </div>
+
+
+                <div class="stat">
+                    MP4
+                    <strong id="mp4Count">
+                        0
+                    </strong>
+                </div>
+
+
+                <div class="stat">
+                    SRT
+                    <strong id="srtCount">
+                        0
+                    </strong>
+                </div>
+
+
+                <div class="stat">
+                    JPG
+                    <strong id="jpgCount">
+                        0
+                    </strong>
+                </div>
+
+
+                <div class="stat">
+                    其他
+                    <strong id="otherCount">
+                        0
+                    </strong>
+                </div>
+
+
+                <div class="stat">
+                    总大小
+                    <strong id="totalSize">
+                        0 B
+                    </strong>
+                </div>
+
+            </div>
+
+
+            <!-- 文件列表 -->
+
+            <div class="table-wrapper">
+
+                <table>
+
+                    <thead>
+
+                        <tr>
+
+                            <th style="width: 90px;">
+                                类型
+                            </th>
+
+                            <th>
+                                文件名
+                            </th>
+
+                            <th>
+                                相对路径
+                            </th>
+
+                            <th style="width: 140px;">
+                                大小
+                            </th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody id="fileTableBody">
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- =================================================
+             当前项目已有文件夹
+             ================================================= -->
+
+        <section class="card">
+
+            <h2 class="card-title">
+                项目数据文件夹
+            </h2>
+
+
+            <p class="card-description">
+                当前项目已经加入的数据文件夹。
+            </p>
+
+
+            <div
+                id="projectFolders"
+                class="project-folders"
+            >
+            </div>
+
+        </section>
+
+
+    </main>
+
+
+
+    <script>
+
+        // =====================================================
+        // DOM
+        // =====================================================
+
+        const projectSelect =
+            document.getElementById(
+                "projectSelect"
+            );
+
+
+        const currentProject =
+            document.getElementById(
+                "currentProject"
+            );
+
+
+        const folderPath =
+            document.getElementById(
+                "folderPath"
+            );
+
+
+        const selectFolderButton =
+            document.getElementById(
+                "selectFolderButton"
+            );
+
+
+        const scanMessage =
+            document.getElementById(
+                "scanMessage"
+            );
+
+
+        const scanResult =
+            document.getElementById(
+                "scanResult"
+            );
+
+
+        const scanFolderName =
+            document.getElementById(
+                "scanFolderName"
+            );
+
+
+        const scanFolderPath =
+            document.getElementById(
+                "scanFolderPath"
+            );
+
+
+        const addFolderButton =
+            document.getElementById(
+                "addFolderButton"
+            );
+
+
+        const fileCount =
+            document.getElementById(
+                "fileCount"
+            );
+
+
+        const mp4Count =
+            document.getElementById(
+                "mp4Count"
+            );
+
+
+        const srtCount =
+            document.getElementById(
+                "srtCount"
+            );
+
+
+        const jpgCount =
+            document.getElementById(
+                "jpgCount"
+            );
+
+
+        const otherCount =
+            document.getElementById(
+                "otherCount"
+            );
+
+
+        const totalSize =
+            document.getElementById(
+                "totalSize"
+            );
+
+
+        const fileTableBody =
+            document.getElementById(
+                "fileTableBody"
+            );
+
+
+        const projectFolders =
+            document.getElementById(
+                "projectFolders"
+            );
+
+
+        // =====================================================
+        // 当前状态
+        // =====================================================
+
+        let currentFolderData = null;
+
+
+        // =====================================================
+        // 页面启动
+        // =====================================================
+
+        loadProjects();
+
+
+        // =====================================================
+        // 读取项目列表
+        // =====================================================
+
+        async function loadProjects() {
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/project/list"
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data.error ||
+                        "无法读取项目列表。"
+                    );
+                }
+
+
+                projectSelect.innerHTML = "";
+
+
+                if (
+                    !data.projects ||
+                    data.projects.length === 0
+                ) {
+
+                    const option =
+                        document.createElement(
+                            "option"
+                        );
+
+                    option.value = "";
+
+                    option.textContent =
+                        "暂无项目";
+
+                    projectSelect.appendChild(
+                        option
+                    );
+
+                    currentProject.textContent =
+                        "当前项目：未选择";
+
+                    return;
+                }
+
+
+                data.projects.forEach(
+                    project => {
+
+                        const option =
+                            document.createElement(
+                                "option"
+                            );
+
+                        option.value =
+                            project.name;
+
+                        option.textContent =
+                            project.name;
+
+                        projectSelect.appendChild(
+                            option
+                        );
+                    }
+                );
+
+
+                projectSelect.selectedIndex =
+                    0;
+
+
+                await projectChanged();
+
+            } catch (error) {
+
+                projectSelect.innerHTML = "";
+
+
+                const option =
+                    document.createElement(
+                        "option"
+                    );
+
+                option.value = "";
+
+                option.textContent =
+                    "读取项目失败";
+
+                projectSelect.appendChild(
+                    option
+                );
+
+
+                showMessage(
+                    error.message,
+                    "error"
+                );
+            }
+        }
+
+
+        // =====================================================
+        // 项目改变
+        // =====================================================
+
+        projectSelect.addEventListener(
+            "change",
+            projectChanged
+        );
+
+
+        async function projectChanged() {
+
+            const name =
+                projectSelect.value;
+
+
+            if (!name) {
+
+                currentProject.textContent =
+                    "当前项目：未选择";
+
+                renderProjectFolders(
+                    []
+                );
+
+                return;
+            }
+
+
+            currentProject.textContent =
+                "当前项目：" + name;
+
+
+            await loadProject(
+                name
+            );
+        }
+
+
+        // =====================================================
+        // 读取项目
+        // =====================================================
+
+        async function loadProject(
+            name
+        ) {
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/project/get?name="
+                        +
+                        encodeURIComponent(
+                            name
+                        )
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data.error ||
+                        "读取项目失败。"
+                    );
+                }
+
+
+                renderProjectFolders(
+                    data.project.folders ||
+                    []
+                );
+
+            } catch (error) {
+
+                renderProjectFolders(
+                    []
+                );
+
+                showMessage(
+                    error.message,
+                    "error"
+                );
+            }
+        }
+
+
+        // =====================================================
+        // 选择文件夹
+        // =====================================================
+
+        selectFolderButton.addEventListener(
+            "click",
+            selectFolder
+        );
+
+
+        async function selectFolder() {
+
+            const projectName =
+                projectSelect.value;
+
+
+            if (!projectName) {
+
+                showMessage(
+                    "请先选择项目。",
+                    "error"
+                );
+
+                return;
+            }
+
+
+            selectFolderButton.disabled =
+                true;
+
+            selectFolderButton.textContent =
+                "正在打开……";
+
+
+            hideScanResult();
+
+
+            showMessage(
+                "请选择无人机数据文件夹。",
+                "loading"
+            );
+
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/project/select-folder"
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data.error ||
+                        "选择文件夹失败。"
+                    );
+                }
+
+
+                if (data.cancelled) {
+
+                    hideMessage();
+
+                    return;
+                }
+
+
+                if (!data.path) {
+
+                    throw new Error(
+                        "没有获取到文件夹。"
+                    );
+                }
+
+
+                setFolderPath(
+                    data.path
+                );
+
+
+                await scanFolder(
+                    data.path
+                );
+
+            } catch (error) {
+
+                showMessage(
+                    error.message,
+                    "error"
+                );
+
+            } finally {
+
+                selectFolderButton.disabled =
+                    false;
+
+                selectFolderButton.textContent =
+                    "选择文件夹";
+            }
+        }
+
+
+        // =====================================================
+        // 设置文件夹路径
+        // =====================================================
+
+        function setFolderPath(
+            path
+        ) {
+
+            folderPath.textContent =
+                path;
+
+            folderPath.classList.remove(
+                "empty"
+            );
+        }
+
+
+        // =====================================================
+        // 扫描文件夹
+        // =====================================================
+
+        async function scanFolder(
+            path
+        ) {
+
+            showMessage(
+                "正在扫描文件夹，请稍候……",
+                "loading"
+            );
+
+
+            hideScanResult();
+
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/project/scan-folder?path="
+                        +
+                        encodeURIComponent(
+                            path
+                        )
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data.error ||
+                        "扫描文件夹失败。"
+                    );
+                }
+
+
+                currentFolderData =
+                    data.folder;
+
+
+                renderScanResult(
+                    currentFolderData
+                );
+
+
+                showMessage(
+                    "扫描完成，共发现 "
+                    +
+                    currentFolderData.file_count
+                    +
+                    " 个文件。",
+                    "success"
+                );
+
+            } catch (error) {
+
+                currentFolderData =
+                    null;
+
+                showMessage(
+                    error.message,
+                    "error"
+                );
+            }
+        }
+
+
+        // =====================================================
+        // 显示扫描结果
+        // =====================================================
+
+        function renderScanResult(
+            folder
+        ) {
+
+            scanResult.style.display =
+                "block";
+
+
+            scanFolderName.textContent =
+                folder.name;
+
+
+            scanFolderPath.textContent =
+                folder.path;
+
+
+            fileCount.textContent =
+                folder.file_count;
+
+
+            mp4Count.textContent =
+                folder.mp4_count;
+
+
+            srtCount.textContent =
+                folder.srt_count;
+
+
+            jpgCount.textContent =
+                folder.jpg_count;
+
+
+            otherCount.textContent =
+                folder.other_count;
+
+
+            totalSize.textContent =
+                formatFileSize(
+                    folder.total_size
+                );
+
+
+            renderFileTable(
+                folder.files
+            );
+        }
+
+
+        // =====================================================
+        // 文件列表
+        // =====================================================
+
+        function renderFileTable(
+            files
+        ) {
+
+            fileTableBody.innerHTML =
+                "";
+
+
+            if (
+                !files ||
+                files.length === 0
+            ) {
+
+                const row =
+                    document.createElement(
+                        "tr"
+                    );
+
+
+                const cell =
+                    document.createElement(
+                        "td"
+                    );
+
+
+                cell.colSpan = 4;
+
+                cell.textContent =
+                    "没有发现文件。";
+
+                cell.style.textAlign =
+                    "center";
+
+                cell.style.padding =
+                    "30px";
+
+                row.appendChild(
+                    cell
+                );
+
+                fileTableBody.appendChild(
+                    row
+                );
+
+                return;
+            }
+
+
+            files.forEach(
+                file => {
+
+                    const row =
+                        document.createElement(
+                            "tr"
+                        );
+
+
+                    // 类型
+
+                    const typeCell =
+                        document.createElement(
+                            "td"
+                        );
+
+
+                    const type =
+                        file.extension ||
+                        "";
+
+
+                    typeCell.textContent =
+                        type || "未知";
+
+
+                    typeCell.className =
+                        "file-type "
+                        +
+                        getTypeClass(
+                            type
+                        );
+
+
+                    // 文件名
+
+                    const nameCell =
+                        document.createElement(
+                            "td"
+                        );
+
+
+                    nameCell.textContent =
+                        file.name;
+
+
+                    nameCell.className =
+                        "file-name";
+
+
+                    // 相对路径
+
+                    const pathCell =
+                        document.createElement(
+                            "td"
+                        );
+
+
+                    pathCell.textContent =
+                        file.relative_path;
+
+
+                    pathCell.className =
+                        "relative-path";
+
+
+                    // 大小
+
+                    const sizeCell =
+                        document.createElement(
+                            "td"
+                        );
+
+
+                    sizeCell.textContent =
+                        formatFileSize(
+                            file.size
+                        );
+
+
+                    sizeCell.className =
+                        "file-size";
+
+
+                    row.appendChild(
+                        typeCell
+                    );
+
+                    row.appendChild(
+                        nameCell
+                    );
+
+                    row.appendChild(
+                        pathCell
+                    );
+
+                    row.appendChild(
+                        sizeCell
+                    );
+
+
+                    fileTableBody.appendChild(
+                        row
+                    );
+                }
+            );
+        }
+
+
+        // =====================================================
+        // 文件类型样式
+        // =====================================================
+
+        function getTypeClass(
+            extension
+        ) {
+
+            const ext =
+                extension.toLowerCase();
+
+
+            if (
+                ext === ".mp4" ||
+                ext === ".mov"
+            ) {
+
+                return "type-video";
+            }
+
+
+            if (
+                ext === ".jpg" ||
+                ext === ".jpeg"
+            ) {
+
+                return "type-photo";
+            }
+
+
+            if (
+                ext === ".srt"
+            ) {
+
+                return "type-srt";
+            }
+
+
+            return "type-other";
+        }
+
+
+        // =====================================================
+        // 加入当前项目
+        // =====================================================
+
+        addFolderButton.addEventListener(
+            "click",
+            addFolderToProject
+        );
+
+
+        async function addFolderToProject() {
+
+            const projectName =
+                projectSelect.value;
+
+
+            if (!projectName) {
+
+                showMessage(
+                    "请先选择项目。",
+                    "error"
+                );
+
+                return;
+            }
+
+
+            if (!currentFolderData) {
+
+                showMessage(
+                    "请先选择并扫描文件夹。",
+                    "error"
+                );
+
+                return;
+            }
+
+
+            addFolderButton.disabled =
+                true;
+
+            addFolderButton.textContent =
+                "正在加入……";
+
+
+            try {
+
+                const response =
+                    await fetch(
+                        "/api/project/add-folder",
+                        {
+                            method: "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body:
+                                JSON.stringify({
+                                    project_name:
+                                        projectName,
+
+                                    folder:
+                                        currentFolderData
+                                })
+                        }
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (!response.ok) {
+
+                    throw new Error(
+                        data.error ||
+                        "加入项目失败。"
+                    );
+                }
+
+
+                renderProjectFolders(
+                    data.project.folders ||
+                    []
+                );
+
+
+                showMessage(
+                    "文件夹已加入当前项目。",
+                    "success"
+                );
+
+            } catch (error) {
+
+                showMessage(
+                    error.message,
+                    "error"
+                );
+
+            } finally {
+
+                addFolderButton.disabled =
+                    false;
+
+                addFolderButton.textContent =
+                    "加入当前项目";
+            }
+        }
+
+
+        // =====================================================
+        // 显示项目文件夹
+        // =====================================================
+
+        function renderProjectFolders(
+            folders
+        ) {
+
+            projectFolders.innerHTML =
+                "";
+
+
+            if (
+                !folders ||
+                folders.length === 0
+            ) {
+
+                const empty =
+                    document.createElement(
+                        "div"
+                    );
+
+
+                empty.className =
+                    "empty-state";
+
+
+                empty.textContent =
+                    "当前项目还没有加入数据文件夹。";
+
+
+                projectFolders.appendChild(
+                    empty
+                );
+
+                return;
+            }
+
+
+            folders.forEach(
+                folder => {
+
+                    const item =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    item.className =
+                        "folder-item";
+
+
+                    const name =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    name.className =
+                        "folder-item-name";
+
+
+                    name.textContent =
+                        folder.name;
+
+
+                    const path =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    path.className =
+                        "folder-item-path";
+
+
+                    path.textContent =
+                        folder.path;
+
+
+                    const stats =
+                        document.createElement(
+                            "div"
+                        );
+
+
+                    stats.className =
+                        "folder-item-stats";
+
+
+                    stats.textContent =
+                        "文件 "
+                        +
+                        folder.file_count
+                        +
+                        " · MP4 "
+                        +
+                        folder.mp4_count
+                        +
+                        " · SRT "
+                        +
+                        folder.srt_count
+                        +
+                        " · JPG "
+                        +
+                        folder.jpg_count
+                        +
+                        " · 其他 "
+                        +
+                        folder.other_count;
+
+
+                    item.appendChild(
+                        name
+                    );
+
+                    item.appendChild(
+                        path
+                    );
+
+                    item.appendChild(
+                        stats
+                    );
+
+
+                    projectFolders.appendChild(
+                        item
+                    );
+                }
+            );
+        }
+
+
+        // =====================================================
+        // 隐藏扫描结果
+        // =====================================================
+
+        function hideScanResult() {
+
+            scanResult.style.display =
+                "none";
+        }
+
+
+        // =====================================================
+        // 消息
+        // =====================================================
+
+        function showMessage(
+            text,
+            type
+        ) {
+
+            scanMessage.className =
+                "message "
+                +
+                type;
+
+
+            scanMessage.textContent =
+                text;
+        }
+
+
+        function hideMessage() {
+
+            scanMessage.className =
+                "message";
+
+            scanMessage.textContent =
+                "";
+        }
+
+
+        // =====================================================
+        // 文件大小
+        // =====================================================
+
+        function formatFileSize(
+            bytes
+        ) {
+
+            if (
+                bytes === null ||
+                bytes === undefined ||
+                isNaN(bytes)
+            ) {
+
+                return "0 B";
+            }
+
+
+            if (bytes < 1024) {
+
+                return bytes + " B";
+            }
+
+
+            if (
+                bytes <
+                1024 * 1024
+            ) {
+
+                return (
+                    (bytes / 1024)
+                    .toFixed(1)
+                    +
+                    " KB"
+                );
+            }
+
+
+            if (
+                bytes <
+                1024 * 1024 * 1024
+            ) {
+
+                return (
+                    (bytes / 1024 / 1024)
+                    .toFixed(1)
+                    +
+                    " MB"
+                );
+            }
+
+
+            return (
+                (bytes / 1024 / 1024 / 1024)
+                .toFixed(2)
+                +
+                " GB"
+            );
+        }
+
+    </script>
+
+</body>
+
+</html>

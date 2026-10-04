@@ -1,0 +1,50 @@
+# =====================================================================
+#  .gitignore —— 无人机巡查数据 · 轨迹视频地图
+# =====================================================================
+#  原则：仓库只放「代码 + 测试 + 文档」，不放数据和任何密钥。
+# =====================================================================
+
+# —— ① 密钥：绝对不能进仓库 ——
+Code/tianditu_key.txt
+**/tianditu_key.txt
+*.key
+*_key.txt
+
+# —— ② 数据：体积大，且都能由源视频重新生成 ——
+Data/
+media/
+video_proxy/
+tile_cache/
+lens_probe/
+_backup/
+_acl_reports/
+Project/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.avi
+*.srt
+*.SRT
+*.3d.geojson
+
+# —— ③ 旧版本快照：历史归档，不属于当前代码 ——
+Code/Backup Version/
+
+# —— ④ 杂项 ——
+_dsh_write_probe.txt
+__pycache__/
+*.pyc
+*.log
+*.tmp
+Thumbs.db
+desktop.ini
+
+# 上传暂存副本（与 Code/ 和 tests/ 重复）
+_upload/
+
+
+# —— 数据和运行产物：仓库只放代码与文档 ——
+*.geojson
+Code/geocode_cache/
+_migration/

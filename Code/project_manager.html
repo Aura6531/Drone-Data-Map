@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>无人机巡查项目管理</title>
+
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        body {
+
+            margin: 0;
+
+            background: #f5f6f8;
+
+            color: #222;
+
+            font-family:
+                "Microsoft YaHei",
+                "Noto Sans CJK SC",
+                Arial,
+                sans-serif;
+        }
+
+
+        .header {
+
+            height: 64px;
+
+            background: #1f2937;
+
+            color: white;
+
+            display: flex;
+
+            align-items: center;
+
+            padding: 0 30px;
+
+            font-size: 20px;
+
+            font-weight: 600;
+        }
+
+
+        .container {
+
+            width: 900px;
+
+            max-width:
+                calc(100% - 40px);
+
+            margin: 40px auto;
+        }
+
+
+        .card {
+
+            background: white;
+
+            border-radius: 10px;
+
+            padding: 30px;
+
+            box-shadow:
+                0 2px 10px
+                rgba(0, 0, 0, 0.08);
+        }
+
+
+        .title {
+
+            margin: 0 0 8px 0;
+
+            font-size: 24px;
+
+            font-weight: 600;
+        }
+
+
+        .description {
+
+            margin-bottom: 28px;
+
+            color: #6b7280;
+
+            font-size: 14px;
+
+            line-height: 1.7;
+        }
+
+
+        .form-group {
+
+            margin-bottom: 22px;
+        }
+
+
+        .form-label {
+
+            display: block;
+
+            margin-bottom: 9px;
+
+            font-size: 14px;
+
+            font-weight: 600;
+
+            color: #374151;
+        }
+
+
+        .input {
+
+            width: 100%;
+
+            height: 46px;
+
+            padding: 0 14px;
+
+            border:
+                1px solid #d1d5db;
+
+            border-radius: 6px;
+
+            font-size: 15px;
+
+            outline: none;
+
+            transition:
+                border-color 0.15s;
+        }
+
+
+        .input:focus {
+
+            border-color: #2563eb;
+
+            box-shadow:
+                0 0 0 2px
+                rgba(37, 99, 235, 0.12);
+        }
+
+
+        .input.invalid {
+
+            border-color: #dc2626;
+
+            background: #fffafa;
+        }
+
+
+        .rule-box {
+
+            background: #f8fafc;
+
+            border:
+                1px solid #e5e7eb;
+
+            border-radius: 6px;
+
+            padding: 14px 16px;
+
+            margin-top: 10px;
+
+            color: #6b7280;
+
+            font-size: 13px;
+
+            line-height: 1.8;
+        }
+
+
+        .rule-box strong {
+
+            color: #374151;
+        }
+
+
+        .validation-message {
+
+            min-height: 22px;
+
+            margin-top: 8px;
+
+            font-size: 13px;
+        }
+
+
+        .validation-message.error {
+
+            color: #dc2626;
+        }
+
+
+        .validation-message.success {
+
+            color: #16a34a;
+        }
+
+
+        .path-box {
+
+            padding: 12px 14px;
+
+            background: #f3f4f6;
+
+            border-radius: 6px;
+
+            font-family: Consolas, monospace;
+
+            font-size: 13px;
+
+            color: #374151;
+
+            word-break: break-all;
+        }
+
+
+        .button-row {
+
+            display: flex;
+
+            justify-content: flex-end;
+
+            gap: 10px;
+
+            margin-top: 28px;
+        }
+
+
+        button {
+
+            height: 42px;
+
+            padding: 0 22px;
+
+            border: none;
+
+            border-radius: 6px;
+
+            cursor: pointer;
+
+            font-size: 14px;
+        }
+
+
+        .button-primary {
+
+            background: #2563eb;
+
+            color: white;
+        }
+
+
+        .button-primary:hover {
+
+            background: #1d4ed8;
+        }
+
+
+        .button-primary:disabled {
+
+            background: #93c5fd;
+
+            cursor: not-allowed;
+        }
+
+
+        .button-secondary {
+
+            background: #e5e7eb;
+
+            color: #374151;
+        }
+
+
+        .result {
+
+            display: none;
+
+            margin-top: 20px;
+
+            padding: 16px;
+
+            border-radius: 6px;
+
+            font-size: 14px;
+
+            line-height: 1.7;
+        }
+
+
+        .result.success {
+
+            display: block;
+
+            background: #ecfdf5;
+
+            border:
+                1px solid #a7f3d0;
+
+            color: #065f46;
+        }
+
+
+        .result.error {
+
+            display: block;
+
+            background: #fef2f2;
+
+            border:
+                1px solid #fecaca;
+
+            color: #991b1b;
+        }
+
+
+        .result-path {
+
+            margin-top: 8px;
+
+            font-family: Consolas, monospace;
+
+            word-break: break-all;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<div class="header">
+
+    无人机巡查数据管理
+
+</div>
+
+
+<div class="container">
+
+
+    <div class="card">
+
+
+        <h1 class="title">
+            新建项目
+        </h1>
+
+
+        <div class="description">
+
+            创建一个新的无人机巡查项目。
+            项目文件夹将自动建立在
+            <strong>Project</strong>
+            目录下。
+
+        </div>
+
+
+        <!-- 项目名称 -->
+
+        <div class="form-group">
+
+            <label
+                class="form-label"
+                for="projectName"
+            >
+                项目名称
+            </label>
+
+
+            <input
+                id="projectName"
+                class="input"
+                type="text"
+                autocomplete="off"
+                placeholder="Test"
+            >
+
+
+            <div
+                id="validationMessage"
+                class="validation-message"
+            >
+            </div>
+
+
+            <div class="rule-box">
+
+                <strong>
+                    项目名称规则：
+                </strong>
+
+                <br>
+
+                支持中文、英文、数字及常用 Unicode 字符。
+
+                <br>
+
+                不允许：
+                <code>&lt; &gt; : " / \ | ? *</code>
+
+                <br>
+
+                不允许控制字符、末尾空格、末尾句点、
+                <code>.</code>、
+                <code>..</code>
+                以及 Windows 保留设备名称。
+
+                <br>
+
+                为保证 Windows / Linux 跨平台兼容，
+                项目名称不区分大小写进行重复检查。
+
+            </div>
+
+        </div>
+
+
+        <!-- 创建位置 -->
+
+        <div class="form-group">
+
+            <label class="form-label">
+                项目存储位置
+            </label>
+
+
+            <div class="path-box">
+                <仓库根>\Project\
+            </div>
+
+        </div>
+
+
+        <!-- 按钮 -->
+
+        <div class="button-row">
+
+            <button
+                id="clearButton"
+                class="button-secondary"
+                type="button"
+            >
+                清空
+            </button>
+
+
+            <button
+                id="createButton"
+                class="button-primary"
+                type="button"
+            >
+                建立项目
+            </button>
+
+        </div>
+
+
+        <!-- 操作结果 -->
+
+        <div
+            id="result"
+            class="result"
+        >
+        </div>
+
+
+    </div>
+
+
+</div>
+
+
+<script>
+
+const projectNameInput =
+    document.getElementById(
+        "projectName"
+    );
+
+const validationMessage =
+    document.getElementById(
+        "validationMessage"
+    );
+
+const createButton =
+    document.getElementById(
+        "createButton"
+    );
+
+const clearButton =
+    document.getElementById(
+        "clearButton"
+    );
+
+const result =
+    document.getElementById(
+        "result"
+    );
+
+
+// ============================================================
+// Windows 保留名称
+// ============================================================
+
+const reservedNames = new Set([
+
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+
+    "COM¹",
+    "COM²",
+    "COM³",
+
+    "LPT¹",
+    "LPT²",
+    "LPT³"
+
+]);
+
+
+// ============================================================
+// 项目名称校验
+// ============================================================
+
+function validateProjectName(name) {
+
+
+    if (name.length === 0) {
+
+        return "项目名称不能为空。";
+    }
+
+
+    if (name === "." || name === "..") {
+
+        return "项目名称不能为 . 或 ..。";
+    }
+
+
+    // 控制字符
+
+    for (const char of name) {
+
+        const code =
+            char.charCodeAt(0);
+
+        if (
+            code >= 0 &&
+            code <= 31
+        ) {
+
+            return "项目名称不能包含控制字符。";
+        }
+    }
+
+
+    // Windows 保留字符
+
+    if (
+        /[<>:"/\\|?*]/.test(name)
+    ) {
+
+        return (
+            '项目名称不能包含以下字符：' +
+            ' < > : " / \\ | ? *'
+        );
+    }
+
+
+    // Windows 不允许结尾空格或句点
+
+    if (
+        /[ .]$/.test(name)
+    ) {
+
+        return (
+            "项目名称不能以空格或句点结尾。"
+        );
+    }
+
+
+    // Windows 保留设备名称
+    //
+    // 如果名称包含扩展名，
+    // 例如 CON.test，
+    // 也需要判定。
+
+    const baseName =
+        name
+            .split(".")[0]
+            .toUpperCase();
+
+
+    if (
+        reservedNames.has(baseName)
+    ) {
+
+        return (
+            "这个名称属于 Windows 保留设备名称，不能使用。"
+        );
+    }
+
+
+    return "";
+}
+
+
+// ============================================================
+// 实时检查
+// ============================================================
+
+projectNameInput.addEventListener(
+    "input",
+    function () {
+
+        const name =
+            this.value;
+
+        const error =
+            validateProjectName(name);
+
+
+        if (error) {
+
+            this.classList.add(
+                "invalid"
+            );
+
+            validationMessage
+                .className =
+                "validation-message error";
+
+            validationMessage.textContent =
+                error;
+
+            createButton.disabled =
+                true;
+
+        } else {
+
+            this.classList.remove(
+                "invalid"
+            );
+
+            validationMessage
+                .className =
+                "validation-message success";
+
+            validationMessage.textContent =
+                "名称格式有效。";
+
+            createButton.disabled =
+                false;
+        }
+
+    }
+);
+
+
+// ============================================================
+// 建立项目
+// ============================================================
+
+createButton.addEventListener(
+    "click",
+    async function () {
+
+        const name =
+            projectNameInput.value;
+
+        const error =
+            validateProjectName(name);
+
+
+        if (error) {
+
+            validationMessage
+                .className =
+                "validation-message error";
+
+            validationMessage.textContent =
+                error;
+
+            return;
+        }
+
+
+        createButton.disabled =
+            true;
+
+        createButton.textContent =
+            "正在创建……";
+
+
+        result.className =
+            "result";
+
+        result.style.display =
+            "none";
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/project/create",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify({
+                                name: name
+                            })
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    data.error ||
+                    "项目创建失败。"
+                );
+            }
+
+
+            result.className =
+                "result success";
+
+            result.style.display =
+                "block";
+
+
+
+            result.innerHTML = `
+
+                <strong>
+                    项目建立成功。
+                </strong>
+
+                <div class="result-path">
+
+                    ${escapeHtml(
+                        data.path
+                    )}
+
+                </div>
+
+            `;
+
+
+            projectNameInput.value =
+                "";
+
+
+            validationMessage.textContent =
+                "";
+
+
+        } catch (error) {
+
+            result.className =
+                "result error";
+            result.style.display =
+                "block";
+   
+
+            result.innerHTML = `
+
+                <strong>
+                    项目建立失败。
+                </strong>
+
+                <div>
+                    ${escapeHtml(
+                        error.message
+                    )}
+                </div>
+
+            `;
+
+        } finally {
+
+            createButton.disabled =
+                false;
+
+            createButton.textContent =
+                "建立项目";
+
+        }
+
+    }
+);
+
+
+// ============================================================
+// 清空
+// ============================================================
+
+clearButton.addEventListener(
+    "click",
+    function () {
+
+        projectNameInput.value =
+            "";
+
+        projectNameInput
+            .classList
+            .remove("invalid");
+
+        validationMessage
+            .className =
+            "validation-message";
+
+        validationMessage.textContent =
+            "";
+
+        result.className =
+            "result";
+
+        result.style.display =
+            "none";
+
+    }
+);
+
+
+// ============================================================
+// HTML 转义
+// ============================================================
+
+function escapeHtml(value) {
+
+    return String(value)
+
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+
+        .replace(
+            /</g,
+            "&lt;"
+        )
+
+        .replace(
+            />/g,
+            "&gt;"
+        )
+
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+}
+
+
+// 初始状态
+
+createButton.disabled =
+    true;
+
+</script>
+
+
+</body>
+
+</html>

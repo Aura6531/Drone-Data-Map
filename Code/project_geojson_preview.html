@@ -1,0 +1,4365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轨迹视频地图</title>
+<!-- Leaflet：优先用本机 vendor 目录里的副本（这样内网/断网也能用），
+     本地没有时才退回 CDN。放文件的位置见页面顶部提示。 -->
+<link rel="stylesheet" href="/vendor/leaflet.css"
+      onerror="this.onerror=null;this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'">
+<script src="/vendor/leaflet.js"
+        onerror="this.onerror=null;var s=document.createElement('script');s.crossOrigin='anonymous';s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';document.head.appendChild(s);"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f5f7;color:#172033;font-family:"Microsoft YaHei","Noto Sans SC",Arial,sans-serif;--reticle:#5eead4;--reticle-zoom:#f87171}
+/* 顶部深色标题栏（.header）已删除：占 76px 且和浏览器标签重复。
+   页面名只在 <title> 里出现。 */
+
+/* ============================================================
+   三栏并列布局：左「检索/加载」 中「轨迹地图」 右「视频」
+   每栏各自滚动；页面本身不滚动，这样地图和视频能固定对照。
+   ============================================================ */
+/* 三栏等高对照。
+   grid-template-rows 显式写成 1fr：让那一行始终填满容器高度，
+   三栏的上下边缘因此严格对齐（否则行高由最高的那一栏内容决定，
+   内容少的那栏会短一截，底部对不齐）。
+   minmax(0,1fr) 而不是 1fr：避免内容过高把行撑破。 */
+.layout{display:grid;grid-template-columns:380px minmax(0,1fr) minmax(0,1.12fr);grid-template-rows:minmax(0,1fr);gap:16px;padding:16px;height:100vh;box-sizing:border-box;align-items:stretch}
+.col{min-width:0;min-height:0;display:flex;flex-direction:column;gap:16px;overflow:auto}
+/* 栏内卡片间距统一交给 flex 的 gap，卡片自带的 22px 下边距会叠加上去：
+   非末尾卡片 -> 上面出现 22+16=38px 的大缝；
+   末尾卡片   -> 下边距把卡片顶起来，整栏底部对不齐。
+   注意 .col-body 是包裹层，卡片不是 .col 的直接子元素，
+   所以只写 .col > *:last-child 是盖不住的。 */
+.col .card,
+.col-body .card{margin-bottom:0}
+.card-fill{flex:1;min-height:0;display:flex;flex-direction:column;margin-bottom:0}
+/* 地图填满中栏剩余高度（原来固定 680px，在分栏里会撑破） */
+/* 地图撑满卡片剩余高度。min-height 240：
+   地图上面的信息块已经挪到地图下面，这里可以留得比 180 更充裕。 */
+/* 地图 + 图例叠成一层。撑满中栏剩余高度的责任从 .map-wrap 挪到 .map-stack，
+   地图本身只负责填满这一层。 */
+.map-stack{position:relative;flex:1;min-height:240px;display:flex;flex-direction:column;margin-top:8px}
+.map-stack .map-wrap{flex:1;min-height:0;height:auto;margin-top:0}
+/* 地图容器带 leaflet-grab 类，Leaflet 默认把光标做成「抓手」；
+   精确点选航迹点时不好对位，改成普通箭头。
+   两个要点：
+     1. 选择器写两个类（.leaflet-container.leaflet-grab），
+        否则一旦 Leaflet CSS 是从 CDN 后插进来的，同优先级会被它压回去；
+     2. 按住拖动时仍要保留「抓住」的手感（grabbing），
+        不然拖动过程完全没有反馈。指到航迹线上时 Leaflet 用的是
+        .leaflet-interactive{cursor:pointer}，那个不受影响、保持原样。 */
+.leaflet-container.leaflet-grab{cursor:default}
+.leaflet-dragging .leaflet-grab{cursor:grabbing}
+/* 接鼠标的隐形粗线：透明描边照样能被命中，但用 pointer-events:stroke
+   更稳 —— 它只要求「落在描边上」，与是否填充/是否有不透明度无关。
+   写成两个类是为了压过 Leaflet 自己的 .leaflet-interactive{pointer-events:visiblePainted}。 */
+.leaflet-interactive.track-hit{pointer-events:stroke}
+.col-mid .card>.card-head{flex:0 0 auto}
+
+/* 左栏收起：整列缩成一条窄轨，只留展开按钮 */
+.col-left{position:relative;overflow:visible}
+.col-left .col-body{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
+/* 收起按钮现在是标题行里的普通按钮（原来绝对定位在栏右上角，会单独占一行）。
+   尺寸和收起后窄轨上的展开箭头保持一致。 */
+.side-toggle{flex:0 0 auto;width:28px;height:28px;padding:0;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#475569;font-size:15px;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.side-toggle:hover{border-color:#2563eb;color:#2563eb;background:#f8fbff}
+.side-toggle:hover{background:#f1f5f9;border-color:#94a3b8}
+.side-rail{display:none}
+body.side-collapsed .layout{grid-template-columns:40px minmax(0,1fr) minmax(0,1.12fr)}
+body.side-collapsed .col-left .col-body,
+body.side-collapsed .col-left .side-toggle{display:none}
+/* 收起后保留一条窄轨：整条都可点（好按），顶部放一个「展开」箭头，
+   与右上角的「收起」箭头构成一对 */
+body.side-collapsed .col-left .side-rail{display:flex;align-items:flex-start;justify-content:center;flex:1;width:100%;padding:10px 0 0;border:1px solid #dbe3ee;border-radius:12px;background:#fff;cursor:pointer}
+.side-rail-icon{width:28px;height:28px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#475569;font-size:15px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center}
+body.side-collapsed .col-left .side-rail:hover{background:#f8fbff;border-color:#2563eb}
+body.side-collapsed .col-left .side-rail:hover .side-rail-icon{color:#2563eb;border-color:#2563eb}
+
+/* 右栏：视频未播放时的占位说明 */
+.video-slot{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;border:2px dashed #dbe3ee;border-radius:14px;background:#fff;text-align:center}
+.video-slot-title{font-size:20px;font-weight:700;color:#94a3b8}
+.video-slot-hint{font-size:14px;color:#a8b3c2;line-height:1.7;max-width:340px}
+
+.container{padding:28px;max-width:1500px;margin:auto}
+.card{background:white;border-radius:14px;margin-bottom:22px;padding:28px;box-shadow:0 5px 18px rgba(20,30,50,.07)}
+h1{margin:0 0 10px;font-size:32px}h2{margin:0 0 20px;font-size:25px}
+.desc{font-size:18px;color:#63748b;margin-bottom:22px}
+label{font-weight:700;font-size:17px;display:block;margin-bottom:9px}
+select{width:100%;height:52px;border:1px solid #cbd5e1;border-radius:9px;padding:0 16px;font-size:17px;background:#fff}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+button{border:0;border-radius:9px;padding:13px 22px;font-size:16px;font-weight:700;cursor:pointer;background:#2563eb;color:#fff}
+button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cursor:not-allowed}
+.notice{margin-top:18px;padding:15px 18px;border-radius:9px;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;font-size:16px}
+/* 缺失提示：三个按钮下面一行小字，说明缺哪些文件。
+   不放按钮 —— 补齐就是点上面的「生成 SRT / 生成 GeoJSON」。
+   只用文字，不做成色块，高度就是一行字。 */
+.missing-hint{margin-top:7px;color:#b45309;font-size:12px;line-height:1.45}
+/* 脚本级错误的横幅：固定在顶部，显眼且不占版面 */
+.fatal-notice{display:none;position:sticky;top:0;z-index:9999;margin:0;padding:14px 64px 14px 24px;background:#fef2f2;border-bottom:2px solid #fca5a5;color:#b91c1c;font-size:15px;line-height:1.55;font-weight:600;white-space:pre-wrap;word-break:break-word}
+.fatal-close{position:fixed;top:10px;right:14px;z-index:10000;width:30px;height:30px;padding:0;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#b91c1c;font-size:17px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.error{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+/* align-content:start —— 行高只由内容决定。
+   列表被 flex:1 撑满整张卡片后，grid 默认的 align-content:stretch 会把
+   每一行拉开去填满容器，条目就被拉高、上下出现大片空白。 */
+.file-list{display:grid;gap:8px;align-content:start;max-height:330px;overflow:auto}
+/* 分栏布局下让文件列表撑满卡片：左栏本来就是窄列，
+   再限高 330px 就只剩两三条可见，看不全 */
+.col-left .file-list{max-height:none;flex:1;min-height:220px;overflow:auto}
+.file-item{border:1px solid #dbe3ee;border-radius:10px;padding:11px 13px;display:flex;align-items:center;gap:8px;cursor:pointer}
+.file-item:hover{border-color:#2563eb;background:#f8fbff}.file-item.active{border-color:#2563eb;background:#eff6ff}
+.file-main{flex:1;min-width:0}
+/* 文件名已简化成「年月日 时间 · 编号 · 后缀」，字号收小一点，一行放得下 */
+/* 文件名：一行放下（原来 15px + word-break:break-all 会折成两行，把「V」甩到第二行）。
+   字号 12px 与下面的徽标一致，整串「2026-09-24 09:52:58 · 0001 · V」能完整显示；
+   再给一层和徽标一致的底色框。列表项间距也从 10px 收到 8px，把宽度让给名字。 */
+.file-name{font-weight:700;font-size:12px;line-height:1.4;background:#eef2f7;border-radius:7px;padding:4px 9px;display:block;width:fit-content;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 徽标成组换行，字号也跟着收小 */
+.file-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.file-badges .badge{margin-right:0}
+.file-item .badge{font-size:12px;padding:3px 8px}
+.file-item button.secondary{height:30px;padding:0 10px;font-size:12px;flex:0 0 auto;min-width:58px}
+/* 一行的两个动作竖排（加载在上、删除在下）：
+   横排会占掉约 120px，把文件名挤到截断；竖排只占一个按钮的宽度，
+   而且两者之间留 8px，避免误点。 */
+.file-acts{display:flex;flex-direction:column;gap:8px;flex:0 0 auto;align-items:stretch}
+.file-item button.danger{border-color:#fecaca;color:#b91c1c;background:#fff}
+.file-item button.danger:hover{border-color:#fca5a5;background:#fef2f2}
+/* 按年月日 / 视频类型筛选：标签 + 下拉框两行，窄列里也放得下 */
+.file-filter{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 8px;align-items:center;margin-top:12px;padding:10px 12px;border:1px solid #e5eaf1;border-radius:9px;background:#f8fafc}
+.file-filter .ctrl-select{width:100%;max-width:none}
+.badge{display:inline-block;padding:4px 9px;border-radius:999px;background:#e0ecff;color:#2563eb;font-size:13px;margin-right:6px}
+/* 视频类型标签：比其它徽标更显眼，一眼分清 4K / 1080P / 热成像 */
+.badge-type{background:#0f766e;color:#ecfeff;font-weight:700}
+.map-wrap{height:680px;border-radius:12px;overflow:hidden;border:1px solid #dbe3ee}.map{width:100%;height:100%}
+.stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}.stat{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 18px;min-width:150px}.stat-title{color:#64748b;font-size:14px}.stat-value{font-size:23px;font-weight:700;margin-top:3px}
+/* 图例：浮在地图左下角的小框。线条信息只是给人对色用，字号收小、内容多了可滚动。
+   z-index 要压过 Leaflet 的各层 pane（最高的是 popup，700）。 */
+.legend{position:absolute;left:10px;bottom:10px;z-index:800;display:flex;flex-direction:column;gap:3px;max-width:calc(100% - 20px);max-height:46%;overflow:auto;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.92);border:1px solid #e2e8f0;box-shadow:0 2px 8px rgba(15,23,42,.14);font-size:11px;line-height:1.35}
+.legend:empty{display:none}
+/* 新建项目的弹出窗口：居中遮罩 + 小卡片。和视频面板一样用 fixed 覆盖，
+   但只在这一处使用，所以单独一套类名。 */
+.mini-modal{position:fixed;inset:0;background:rgba(15,23,42,.38);z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+.mini-modal-box{width:min(420px,100%);background:#fff;border-radius:14px;padding:22px;box-shadow:0 24px 60px rgba(15,23,42,.32)}
+.mini-modal-title{font-size:17px;font-weight:700;color:#0f172a;margin-bottom:8px}
+.mini-modal-hint{font-size:12px;line-height:1.6;color:#64748b;margin-bottom:14px}
+.mini-modal-box input{width:100%;height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:14px;box-sizing:border-box}
+.mini-modal-box input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15)}
+.mini-modal-error{margin-top:9px;font-size:12px;color:#b91c1c}
+.mini-modal-actions{margin-top:16px;gap:8px;justify-content:flex-end}
+.mini-modal-actions button{height:38px;padding:0 18px;font-size:14px}
+/* 底图瓦片之类的次要提示：小字、灰底，放地图下面，不抢地图的位置 */
+.tile-hint{margin-top:8px;padding:6px 10px;border-radius:7px;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.5;word-break:break-word}.legend-item{display:flex;align-items:center;gap:6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.line{width:18px;height:3px;border-radius:3px;flex:0 0 auto}
+.popup-title{font-weight:700;font-size:15px;margin-bottom:7px}.popup-row{margin:3px 0;color:#374151}
+@media(max-width:800px){.container{padding:15px}.map-wrap{height:520px}}
+
+/* 视频面板：固定在右栏里的普通面板（原来是一个覆盖全屏的悬浮层，
+   位置靠 transform 偏移算出来）。现在不悬浮、不可拖动缩放。
+   注意不带 margin-top：那会让面板顶边比左/中栏低一截，对不齐。 */
+.video-panel{display:none;flex:1;min-height:0;flex-direction:column}
+.video-panel .video-dialog{width:100%;max-width:100%;flex:1;min-height:0;display:flex;flex-direction:column;border-radius:12px;box-shadow:0 2px 10px rgba(15,23,42,.10)}
+/* 画面区域按视频自己的画幅定高（aspect-ratio 由 loadedmetadata 里的
+   videoWidth/videoHeight 动态写上）。原来固定撑满整栏 + object-fit:contain，
+   16:9 的画面放进更高的容器里必然留上下黑边。 */
+.video-panel .video-stage{flex:0 0 auto;aspect-ratio:16/9;max-height:calc(100vh - 210px)}
+.video-panel #videoPlayer{display:block;width:100%;height:100%}
+.video-dialog{position:relative;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.38);overflow:hidden}
+/* 全屏：让「整个对话框」铺满，而不是只让 <video> 全屏 ——
+   小地图、红外小窗、上方开关都在 video 外面，只全屏 video 的话它们全看不见。 */
+.video-dialog:fullscreen,
+.video-dialog:-webkit-full-screen,
+.video-dialog.theater{transform:none!important;position:fixed;inset:0;width:100%!important;height:100%;max-height:100vh;margin:0;border-radius:0}
+.video-dialog:fullscreen .video-player,
+.video-dialog:-webkit-full-screen .video-player,
+.video-dialog.theater .video-player{max-height:calc(100vh - 210px)!important}
+/* —— 铺满 / 全屏（我们自己的全屏按钮）：真正做到「视频填满画面」——
+   原来画面区按 aspect-ratio:16/9 + width:100% 定高，算出来的高度小于可用高度，
+   上下就空出一大块黑边（不是真全屏）。这里改成填满剩余高度，
+   视频用 object-fit:contain 保证不变形 —— 窗口与视频同为 16:9 时就没有任何黑边。 */
+.video-dialog.theater .video-stage,
+.video-dialog:fullscreen .video-stage,
+.video-dialog:-webkit-full-screen .video-stage{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  flex:none!important;aspect-ratio:auto!important;max-height:none!important;min-height:0!important;margin:0!important}
+/* 标题栏（含那排开关）在全屏里整体隐藏 —— 需求是「最大视频，不要其他内容」。
+   退出全屏用 Esc（浏览器也会提示），所以不留按钮。 */
+.video-dialog.theater .video-dialog-head,
+.video-dialog:fullscreen .video-dialog-head,
+.video-dialog:-webkit-full-screen .video-dialog-head{display:none!important}
+.video-dialog.theater #videoPlayer,
+.video-dialog:fullscreen #videoPlayer,
+.video-dialog:-webkit-full-screen #videoPlayer{object-fit:contain!important}
+/* 底部那行「镜头…／正在播放（原片）」：白色文字 + 透明底，叠在画面下方。
+   bottom:52px 是为了让开浏览器自带的播放控制条，不挡住进度和播放信息。 */
+.video-dialog.theater .video-foot,
+.video-dialog:fullscreen .video-foot,
+.video-dialog:-webkit-full-screen .video-foot{
+  position:absolute;left:0;right:0;bottom:52px;z-index:5;
+  background:transparent;border-top:0;padding:6px 18px;color:#fff}
+.video-dialog.theater .video-foot b,
+.video-dialog:fullscreen .video-foot b,
+.video-dialog:-webkit-full-screen .video-foot b{color:#e2e8f0}
+.video-dialog.theater .video-status,
+.video-dialog:fullscreen .video-status,
+.video-dialog:-webkit-full-screen .video-status{color:#e2e8f0}
+/* 全屏时把两个小窗的尺寸钉死：
+   它们平时按容器百分比（27% / 26%）算，而全屏反复切换后容器尺寸链会失控，
+   小窗会长到占半个画面。给死值后即使百分比算错也长不大。 */
+.video-dialog.theater .map-pip,
+.video-dialog:fullscreen .map-pip,
+.video-dialog:-webkit-full-screen .map-pip{width:220px;max-width:220px}
+.video-dialog.theater .thermal-pip,
+.video-dialog:fullscreen .thermal-pip,
+.video-dialog:-webkit-full-screen .thermal-pip{width:200px;max-width:200px}
+/* 全屏（<video> 自带控件那个按钮）：只保留视频画面本身 ——
+   标题栏、小地图、红外、准星、底部信息行全部隐藏。
+   试过把底部信息行做成叠层，但原生全屏的元素在浏览器顶层图层，
+   页面内容盖不上去（实测确实看不到），所以按要求不加了 ——
+   非全屏状态下右下角本来就有这行信息。 */
+.video-dialog.native-fs .video-dialog-head,
+.video-dialog.native-fs .video-foot,
+.video-dialog.native-fs .thermal-pip,
+.video-dialog.native-fs .map-pip,
+.video-dialog.native-fs .video-crosshair{display:none!important}
+/* 标题栏不再可拖动，所以没有 cursor:move / touch-action 这些拖拽相关的设置 */
+.video-dialog-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid #e2e8f0;user-select:none;flex-wrap:nowrap}
+/* 标题区允许被压缩并用省略号收尾，保证右侧控件永远在同一行 */
+.video-dialog-head>div:first-child{min-width:0;flex:1 1 auto}
+/* 右侧控件：不受全局 .row 的 flex-wrap:wrap 影响，强制单行 */
+.row.video-head-tools{flex:0 0 auto;flex-wrap:nowrap;gap:6px}
+.video-title{font-size:18px;font-weight:700;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.video-info{margin-top:5px;font-size:13px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 必须显式清掉全局 button 的 padding(13px 22px)：
+   36px 宽的方框里左右各 22px，内容盒会变成负值，× 就被挤歪了。
+   × 用 SVG 画（而不是文字 ×），这样不受字体度量影响，一定居中。 */
+.video-close{border:0;padding:0;background:#f1f5f9;color:#334155;width:36px;height:36px;border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.video-close svg{display:block}
+.video-close:hover{background:#e2e8f0}
+.video-dialog video{display:block;width:100%;max-height:70vh;background:#000}
+.video-status{padding:10px 20px;color:#64748b;font-size:13px;min-height:20px}
+/* 视频底部一条：遥测信息在左，播放状态在右（原来各占一行，白多一行高度）。
+   视频实时信息：镜头 / 变焦 / 朝向 / 俯仰角 / 画面中心地面距离 */
+.video-foot{display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;padding:10px 20px;border-top:1px solid #eef2f7;background:#f8fafc}
+.video-telemetry{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:13px;color:#1e293b}
+.video-telemetry span{white-space:nowrap}
+.video-telemetry b{color:#64748b;font-weight:400;margin-right:5px}
+.video-telemetry .dim{color:#94a3b8}
+/* margin-left:auto 把状态推到最右；没有状态时它不占位置 */
+.video-status{margin-left:auto;color:#64748b;font-size:13px;white-space:nowrap}
+
+/* 画面中心准星：视频里一个、地图上一个，造型一致。
+   造型参考 CS 准星——四段短线、中间留空、不加描边，保持简洁。
+   颜色由 --reticle / --reticle-zoom 两个变量控制：
+   广角 1× 用青色，一旦开了变焦（中长焦 3×、长焦 7× 或广角叠数码变焦）
+   就变浅红，提示当前是放大画面。 */
+.video-stage{position:relative;background:#000}
+.video-crosshair{position:absolute;left:50%;top:50%;width:42px;height:42px;margin:-21px 0 0 -21px;pointer-events:none}
+.video-crosshair svg{width:100%;height:100%;display:block;color:var(--reticle);transition:color .18s ease}
+.video-crosshair.zoomed svg{color:var(--reticle-zoom)}
+/* 地图上的画面中心准星 */
+.crosshair-div-icon{background:none;border:none}
+.crosshair-svg{width:30px;height:30px;display:block;color:var(--reticle);transition:color .18s ease}
+.crosshair-div-icon.zoomed .crosshair-svg{color:var(--reticle-zoom)}
+/* 开关按钮不写字面「开/关」，靠底色区分状态：
+   开 = 蓝色底 + 蓝字 + 加粗；关 = 白底 + 浅灰字（看着就是没启用） */
+.toggle-btn{height:36px;border:1px solid #60a5fa;border-radius:8px;padding:0 12px;font-size:13px;font-weight:600;background:#dbeafe;color:#1d4ed8;cursor:pointer;white-space:nowrap;flex:0 0 auto;transition:background .15s ease,color .15s ease,border-color .15s ease}
+.toggle-btn.off{background:#fff;border-color:#e5eaf1;color:#a8b3c2;font-weight:400}
+
+/* 红外同步小窗：画面左下角，底边抬高 56px 让开播放器自带的控制条 */
+.thermal-pip{position:absolute;left:12px;bottom:56px;width:26%;max-width:250px;min-width:110px;border:2px solid rgba(255,255,255,.85);border-radius:6px;overflow:hidden;background:#000;line-height:0;pointer-events:none;box-shadow:0 2px 12px rgba(0,0,0,.5);z-index:2}
+.thermal-pip video{width:100%;display:block}
+.thermal-pip-label{position:absolute;left:0;top:0;padding:0 6px;font-size:11px;line-height:17px;color:#fff;background:rgba(0,0,0,.55);border-radius:0 0 6px 0}
+
+/* 画面右下角的地图小窗：也是一个独立的小地图，跟着飞机和准星走 */
+.map-pip{position:absolute;right:12px;bottom:56px;width:27%;max-width:260px;min-width:110px;aspect-ratio:4/3;border:2px solid rgba(255,255,255,.85);border-radius:6px;overflow:hidden;background:#e8eef5;pointer-events:none;box-shadow:0 2px 12px rgba(0,0,0,.5);z-index:2}
+.map-pip-canvas{position:absolute;inset:0}
+/* 角标要压住 Leaflet 的各个 pane（tilePane 200 / markerPane 600） */
+.map-pip-label{position:absolute;left:0;top:0;z-index:700;padding:0 6px;font-size:11px;line-height:17px;color:#fff;background:rgba(0,0,0,.55);border-radius:0 0 6px 0}
+
+/* 地图对照已经是页面默认布局（左中右三栏并列），原来的对照模式不再需要 */
+
+/* 窗口窄到一定程度时，标题栏控件允许换到第二行 —— 总比挤成一列竖排的字好 */
+.video-dialog.narrow-tools .video-dialog-head{flex-wrap:wrap;row-gap:8px}
+.video-dialog.narrow-tools .row.video-head-tools{flex-wrap:wrap;justify-content:flex-end;row-gap:6px}
+/* 播放按钮与通用按钮保持同样大小；在 flex 行里不要额外的上边距，
+   否则会跟同一行的按钮错位。留 .play-btn 这个类只是为了单独定位样式。 */
+.play-btn{margin-top:10px;padding:13px 22px;border:0;border-radius:9px;background:#2563eb;color:#fff;cursor:pointer;font-size:16px;font-weight:700}
+.row>.play-btn{margin-top:0}
+
+/* ---------- 地名搜索 / 按位置检索飞行视频 ---------- */
+/* 地图控件与搜索框统一高度，否则按钮比下拉框高出一截，一行里看着歪 */
+.map-tools button.secondary{height:36px;padding:0 14px;font-size:13px}
+/* 搜索区独立成行。input 的 min-width 留小一点，窄卡片时按钮自然换行而不是溢出 */
+/* 地名搜索并进标题行：它会占据标题与「底图」之间的剩余宽度，
+   窄卡片时可以换到下一行（card-head 本身允许 wrap）。 */
+.search-bar{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;margin:0 0 0 14px;flex:1 1 260px;min-width:0}
+.search-bar input{height:36px;border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:14px;flex:1 1 auto;min-width:160px}
+/* 「搜索地名」按钮与输入框等高 36px（原来是一整行时的 50px） */
+.search-bar button{height:36px;padding:0 16px;font-size:13px;flex:0 0 auto;white-space:nowrap}
+.search-bar input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.poi-list{margin-top:12px;border:1px solid #dbe3ee;border-radius:10px;max-height:250px;overflow:auto;display:none;background:#fff}
+.poi-item{padding:12px 16px;cursor:pointer;border-bottom:1px solid #eef2f7}
+.poi-item:last-child{border-bottom:0}
+.poi-item:hover{background:#f8fbff}
+.poi-name{font-weight:700;font-size:16px}
+.poi-addr{color:#718096;font-size:13px;margin-top:4px}
+/* 重要操作条：选点 / 搜索 / 播放 / 定位 都在这一条里，放在地图上面 */
+.action-bar{margin-top:16px;padding:14px 16px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;display:none}
+.probe-line{font-size:15px;margin-bottom:10px}
+.action-row{gap:8px}
+/* 地图下面：次要内容整体缩小，避免挤占地图高度 */
+.below-map{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.alt-videos .alt-video-label{font-size:12px;margin:0 0 6px}
+.alt-videos .alt-video-row{gap:6px}
+.alt-videos .row{gap:6px}
+.alt-videos button{height:30px;padding:0 11px;font-size:12px;font-weight:400}
+/* 统计挪到地图下面并缩小，原来 4 个大格子占了 90 多 px 高 */
+.stats-compact{gap:8px;margin-bottom:0}
+.stats-compact .stat{padding:7px 12px;min-width:112px;border-radius:8px}
+.stats-compact .stat-title{font-size:12px}
+.stats-compact .stat-value{font-size:17px;margin-top:1px}
+.probe-coord{font-family:Consolas,"Courier New",monospace;color:#1d4ed8;font-weight:700}
+/* .result-card / .result-grid / .result-title 已不再使用：
+   重要按钮并进了操作条，其余信息改到地图下面（.below-map / .hit-chips） */
+/* 该点轨迹信息：放在地图下面，用一行行小标签排。
+   原来放在地图上面（7 行网格），把地图挤出了可视区。 */
+.hit-detail{margin-top:12px;padding:12px 14px;border-radius:10px;background:#fffbeb;border:1px solid #fcd34d}
+.hit-detail-title{font-weight:700;font-size:13px;color:#92400e;margin-bottom:8px}
+.hit-chips{display:flex;flex-wrap:wrap;gap:6px 10px}
+.hit-chip{font-size:13px;line-height:1.35;background:#fff;border:1px solid #fde68a;border-radius:6px;padding:3px 9px;white-space:nowrap}
+.hit-chip .k{color:#a16207;margin-right:5px}
+.hit-chip .v{font-weight:700;color:#713f12}
+/* .result-grid 已不再使用：那 7 行信息改成了地图下面的小标签（.hit-chips） */
+/* 「同一位置还有其他视频」：说明文字单独一行，按钮另起一行 */
+.alt-video-label{font-size:14px;color:#78350f;margin:0 0 8px}
+.row.alt-video-row{gap:8px;align-items:center}
+.warn{color:#b45309}
+.probe-div-icon{background:none;border:none}
+.probe-pin{width:16px;height:16px;border-radius:50%;background:#dc2626;border:3px solid #fff;box-shadow:0 2px 7px rgba(0,0,0,.45)}
+
+/* 无人机实时位置箭头（跟随视频） */
+.drone-div-icon{background:none;border:none}
+.drone-arrow{width:34px;height:34px;display:block;transform-origin:50% 50%;transition:transform .12s linear;filter:drop-shadow(0 1px 3px rgba(0,0,0,.55))}
+
+/* 下拉框必须显式 width:auto —— 全局 select{width:100%} 会让它按整个容器宽
+   参与 flex 换行计算，把同一行后面的控件挤到第二行（地图卡片和视频标题栏都踩过）。
+   width:auto 时浏览器按「最宽的那个选项」定宽，所以切换选项也不会跳动。 */
+.follow-select,.ctrl-select{width:auto;height:36px;border:1px solid #cbd5e1;border-radius:8px;padding:0 10px;font-size:13px;background:#fff;max-width:270px;min-width:0}
+/* nowrap + 不收缩：中文标签在 flex 行里被挤窄会一个一个字竖排，这里必须锁住 */
+.follow-label,.ctrl-label{font-size:13px;font-weight:400;color:#64748b;margin:0;display:inline-block;white-space:nowrap;flex:0 0 auto}
+
+/* 左栏的流程步骤：每步一个小块，用虚线分隔串成一条流程 */
+.flow-step{margin-top:14px;padding-top:14px;border-top:1px dashed #e2e8f0}
+.flow-step:first-of-type{border-top:none;padding-top:0;margin-top:12px}
+.flow-title{font-size:13px;font-weight:700;color:#334155;margin-bottom:8px}
+.flow-step input[type=text]{width:100%;height:36px;border:1px solid #cbd5e1;border-radius:8px;padding:0 10px;font-size:14px;margin-bottom:8px;box-sizing:border-box}
+/* .flow-auto / .flow-hint 都已不再使用（全自动开关与常驻说明文字都删掉了） */
+.flow-status{margin-top:12px;padding:9px 11px;border-radius:8px;background:#f1f5f9;border:1px solid #e2e8f0;font-size:12px;line-height:1.55;color:#334155;white-space:pre-wrap;word-break:break-word}
+.flow-status.error{background:#fef2f2;border-color:#fca5a5;color:#b91c1c}
+/* 三个按钮挤在一排：全局 button 的 13px 22px 内边距会把它们撑到换行，这里收紧。
+   宽度按内容分配（flex:0 1 auto），不要等分 —— 等分会让最长的「生成 GeoJSON」
+   被压到换行，✓ 掉到第二行。nowrap 保证文字与 ✓ 始终同一行。 */
+/* 两排按钮统一：字号/字重/高度一致，各自把整行宽度等分占满。
+   nowrap 保证文字不折行（窄栏下折成两行是最常见的翻车点）。
+   「加载全部/刷新/清空」原本是标题栏右侧的工具组（margin-left:auto），
+   现在改成独立一整行，所以要盖掉那个右推和自适应宽度。 */
+.flow-actions,.file-actions{gap:8px;margin:12px 0 0;width:100%;flex-wrap:nowrap}
+.card-tools.file-actions{margin-left:0}
+.flow-actions button{flex:1 1 0;min-width:0;height:34px;padding:0 8px;font-size:12px;font-weight:600;white-space:nowrap}
+.card-tools.file-actions button{flex:1 1 0;min-width:0;height:34px;padding:0 8px;font-size:12px;font-weight:600;white-space:nowrap}
+/* 某一步做完了（或本来就没有待办）：按钮变绿，底层用底色表示状态 */
+.flow-actions button.done{background:#dcfce7;border-color:#86efac;color:#15803d}
+.flow-actions button.done::after{content:' ✓'}
+.detect-result{margin-top:10px;font-size:12px;line-height:1.65;color:#334155}
+.detect-result b{color:#0f172a}
+.danger{border-color:#fca5a5;color:#b91c1c}
+/* 项目下拉框 + 右侧的「移出项目列表」小 ×。全局 button 有 13px 22px 内边距，
+   这里必须显式清零并自己居中，否则 × 会被挤成一个扁长方形。 */
+.proj-row{display:flex;align-items:center;gap:8px}
+.proj-row select{flex:1;min-width:0}
+.proj-del{flex:0 0 auto;width:38px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#94a3b8;font-size:19px;line-height:1;font-weight:400;cursor:pointer}
+.proj-del:hover{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}
+/* 「新建项目 / 导入数据」两个动作同一排：等分宽度，和下面的输入框对齐 */
+.proj-actions{gap:8px;margin-top:14px}
+.proj-actions button{flex:1 1 0;min-width:0;height:38px;padding:0 8px;font-size:13px;white-space:nowrap}
+/* 新项目名称输入框紧跟在两个按钮下面 */
+#newProjectName{width:100%;height:36px;border:1px solid #cbd5e1;border-radius:8px;padding:0 10px;font-size:13px;margin-top:10px;box-sizing:border-box}
+
+/* 卡片头部：标题在左、操作控件在右。两张卡片共用。
+   控件组 nowrap，整体换行、绝不内部拆开 —— 拆开就会出现按钮被单独甩到第二行。
+   标题 margin 清零，否则 h2 默认的上下外边距会让它在 flex 里对不齐。 */
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px 16px;flex-wrap:wrap;margin-bottom:16px}
+.card-head h2{margin:0}
+.card-tools{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;margin-left:auto}
+/* 卡片头部的小按钮：全局 button 是 16px + 13px 22px 内边距，太大。
+   收紧成 12px/32px 高，并且禁止文字换行 —— 否则窄栏里会被挤成
+   「重新扫/描」这种两行（截图里出现过）。 */
+.card-tools button{height:32px;padding:0 10px;font-size:12px;font-weight:600;white-space:nowrap;flex:0 0 auto}
+/* 地图卡片的控件要和下拉框对齐成同一高度，否则按钮比下拉框高出一截 */
+.map-tools button.secondary{height:36px;padding:0 14px;font-size:13px}
+</style>
+</head>
+<body>
+<!-- 原来这里有一条 76px 高的深色标题栏，已删除：占地方且信息重复
+     （浏览器标签上已经写着页面名）。布局高度也跟着从 calc(100vh - 76px)
+      改成 100vh。 -->
+<!-- 脚本一旦出错，这里会把原因显示出来。
+     否则页面只会剩下几个空白框，完全看不出发生了什么（踩过一次）。 -->
+<div id="fatalNotice" class="fatal-notice"></div>
+<button id="fatalClose" class="fatal-close" type="button" style="display:none"
+        title="关闭提示" aria-label="关闭提示">×</button>
+
+<!-- 三栏并列：左「检索/加载」 中「轨迹地图」 右「视频」。
+     左栏可收起，收起后留一条窄轨用于展开。 -->
+<div class="layout" id="layout">
+
+  <aside class="col col-left" id="colLeft">
+    <div class="col-body">
+      <section class="card">
+        <!-- 收起按钮和标题同一行：文字在左、按钮在右，不再单独占一行 -->
+        <div class="card-head">
+          <h1>项目数据</h1>
+          <button id="sideToggle" class="side-toggle" type="button"
+                  title="收起检索栏" aria-label="收起检索栏">‹</button>
+        </div>
+
+        <label class="ctrl-label" for="projectSelect">选择项目</label>
+        <div class="proj-row">
+          <select id="projectSelect"></select>
+          <!-- 把当前项目从项目列表里移除。只是列表里的一项，不动任何数据文件，
+               所以做成下拉框右侧的小 ×，点了才弹确认和说明。 -->
+          <button id="deleteProjectBtn" class="proj-del" type="button"
+                  title="把当前项目从项目列表里移除（不会删除任何数据文件）"
+                  aria-label="从项目列表移除">×</button>
+        </div>
+        <div id="projectNotice" class="notice" style="display:none"></div>
+
+        <!-- 两个动作：新建项目（弹窗里填名字）；导入数据（把文件夹加进当前项目，
+             再点一次就是继续追加，不需要单独的「追加数据」按钮）。
+             建好/导入后都会自动跑完整流程（检测 -> 生成 SRT -> 生成 GeoJSON -> 加载），
+             所以不再需要「全自动」开关。 -->
+        <div class="row proj-actions">
+          <button id="createProjectBtn">新建项目</button>
+          <button id="addFolderBtn" class="secondary">导入数据</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <!-- 不再写「数据准备」「3 · 检测与生成」这类标题：
+             三个按钮自己说明了做什么，省下的字和高度都让给内容。
+             新建/导入时会自动跑一遍，这里也可以单独点某一步。 -->
+        <h2>轨迹文件</h2>
+
+        <div class="row flow-actions">
+          <button id="detectBtn" class="secondary">检测字幕</button>
+          <button id="makeSrtBtn" class="secondary">生成 SRT</button>
+          <button id="makeGeoBtn" class="secondary">生成 GeoJSON</button>
+        </div>
+        <!-- 缺哪些文件就在这里说一句（原来是列表上方一条带「补齐」按钮的提示，
+             但补齐无非就是点「生成 GeoJSON / 生成 SRT」—— 那两个按钮本来就是
+             缺什么生成什么，所以提示只留文字，按钮去掉。） -->
+        <div id="missingHint" class="missing-hint" style="display:none"></div>
+        <div id="detectResult" class="detect-result" style="display:none"></div>
+        <!-- 日期 / 类型筛选：并成一行（原来上下两行太占高度） -->
+        <div class="file-filter" style="flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px 10px">
+          <label class="ctrl-label" for="filterDate">日期</label>
+          <select id="filterDate" class="ctrl-select"></select>
+          <label class="ctrl-label" for="filterType">类型</label>
+          <select id="filterType" class="ctrl-select"></select>
+        </div>
+        <!-- 对地图上轨迹内容的三个动作，放在筛选下面（按需求的行序） -->
+        <div class="card-tools file-actions">
+          <button id="loadAllBtn">加载全部</button>
+          <button id="refreshBtn" class="secondary">刷新</button>
+          <button id="clearBtn" class="secondary">清空</button>
+        </div>
+        <div id="fileNotice" class="notice" style="display:none"></div>
+        <div id="fileList" class="file-list" style="margin-top:16px"></div>
+      </section>
+    </div>
+    <button id="sideRail" class="side-rail" type="button"
+            title="展开检索栏" aria-label="展开检索栏">
+      <span class="side-rail-icon" aria-hidden="true">›</span>
+    </button>
+  </aside>
+
+  <section class="col col-mid">
+    <section class="card card-fill">
+    <div class="card-head">
+      <h2>轨迹地图</h2>
+      <!-- 地名搜索并进这一行：原来它单独占一整行，加上「底图」那行，
+           地图上方白白吃掉两行高度。现在一行放下：标题 · 搜索 · 底图。 -->
+      <div class="search-bar">
+        <input id="placeInput" type="text" placeholder="输入地名定位，例如：肇庆市、南岸街道">
+        <button id="placeSearchBtn">搜索地名</button>
+      </div>
+      <div class="card-tools map-tools">
+        <label for="baseMap" class="ctrl-label">底图</label>
+        <select id="baseMap" class="ctrl-select">
+          <option value="street">街道图（天地图）</option>
+          <option value="satellite">卫星图（天地图影像）</option>
+          <option value="osm">OpenStreetMap</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="poiList" class="poi-list"></div>
+
+    <!-- 重要操作集中在这一条：选点 -> 搜索 -> 播放 -> 定位。
+         次要按钮（其他视频）和统计信息都放到地图下面并缩小，把空间让给地图。 -->
+    <div id="probePanel" class="action-bar">
+      <div class="probe-line" id="probeLine" style="display:none">
+        已选位置（<span id="probeSource">地图点击</span>）：
+        <span id="probeCoord" class="probe-coord"></span><span id="probeLabel"></span>
+      </div>
+      <div class="row action-row">
+        <button id="searchNearbyBtn">按此位置搜索飞行视频</button>
+        <button id="clearProbeBtn" class="secondary">取消选点</button>
+        <button id="playHitBtn" class="play-btn" style="display:none">▶ 播放此处视频</button>
+        <button id="resultFlyBtn" class="secondary" style="display:none">地图定位到该点</button>
+      </div>
+    </div>
+
+    <div id="mapNotice" class="notice" style="display:none"></div>
+    <!-- 地图 + 图例叠成一层：图例浮在地图左下角，不再单独占一行把地图挤矮 -->
+    <div class="map-stack">
+      <div id="map" class="map-wrap"></div>
+      <div id="legend" class="legend"></div>
+    </div>
+    <!-- 底图瓦片之类的次要提示：小字放地图下面，不占地图上方那一大块 -->
+    <div id="tileHint" class="tile-hint" style="display:none"></div>
+
+    <!-- 地图下面：次要内容，整体缩小 -->
+    <div class="below-map">
+      <div id="altVideos" class="alt-videos" style="display:none"></div>
+      <div id="stats" class="stats stats-compact"></div>
+      <!-- 该点轨迹信息也放这里：放在上面会把地图挤出可视区 -->
+      <div id="hitDetail" class="hit-detail" style="display:none"></div>
+    </div>
+    </section>
+  </section>
+
+  <!-- 右栏：视频播放位。视频窗口浮在这一栏上（仍可拖动/缩放） -->
+  <section class="col col-right" id="colRight">
+    <div class="video-slot" id="videoSlot">
+      <div class="video-slot-title">视频</div>
+      <div class="video-slot-hint">
+        在中间地图上点轨迹气泡的「从点击位置播放」，
+        或在下方检索结果里点「播放此处视频」，画面会显示在这一栏。
+      </div>
+    </div>
+
+    <!-- 视频面板：就固定在右栏里，不悬浮、不可拖动缩放。
+         原来是覆盖全屏的悬浮层 + transform 偏移定位，那套机制已删除。 -->
+    <div id="videoModal" class="video-panel" style="display:none">
+      <div id="videoDialog" class="video-dialog">
+        <div id="videoDialogHead" class="video-dialog-head">
+          <div>
+            <div id="videoTitle" class="video-title">视频播放</div>
+            <div id="videoInfo" class="video-info"></div>
+          </div>
+          <div class="row video-head-tools">
+            <button id="crosshairToggle" class="toggle-btn" type="button" aria-pressed="true" title="画面中心准星：显示 / 关闭">准星</button>
+            <button id="footprintToggle" class="toggle-btn" type="button" aria-pressed="true" title="镜头视场范围：显示 / 关闭（画面在地面上的覆盖区域）">视场</button>
+            <button id="thermalToggle" class="toggle-btn" type="button" hidden aria-pressed="true" title="同步热成像画面：显示 / 关闭（画面左下角）">红外</button>
+            <button id="mapPipToggle" class="toggle-btn" type="button" aria-pressed="true" title="地图小地图：显示 / 关闭（画面右下角，跟着飞机走）">小地图</button>
+            <!-- 原来自制了一个「全屏」按钮，但它和浏览器自带控件那个重复，
+                 而且原生那个是真铺满、零黑边（自制那条 theater 布局始终有黑边）。
+                 所以按需求删掉自制按钮，全屏统一用视频控件里的那个。 -->
+            <select id="followMode" class="follow-select" title="地图跟随方式：跟随·都可见=目标点和飞机都保持在视野内；跟随·居中=飞机固定在中心；不跟随=地图不动">
+              <option value="fit">跟随·都可见</option>
+              <option value="center">跟随·居中</option>
+              <option value="off">不跟随</option>
+            </select>
+            <button id="videoClose" class="video-close" type="button" title="关闭（Esc）" aria-label="关闭">
+              <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+                <path d="M5 5 L19 19 M19 5 L5 19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="video-stage">
+          <video id="videoPlayer" controls preload="metadata"></video>
+          <div id="videoCrosshair" class="video-crosshair" aria-hidden="true">
+            <svg viewBox="0 0 40 40">
+              <g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt">
+                <path d="M20 14 v-10 M20 26 v10 M14 20 h-10 M26 20 h10"/>
+              </g>
+            </svg>
+          </div>
+          <div id="thermalPip" class="thermal-pip" hidden>
+            <video id="videoThermal" muted playsinline preload="metadata"></video>
+            <span class="thermal-pip-label">红外</span>
+          </div>
+          <div id="mapPip" class="map-pip" hidden>
+            <div id="mapPipCanvas" class="map-pip-canvas"></div>
+            <span class="map-pip-label">地图</span>
+          </div>
+        </div>
+        <!-- 遥测信息与播放状态并到同一行：左边是镜头/朝向/俯仰角/距离，
+             右边是「正在播放（原片）」。原来各占一行，白多出一行高度。 -->
+        <div class="video-foot">
+          <div id="videoTelemetry" class="video-telemetry"></div>
+          <div id="videoStatus" class="video-status"></div>
+        </div>      </div>
+    </div>
+  </section>
+
+</div>
+
+</div>
+<!-- 画面右键取点的命名框 -->
+<div id="videoMarkModal" class="mini-modal" style="display:none">
+  <div class="mini-modal-box">
+    <div class="mini-modal-title">标记此处</div>
+    <div class="mini-modal-hint">
+      已算出画面这一点对应的地面位置（按平地假设）。给它起个名字，
+      会在地图上打一个点并常驻显示这个名称。
+    </div>
+    <input id="videoMarkName" type="text" placeholder="例如：3 号排水口">
+    <div class="row mini-modal-actions">
+      <button id="videoMarkCancel" class="secondary">取消</button>
+      <button id="videoMarkOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 「导入数据」的选择弹窗：Windows 没有「文件+文件夹」二合一的对话框，
+     所以分成两个入口 -->
+<div id="importModal" class="mini-modal" style="display:none">
+  <div class="mini-modal-box">
+    <div class="mini-modal-title">导入数据</div>
+    <div class="mini-modal-hint">
+      把数据加入当前项目。整个文件夹，或者只挑其中几个文件，都可以。
+    </div>
+    <div class="row mini-modal-actions" style="justify-content:stretch">
+      <button id="pickFolderBtn" class="secondary">选择文件夹…</button>
+      <button id="pickFilesBtn">选择文件…</button>
+    </div>
+    <div class="row mini-modal-actions">
+      <button id="importCancel" class="secondary">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新建项目的弹出窗口：输入名称 -> 确定 / 取消 -->
+<div id="newProjectModal" class="mini-modal" style="display:none">
+  <div class="mini-modal-box">
+    <div class="mini-modal-title">新建项目</div>
+    <div class="mini-modal-hint">
+      项目名只用于项目列表。数据文件夹归哪个项目由你自己决定，
+      建好之后还可以再点「导入数据」往里加。
+    </div>
+    <input id="newProjectName" type="text" placeholder="项目名称，例如 东莞5">
+    <div id="newProjectError" class="mini-modal-error" style="display:none"></div>
+    <div class="row mini-modal-actions">
+      <button id="newProjectCancel" class="secondary">取消</button>
+      <button id="newProjectOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- Leaflet 已在 <head> 里以「本地优先、CDN 兜底」的方式加载，这里不再重复引入 -->
+<script>
+// Leaflet 是否可用。断网时它可能既不在本地 vendor 目录、也取不到 CDN。
+// 顶层有几处 L.divIcon 调用（飞机箭头 / 准星 / 选点），一旦抛异常，
+// 整个脚本都不会执行 —— 连不依赖地图的项目下拉、文件列表也会空白。
+// 所以顶层一律用这个开关兜住，地图相关功能单独提示。
+// Leaflet 是否已就绪。
+// 注意必须用「函数」而不是在开头算一次的常量：本地 vendor 目录没有副本时，
+// 页面是 404 -> onerror 里动态插入 CDN 脚本，也就是「异步」到位的。
+// 如果开头就把结果存成常量，等 Leaflet 到了它还是 false，
+// 依赖它的图标就会被永久设成 null（踩过一次：地图能显示，但一播放视频就报
+// Cannot read properties of null (reading 'createIcon')）。
+function leafletReady(){
+  return typeof L!=='undefined';
+}
+
+// 脚本级错误必须看得见。放在最前面，保证后面任何初始化异常（暂时性死区、
+// 变量拼错、Leaflet 缺失等）都能显示出来，而不是让页面静默变成几个空白框。
+function showFatal(message){
+  const box=document.getElementById('fatalNotice');
+  if(!box)return;
+
+  let text='页面脚本出错：'+message;
+
+  // 跨域脚本（Leaflet 来自 CDN）内部抛错时，浏览器会把详情抹成
+  // 「Script error.」并且不给文件名和行号。这种情况下必须说明白，
+  // 否则这条提示等于没有信息量。
+  if(/^Script error\.?$/i.test(String(message).trim())){
+    text+='\n（这是跨域脚本内部抛出的异常，浏览器隐去了详情。'
+      +'已给 CDN 脚本加上 crossorigin，刷新后应能看到真实原因；'
+      +'如果仍然只说 Script error，多半是地图库内部报错，请连同上面的操作一起反馈。）';
+  }
+
+  box.style.display='block';
+  box.textContent=text+'\n（如果只看到空白，请把这条信息反馈给开发者）';
+
+  const close=document.getElementById('fatalClose');
+  if(close)close.style.display='flex';
+}
+
+// 清掉提示。加载阶段的一次性异常（例如 Leaflet 晚到）修好后不该一直挂着 ——
+// 之前这个横幅只增不减，明明功能已恢复却还在红着。
+function clearFatal(){
+  const box=document.getElementById('fatalNotice');
+  if(box)box.style.display='none';
+
+  const close=document.getElementById('fatalClose');
+  if(close)close.style.display='none';
+}
+
+document.getElementById('fatalClose')?.addEventListener('click',clearFatal);
+
+window.addEventListener('error',e=>{
+  showFatal((e.message||'未知错误')
+    +'  位置：'+String(e.filename||'').split('/').pop()+':'+(e.lineno||'?'));
+});
+
+window.addEventListener('unhandledrejection',e=>{
+  showFatal('未处理的异步错误：'+((e.reason&&e.reason.message)||e.reason||'未知'));
+});
+
+const projectSelect=document.getElementById('projectSelect');
+const projectNotice=document.getElementById('projectNotice');
+const fileNotice=document.getElementById('fileNotice');
+const mapNotice=document.getElementById('mapNotice');
+const fileList=document.getElementById('fileList');
+const missingHint=document.getElementById('missingHint');
+const filterDate=document.getElementById('filterDate');
+const filterType=document.getElementById('filterType');
+const stats=document.getElementById('stats');
+const legend=document.getElementById('legend');
+const tileHint=document.getElementById('tileHint');
+const loadAllBtn=document.getElementById('loadAllBtn');
+const refreshBtn=document.getElementById('refreshBtn');
+const baseMapSelect=document.getElementById('baseMap');
+const clearBtn=document.getElementById('clearBtn');
+const placeInput=document.getElementById('placeInput');
+const placeSearchBtn=document.getElementById('placeSearchBtn');
+const poiList=document.getElementById('poiList');
+const probePanel=document.getElementById('probePanel');
+const probeLine=document.getElementById('probeLine');
+const probeCoord=document.getElementById('probeCoord');
+const probeSource=document.getElementById('probeSource');
+const probeLabel=document.getElementById('probeLabel');
+const altVideos=document.getElementById('altVideos');
+const playHitBtn=document.getElementById('playHitBtn');
+const resultFlyBtn=document.getElementById('resultFlyBtn');
+const searchNearbyBtn=document.getElementById('searchNearbyBtn');
+const clearProbeBtn=document.getElementById('clearProbeBtn');
+const hitDetail=document.getElementById('hitDetail');
+
+// 「播放此处视频 / 地图定位到该点」是操作条里的常驻按钮（不再每次重建 DOM），
+// 所以检索结果存这里，按钮只负责用。inline onclick 每次渲染都生成一份，
+// 既容易漏掉监听清理，也没法复用按钮。
+let hitPayload=null;
+let hitFocusLatLng=null;
+
+const colors=['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#0891b2','#db2777','#4f46e5','#65a30d','#ea580c'];
+// 轨迹地图的缩放上限。
+// 原来 fitBounds 不带 maxZoom、定位又用 17 级 —— 短的一段轨迹会被放到很高的
+// 级别，航迹和视场框都跑出画面。这两个常量就是用来压住它的，想更远/更近改这里。
+const TRACK_FIT_MAX_ZOOM=15;   // 自动缩放到轨迹时的最高级别（数字越小看得越广）
+const TRACK_FOCUS_ZOOM=16;     // 「地图定位到该点」用的级别
+
+let map=null;
+let layerGroup=null;
+let geoFiles=[];
+// 3D 功能暂时不做：同一个视频只保留一条 GeoJSON 记录。
+// 依据（实测对比 V/S/T 三路的 .geojson 与 .3d.geojson）：两版点数完全相同、
+// 经纬度逐点一致，3D 版只是坐标多一个高度分量，并额外存了 height_type /
+// max_height / min_height / point_heights（其中 point_heights 与坐标第三维
+// 完全重复，所以文件大了 1.4 MB）。2D 地图不用高度，就留体积更小的普通版。
+// 想恢复显示两条，把 SHOW_3D_FILES 改成 true（3D 相关代码都保留未删）。
+const SHOW_3D_FILES=false;
+let loadedTracks=[];      // 已加载的全部航迹，供“按此位置搜索飞行视频”检索
+let probeMarker=null;     // 当前选点标记
+let probeLatLng=null;     // 当前选点坐标
+let probeText='';         // 当前选点说明（地名等）
+let highlightLayers=[];   // 检索结果高亮图层
+let allLoaded=false;      // 是否已加载全部轨迹
+const NEARBY_WARN_METERS=3000;
+
+// ------------------------------------------------------------
+// 各功能的开关状态。
+//
+// 必须声明在脚本最前面！JS 的 let/const 有「暂时性死区」：函数声明会提升，
+// 所以顶层的 applyXxxVisibility() 能调用后面的函数，但那个函数里读到的
+// let 变量如果还没执行到声明处，就会抛
+// ReferenceError: Cannot access 'xxx' before initialization，
+// 而且会直接中断整个顶层脚本 —— 连项目下拉、文件列表都不会初始化。
+// （本项目踩过一次：applyFootprintVisibility() 调 syncMapPip() 读 mapPipOn。）
+// ------------------------------------------------------------
+
+let crosshairOn=true;     // 画面中心准星
+let footprintOn=true;     // 镜头视场范围
+let thermalOn=false;      // 同步热成像小窗（默认关，按需打开）
+let mapPipOn=false;       // 地图小地图（默认关，按需打开）
+
+function show(el,msg,error=false){el.textContent=msg;el.className=error?'notice error':'notice';el.style.display='block'}
+function hide(el){el.style.display='none'}
+
+// 卡片、提示的出现/收起都会改变地图容器的高度。Leaflet 缓存了容器尺寸，
+// 不重算的话飞机、选点、视场的位置都会偏，严重时整块内容跑到可视区外面。
+function refreshMapSizeSoon(){
+  if(!map)return;
+  setTimeout(()=>{if(map)map.invalidateSize()},0);
+  setTimeout(()=>{if(map)map.invalidateSize()},140);
+}
+
+// 收起「最近飞行轨迹」的结果：操作条里那两个按钮隐藏，
+// 地图下面的其他视频与信息一起收起，并让地图重算尺寸。
+// 注意不动选点/搜索按钮 —— 它们属于选点流程，和检索结果无关。
+function hideNearbyResult(){
+  if(playHitBtn)playHitBtn.style.display='none';
+  if(resultFlyBtn)resultFlyBtn.style.display='none';
+  hitPayload=null;
+  hitFocusLatLng=null;
+  hide(altVideos);
+  hide(hitDetail);
+  refreshMapSizeSoon();
+}
+function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function formatSize(n){if(!n)return '0 B';const u=['B','KB','MB','GB','TB'];let i=0,x=n;while(x>=1024&&i<u.length-1){x/=1024;i++}return x.toFixed(i?2:0)+' '+u[i]}
+function formatTime(sec){if(sec==null)return '-';sec=Number(sec);if(!Number.isFinite(sec))return '-';const h=Math.floor(sec/3600);const m=Math.floor((sec%3600)/60);const s=(sec%60).toFixed(3).padStart(6,'0');return h?`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${s}`:`${String(m).padStart(2,'0')}:${s}`}
+
+// GeoJSON 路径 -> 对应视频路径。注意 xxx.3d.geojson 对应的也是 xxx.MP4，不是 xxx.3d.mp4
+function videoPathFromGeojson(relativePath){
+  return String(relativePath||'')
+    .replace(/\.3d\.geojson$/i,'.mp4')
+    .replace(/\.geojson$/i,'.mp4');
+}
+
+// 取一条航迹的逐点高度。
+// 历史上 3D GeoJSON 把高度存了两份：坐标第三维 + point_heights，两者完全一致。
+// 生成端已经去掉了冗余的 point_heights，所以这里退回从坐标第三维取
+// —— 这样新旧两种文件都能取到高度。
+function heightsOfTrack(props,coords){
+  if(Array.isArray(props.point_heights)&&props.point_heights.length){
+    return props.point_heights;
+  }
+
+  return (coords||[]).map(c=>Array.isArray(c)&&c.length>2?c[2]:null);
+}
+
+// 文件名太长了（DJI_20260924095258_0001_V.geojson 要折三行），
+// 拆成「年月日 时间 · 编号 · 后缀」显示。不符合这个命名的就原样显示，不做猜测。
+// 拆出来的 date 同时供「按日期筛选」使用，所以抽成一个函数共用。
+function parseDjiName(relativePath){
+  const base=String(relativePath||'')
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.geojson$/i,'')
+    .replace(/\.3d$/i,'');
+
+  const m=base.match(/^(.+?)_(\d{8})(\d{6})_(\d+)_([A-Za-z]+)$/);
+
+  if(!m)return null;
+
+  const d=m[2];
+  const t=m[3];
+
+  return {
+    prefix:m[1],
+    date:`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`,
+    time:`${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)}`,
+    serial:m[4],
+    lens:m[5].toUpperCase(),
+    base
+  };
+}
+
+//   DJI_20260924095258_0001_V  ->  2026-09-24 09:52:58 · 0001 · V
+function shortFileName(relativePath){
+  const p=parseDjiName(relativePath);
+
+  if(!p){
+    return String(relativePath||'')
+      .split(/[\\/]/)
+      .pop()
+      .replace(/\.geojson$/i,'')
+      .replace(/\.3d$/i,'');
+  }
+
+  return `${p.date} ${p.time} · ${p.serial} · ${p.lens}`;
+}
+
+// 供「按日期筛选」用；拆不出日期返回空串
+function dateOfFile(relativePath){
+  const p=parseDjiName(relativePath);
+  return p?p.date:'';
+}
+
+// 文件列表的筛选：按「年月日」和「视频类型」。空串表示不筛。
+let fileFilterDate='';
+let fileFilterType='';
+
+function fileMatchesFilter(f){
+  if(fileFilterDate&&dateOfFile(f.relative_path)!==fileFilterDate)return false;
+  if(fileFilterType&&streamLabelOf(f.relative_path)!==fileFilterType)return false;
+  return true;
+}
+
+// 返回 [{f,index}]，index 始终指向 geoFiles ——「加载」和 dataset.index 都靠它，
+// 不能因为筛选而错位。
+function filteredGeoFiles(){
+  return geoFiles
+    .map((f,index)=>({f,index}))
+    .filter(x=>fileMatchesFilter(x.f));
+}
+
+// 「加载全部轨迹」加载的就是当前筛选出来的那些，筛选时把数量写进按钮，
+// 免得用户以为加载的还是全部
+function updateLoadAllLabel(){
+  const filtered=Boolean(fileFilterDate||fileFilterType);
+  const n=filteredGeoFiles().length;
+  loadAllBtn.textContent=filtered?`加载筛选（${n}）`:'加载全部';
+}
+
+// 依据当前文件列表刷新两个下拉框；选项里没有的选中值要清掉
+function buildFileFilters(){
+  const dates=[...new Set(geoFiles.map(f=>dateOfFile(f.relative_path)).filter(Boolean))].sort();
+
+  const types=[...new Set(
+    geoFiles.map(f=>streamLabelOf(f.relative_path)).filter(t=>t&&t!=='其他')
+  )].sort((a,b)=>streamRankOf(a)-streamRankOf(b));
+
+  if(filterDate){
+    filterDate.innerHTML='<option value="">全部日期</option>'
+      +dates.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  }
+
+  if(filterType){
+    filterType.innerHTML='<option value="">全部类型</option>'
+      +types.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  }
+
+  if(fileFilterDate&&!dates.includes(fileFilterDate))fileFilterDate='';
+  if(fileFilterType&&!types.includes(fileFilterType))fileFilterType='';
+
+  if(filterDate)filterDate.value=fileFilterDate;
+  if(filterType)filterType.value=fileFilterType;
+}
+
+function initMap(){
+  if(map) return;
+  map=L.map('map').setView([23.0,114.0],9);
+  layerGroup=L.featureGroup().addTo(map);
+  // 点击地图空白处选点，作为“按此位置搜索飞行视频”的基准。
+  // 视频窗口打开时不改变选点，免得把正在对照的检索结果打乱。
+  map.on('click',e=>{
+    if(clip){
+      show(mapNotice,'视频窗口打开时，点地图不会改变选点；先关闭视频再点选位置。');
+      return;
+    }
+    setProbe(e.latlng,'地图点击','');
+  });
+}
+
+/* ============================================================
+   底图切换（街道图 / 卫星图 / OpenStreetMap）
+   天地图的 key 是「服务器端」类型，浏览器直连会被拒（301013），
+   所以底图统一走服务端代理 /maptile/，顺带在服务端做本地缓存。
+   ============================================================ */
+
+const BASEMAP_DEFS={
+  street:{
+    name:'街道图（天地图）',
+    attribution:'© 天地图',
+    layers:[{source:'tdt_vec',maxZoom:18},{source:'tdt_cva',maxZoom:18}]
+  },
+  satellite:{
+    name:'卫星图（天地图影像）',
+    attribution:'© 天地图',
+    layers:[{source:'tdt_img',maxZoom:18},{source:'tdt_cia',maxZoom:18}]
+  },
+  osm:{
+    name:'OpenStreetMap',
+    attribution:'© OpenStreetMap contributors',
+    layers:[{source:'osm',maxZoom:19}]
+  }
+};
+
+let baseLayers=[];
+let baseMapWarned='';
+let currentBaseMapKind='street';
+
+function clearBaseLayers(){
+  baseLayers.forEach(layer=>{try{map.removeLayer(layer)}catch(e){}});
+  baseLayers=[];
+}
+
+function setBaseMap(kind){
+  if(!map)return;
+
+  const def=BASEMAP_DEFS[kind]||BASEMAP_DEFS.street;
+
+  baseMapWarned='';
+  clearBaseLayers();
+
+  // 换底图时把上一条瓦片提示收掉：新底图重新试，行不行由它自己说话
+  if(tileHint)tileHint.style.display='none';
+
+  def.layers.forEach((item,index)=>{
+    const layer=L.tileLayer(
+      `/maptile/${item.source}/{z}/{x}/{y}.png`,
+      {
+        minZoom:3,
+        maxZoom:item.maxZoom,
+        // 底图 zIndex 小、注记层 zIndex 大，保证注记压在底图上面
+        zIndex:index,
+        attribution:index===0?def.attribution:''
+      }
+    );
+
+    layer.on('tileerror',()=>{
+      if(baseMapWarned===kind)return;
+      baseMapWarned=kind;
+
+      // 这只是「某些瓦片没取到」，不影响轨迹和视频，属于次要提示:
+      // 用小字放到地图下面，不占地图上方那一大块（原来是个醒目红框，太吵）。
+      if(tileHint){
+        tileHint.textContent=
+          `底图「${def.name}」有瓦片没取到。用天地图的话，检查 tianditu_key.txt 里的 tk 是否有效或已超额；也可以先切到 OpenStreetMap。`;
+        tileHint.style.display='block';
+        refreshMapSizeSoon();
+      }
+    });
+
+    // 有瓦片取到就说明底图其实可用，把那条小字提示收掉。
+    // 这里不动 baseMapWarned —— 否则底图不稳定时会反复弹提示。
+    layer.on('tileload',()=>{
+      if(tileHint&&tileHint.style.display!=='none'){
+        tileHint.style.display='none';
+        refreshMapSizeSoon();
+      }
+    });
+
+    layer.addTo(map);
+    baseLayers.push(layer);
+  });
+
+  const maxZoom=def.layers[0].maxZoom;
+  map.setMaxZoom(maxZoom);
+
+  if(map.getZoom()>maxZoom)map.setZoom(maxZoom);
+
+  currentBaseMapKind=kind;
+  applyMapPipBase();   // 地图小窗跟着换底图
+}
+
+async function initBaseMap(){
+  let hasTianditu=false;
+
+  try{
+    const d=await api('/api/config');
+    hasTianditu=!!d.tianditu;
+  }catch(e){}
+
+  if(!hasTianditu){
+    // 没有配置天地图 key 就把那两个选项禁用，默认用 OSM
+    Array.from(baseMapSelect.options).forEach(option=>{
+      if(option.value==='osm')return;
+      option.disabled=true;
+      option.textContent+='（未配置 key）';
+    });
+    baseMapSelect.value='osm';
+  }
+
+  setBaseMap(baseMapSelect.value);
+}
+
+async function api(url,options={}){const r=await fetch(url,options);const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||`请求失败：${r.status}`);return d}
+
+async function loadProjects(){
+  try{
+    const d=await api('/api/project/list');
+    projectSelect.innerHTML='';
+    if(!d.projects?.length){projectSelect.innerHTML='<option>暂无项目</option>';return}
+    d.projects.forEach((p,i)=>{const o=document.createElement('option');o.value=p.name;o.textContent=p.name;projectSelect.appendChild(o)});
+    await scanGeoJSON();
+    // 初次载入 / 重新载入后，把三个步骤按钮的状态对齐实际情况
+    refreshFlowStates();
+  }catch(e){show(projectNotice,e.message,true)}
+}
+
+async function scanGeoJSON(){
+  const name=projectSelect.value;
+  if(!name)return;
+  hide(fileNotice);fileList.innerHTML='<div style="color:#64748b;padding:15px">正在扫描已生成的 GeoJSON……</div>';
+  try{
+    const d=await api('/api/project/geojson-list?name='+encodeURIComponent(name));
+    geoFiles=pickOneGeoFilePerVideo(d.files||[]);
+    buildFileFilters();
+    renderFiles();
+    // 这里原来会显示一行「当前项目：xxx」，但上面下拉框已经写着它是哪个项目了，
+    // 属于重复信息，去掉。projectNotice 留给真正的消息（创建/删除/出错）。
+    hide(projectNotice);
+
+    // 顺带算一下「缺哪些」：SRT/GeoJSON 被误删时，列表上看不出来，
+    // 但航迹点不进去。这里在列表上方提示一行，点一下就把缺的补齐。
+    refreshMissingHint(name);
+  }catch(e){fileList.innerHTML='';show(fileNotice,e.message,true)}
+}
+
+// 检查当前项目有没有缺失的 SRT / GeoJSON，有就在三个按钮下面写一行字。
+// 不提供按钮：补齐无非就是点「生成 SRT / 生成 GeoJSON」，
+// 而那两个按钮本来就是「缺什么生成什么」，多一个按钮反而重复。
+async function refreshMissingHint(name){
+  if(!missingHint)return;
+
+  if(!name||name==='暂无项目'){hide(missingHint);return}
+
+  try{
+    const {srt,geo}=await collectPending(name);
+    const parts=[];
+
+    if(srt.length)parts.push(`缺失 SRT 文件 ${srt.length} 个`);
+    if(geo.length)parts.push(`缺失 GeoJSON 文件 ${geo.length} 个`);
+
+    if(!parts.length){hide(missingHint);return}
+
+    missingHint.textContent=parts.join('、');
+    missingHint.style.display='block';
+  }catch(e){
+    hide(missingHint);
+  }
+}
+
+function renderFiles(){
+  fileList.innerHTML='';
+  if(!geoFiles.length){show(fileNotice,'当前项目还没有生成 GeoJSON。请用上面的「生成 GeoJSON」生成，或先建项目导入数据。',false);return}
+  hide(fileNotice);
+
+  // 按视频类型归拢（同类型内保持原顺序）。
+  // 注意：排序只影响显示顺序，dataset.index 和 loadOne 仍然用 geoFiles 的下标，
+  // 否则点“加载”会加载错文件。
+  const entries=filteredGeoFiles();
+
+  if(!entries.length){
+    show(fileNotice,'没有符合筛选条件的文件。把「日期」或「类型」改回“全部”试试。',false);
+    updateLoadAllLabel();
+    return;
+  }
+
+  const order=entries
+    .map(x=>({index:x.index,rank:streamRankOf(x.f.relative_path)}))
+    .sort((a,b)=>a.rank-b.rank||a.index-b.index);
+
+  order.forEach(({index})=>{
+    const f=geoFiles[index];
+    const item=document.createElement('div');item.className='file-item';item.dataset.index=index;
+
+    const typeLabel=streamLabelOf(f.relative_path);
+    const typeBadge=(typeLabel&&typeLabel!=='其他')
+      ?`<span class="badge badge-type" title="${esc(streamNoteOf(f.relative_path))}">${esc(typeLabel)}</span>`
+      :'';
+
+    // 只留：文件名（简化）、类型、大小、记录数、轨迹段。
+    // 「数据文件夹 / 相对路径」那行太长会把窄列撑出横向滚动条，挪到悬停提示里。
+    item.title=`${f.file_name}\n数据文件夹：${f.folder_name}　·　相对路径：${f.relative_path}`;
+
+    item.innerHTML=`<div class="file-main"><div class="file-name">${esc(shortFileName(f.relative_path))}</div><div class="file-badges">${typeBadge}<span class="badge">${formatSize(f.size)}</span><span class="badge">记录 ${f.record_count??'-'}</span><span class="badge">轨迹段 ${f.segment_count??'-'}</span></div></div><div class="file-acts"><button class="secondary" data-act="load">加载</button><button class="secondary danger" data-act="del" title="把这个 GeoJSON 文件从项目里删掉（源视频和 SRT 不动）">删除</button></div>`;
+    item.querySelector('button[data-act="load"]').addEventListener('click',ev=>{ev.stopPropagation();loadOne(index)});
+    item.querySelector('button[data-act="del"]').addEventListener('click',ev=>{
+      ev.stopPropagation();
+      deleteGeoFile(index);
+    });
+    item.addEventListener('click',()=>loadOne(index));
+    fileList.appendChild(item);
+  });
+
+  updateLoadAllLabel();
+}
+
+async function fetchGeo(f){
+  const q=new URLSearchParams({name:projectSelect.value,folder_index:String(f.folder_index),path:f.relative_path});
+  const d=await api('/api/project/geojson?'+q.toString());return d.geojson;
+}
+
+function popup(feature, fileInfo){
+  const p=feature.properties||{};
+  const videoName=p.video||'';
+  const videoPath=videoPathFromGeojson(fileInfo.relative_path);
+
+  const clickStart=Number.isFinite(Number(p._click_start))
+    ? Number(p._click_start)
+    : Number(p.video_start||0);
+
+  const payload={
+    folder_index:fileInfo.folder_index,
+    relative_path:videoPath,
+    video_start:clickStart,
+    video_end:Number(p.video_end||0),
+    video:videoName
+  };
+
+  const encoded=encodeURIComponent(JSON.stringify(payload));
+
+  return `<div class="popup-title">${esc(videoName||'轨迹')}</div>
+    <div class="popup-row">轨迹段：${esc(p.segment_index??'-')}</div>
+    <div class="popup-row">点数：${esc(p.point_count??'-')}</div>
+    <div class="popup-row">点击位置时间：${formatTime(clickStart)}</div>
+    <div class="popup-row">轨迹段结束：${formatTime(p.video_end)}</div>
+    <div class="popup-row">剩余：${formatTime(Math.max(0,Number(p.video_end||0)-clickStart))}</div>
+    <button class="play-btn" onclick="openVideoFromPopup('${encoded}')">▶ 从点击位置播放</button>`;
+}
+
+function nearestPointTime(feature, clickLatLng){
+  const geometry=feature.geometry||{};
+  const coords=geometry.coordinates||[];
+  const times=(feature.properties||{}).point_times||[];
+
+  if(!coords.length || !times.length){
+    return Number(feature.properties?.video_start||0);
+  }
+
+  let bestIndex=0;
+  let bestDistance=Infinity;
+
+  const lat0=clickLatLng.lat*Math.PI/180;
+  const cosLat=Math.cos(lat0);
+
+  for(let i=0;i<coords.length;i++){
+    const c=coords[i];
+
+    if(!Array.isArray(c) || c.length<2){
+      continue;
+    }
+
+    const dx=(Number(c[0])-clickLatLng.lng)*cosLat;
+    const dy=Number(c[1])-clickLatLng.lat;
+    const distance=dx*dx+dy*dy;
+
+    if(distance<bestDistance){
+      bestDistance=distance;
+      bestIndex=i;
+    }
+  }
+
+  const t=Number(times[bestIndex]);
+
+  return Number.isFinite(t)
+    ? t
+    : Number(feature.properties?.video_start||0);
+}
+
+// 轨迹线的宽度，以及「接鼠标」的那条隐形线的宽度。
+// Leaflet 的 SVG 没有独立热区：能不能点中，取决于描边宽度本身 ——
+// 所以只靠 5px 的可见线去点，命中范围就只有 5px，很难对准。
+// 办法是叠一条透明的粗线专门接鼠标（点选范围 = TRACK_HIT_WEIGHT），
+// 可见线保持原样。想让点选更宽松，把 18 调大即可。
+const TRACK_LINE_WEIGHT=5;
+const TRACK_HIT_WEIGHT=18;
+
+function addGeo(data,index,name,fileInfo){
+  const color=colors[index%colors.length];
+
+  const layer=L.geoJSON(data,{
+    // 可见线不接鼠标：命中判定全部交给下面的隐形粗线，避免两套判定打架
+    interactive:false,
+
+    style:()=>({
+      color,
+      weight:TRACK_LINE_WEIGHT,
+      opacity:.85
+    }),
+
+    onEachFeature:(feature,layer)=>{
+      // 登记这条航迹，供“按此位置搜索飞行视频”检索。
+      // 只在这里登记一次（另一条隐形线不再登记，否则 loadedTracks 会有重复）。
+      const props=feature.properties||{};
+      const geometry=feature.geometry||{};
+
+      if(geometry.type==='LineString'){
+        const coords=geometry.coordinates||[];
+
+        loadedTracks.push({
+          coords,
+          times:props.point_times||[],
+          // 高度优先取 point_heights；新生成的 3D 文件已经不再写这个冗余字段
+          // （和坐标第三维完全重复），所以退回从坐标第三维取。
+          heights:heightsOfTrack(props,coords),
+          fileInfo,
+          feature,
+          layer,
+          color,
+          name,
+          video:props.video||'',
+          videoEnd:Number(props.video_end||0)
+        });
+      }
+    }
+  });
+
+  layer.addTo(layerGroup);
+
+  // 隐形粗线：透明但「有描边」，所以照样能被鼠标命中。
+  // 它的宽度就是实际的点选范围；指到它上面时 Leaflet 会给出 pointer 光标，
+  // 用户因此能看出「现在可以点」。
+  const hit=L.geoJSON(data,{
+    className:'track-hit',
+
+    style:()=>({
+      color,
+      weight:TRACK_HIT_WEIGHT,
+      opacity:0,
+      fill:false
+    }),
+
+    onEachFeature:(feature,layer)=>{
+      // 轨迹线的点击不要冒泡到地图，避免误触发“选点”
+      layer.options.bubblingMouseEvents=false;
+
+      layer.bindPopup(
+        popup(feature,fileInfo)
+      );
+
+      layer.on('click',(e)=>{
+        const clickedTime=nearestPointTime(
+          feature,
+          e.latlng
+        );
+
+        feature.properties._click_start=clickedTime;
+
+        layer.setPopupContent(
+          popup(feature,fileInfo)
+        );
+
+        layer.openPopup(
+          e.latlng
+        );
+      });
+    }
+  });
+
+  hit.addTo(layerGroup);
+
+  legend.innerHTML+=`<div class="legend-item"><span class="line" style="background:${color}"></span>${esc(name)}</div>`;
+
+  return layer;
+}
+
+const videoModal=document.getElementById('videoModal');
+const videoPlayer=document.getElementById('videoPlayer');
+const videoStage=document.querySelector('.video-stage');
+const videoTitle=document.getElementById('videoTitle');
+const videoInfo=document.getElementById('videoInfo');
+const videoStatus=document.getElementById('videoStatus');
+const videoClose=document.getElementById('videoClose');
+const followModeSelect=document.getElementById('followMode');
+const videoDialog=document.getElementById('videoDialog');
+const videoDialogHead=document.getElementById('videoDialogHead');
+const videoTelemetry=document.getElementById('videoTelemetry');
+const crosshairToggle=document.getElementById('crosshairToggle');
+const footprintToggle=document.getElementById('footprintToggle');
+const thermalToggle=document.getElementById('thermalToggle');
+const thermalPip=document.getElementById('thermalPip');
+const mapPipDiv=document.getElementById('mapPip');
+const mapPipCanvas=document.getElementById('mapPipCanvas');
+const mapPipToggle=document.getElementById('mapPipToggle');
+/* 自制的「全屏」按钮已删除（统一用 <video> 自带的那个，效果更好）。
+   这里保留常量并置为 null：Esc 链路与 fullscreenchange 仍会走到 syncFullscreenBtn()，
+   那里有 if(!fullscreenToggle) 守卫，所以不会出错。 */
+const fullscreenToggle=null;
+const sideToggle=document.getElementById('sideToggle');
+const sideRail=document.getElementById('sideRail');
+const videoThermal=document.getElementById('videoThermal');
+const videoCrosshair=document.getElementById('videoCrosshair');
+let videoStopAt=null;
+
+// 网页播放代理参数，必须与后端 PROXY_SECONDS / PROXY_BUCKET_SECONDS 保持一致
+const PROXY_SECONDS=90;
+const PROXY_BUCKET_SECONDS=30;
+
+const MEDIA_ERROR_TEXT={
+  1:'播放被中止',
+  2:'网络错误：视频数据没能从服务端取到',
+  3:'解码错误：视频数据损坏',
+  4:'浏览器不支持这个视频的编码格式'
+};
+
+function proxyBucketOf(start){
+  return Math.floor(Math.max(0,start)/PROXY_BUCKET_SECONDS)*PROXY_BUCKET_SECONDS;
+}
+
+// 播放模式：auto=先试原片，播不了才转码；direct=只用原片；proxy=只用转码片段
+// 可用网址参数覆盖：?proxy=0 强制原片，?proxy=1 强制转码
+function proxyMode(){
+  const v=(new URLSearchParams(location.search).get('proxy')||'').toLowerCase();
+  if(v==='0'||v==='direct'||v==='off')return 'direct';
+  if(v==='1'||v==='proxy'||v==='on')return 'proxy';
+  return 'auto';
+}
+
+let clip=null;       // 当前播放上下文
+let clipTimer=null;  // auto 模式下的等待计时器
+
+/* ============================================================
+   无人机实时位置箭头（跟随视频播放 / 暂停即停）
+   ============================================================ */
+
+// 三个图标改成「用到时再建」。Leaflet 可能晚到，不能在建图标这件事上
+// 依赖脚本开头就有的可用性判断。
+let droneIcon=null;
+let crosshairIcon=null;
+let probeIcon=null;
+
+function ensureMapIcons(){
+  if(!leafletReady())return false;
+
+  if(!droneIcon){
+    droneIcon=L.divIcon({
+      className:'drone-div-icon',
+      html:'<svg class="drone-arrow" viewBox="0 0 40 40"><path d="M20 3 L34 34 L20 26 L6 34 Z" fill="#1e88e5" stroke="#ffffff" stroke-width="3.2" stroke-linejoin="round"/></svg>',
+      iconSize:[34,34],
+      iconAnchor:[17,17]
+    });
+  }
+
+  if(!crosshairIcon){
+    crosshairIcon=L.divIcon({
+      className:'crosshair-div-icon',
+      html:'<svg class="crosshair-svg" viewBox="0 0 40 40">'
+          +'<g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="butt">'
+          +'<path d="M20 14 v-10 M20 26 v10 M14 20 h-10 M26 20 h10"/>'
+          +'</g>'
+          +'</svg>',
+      iconSize:[30,30],
+      iconAnchor:[15,15]
+    });
+  }
+
+  if(!probeIcon){
+    probeIcon=L.divIcon({
+      className:'probe-div-icon',
+      html:'<div class="probe-pin"></div>',
+      iconSize:[16,16],
+      iconAnchor:[8,8]
+    });
+  }
+
+  return true;
+}
+
+let droneMarker=null;
+let droneBearing=0;
+
+// 在单调递增的时间数组里找最接近的点（二分，约 16 次比较）
+function indexAtTime(times,seconds){
+  if(!times||!times.length)return -1;
+
+  let lo=0;
+  let hi=times.length-1;
+
+  if(seconds<=times[0])return 0;
+  if(seconds>=times[hi])return hi;
+
+  while(lo<hi){
+    const mid=(lo+hi)>>1;
+    if(times[mid]<seconds)lo=mid+1;else hi=mid;
+  }
+
+  // 取左右更近的那个
+  if(lo>0&&Math.abs(times[lo-1]-seconds)<Math.abs(times[lo]-seconds))return lo-1;
+  return lo;
+}
+
+// 计算朝向用的回看跨度（帧）。这套数据里 GPS 是 10Hz、SRT 是 30fps，
+// 每个坐标重复 3 帧；无人机悬停时短窗口内完全没有位移，所以逐级放宽。
+// 一律“往回看”：悬停期间给出的是进入悬停时的方向，也不会因为
+// 窗口跨过未来的掉头而算出反向。
+const BEARING_SPANS=[8,30,150,600];
+
+// 从 from 点指向 to 点的方位角；两点重合（原地不动）时返回 null
+function bearingBetween(coords,from,to){
+  const a=coords[from];
+  const b=coords[to];
+
+  if(!a||!b)return null;
+
+  const dLon=(Number(b[0])-Number(a[0]))*Math.cos(Number(a[1])*Math.PI/180);
+  const dLat=Number(b[1])-Number(a[1]);
+
+  if(Math.abs(dLon)<1e-9&&Math.abs(dLat)<1e-9)return null;
+
+  return (Math.atan2(dLon,dLat)*180/Math.PI+360)%360;
+}
+
+// 算飞行方位角（顺时针，正北为 0）
+function bearingAt(coords,index){
+  const last=coords.length-1;
+
+  // 优先往回看：悬停时给出进入悬停的方向，也不会看到未来的掉头
+  for(const span of BEARING_SPANS){
+    const b=bearingBetween(coords,Math.max(0,index-span),index);
+    if(b!==null)return b;
+  }
+
+  // 记录最开始还没起飞、往回看全无位移时，往前找一个方向用
+  for(const span of BEARING_SPANS){
+    const b=bearingBetween(coords,index,Math.min(last,index+span));
+    if(b!==null)return b;
+  }
+
+  return null;
+}
+
+// 当前播放的视频对应哪条航迹
+function trackForClip(){
+  if(!clip)return null;
+
+  const want=String(clip.path||'').replace(/\.mp4$/i,'.geojson').toLowerCase();
+
+  return loadedTracks.find(
+    t=>String(t.fileInfo.relative_path||'').toLowerCase()===want
+  )||loadedTracks.find(
+    t=>streamKeyOf(t.fileInfo.relative_path)===streamKeyOf(want)
+  )||null;
+}
+
+// 视频对应的航迹没加载时（例如从检索结果直接播放了另一路视频），
+// syncDroneMarker 会提前返回 —— 表现是「地图上的箭头、准星、视场都不动，
+// 但信息栏仍有数值」，用户完全无从判断哪里出了问题。
+// 所以这里提示一次，并按需补加载一条：用 addGeo 而不是 loadOne，
+// 后者会清空所有图层并跳转视野，播放中调用会把地图搅乱。
+let missingTrackPath='';
+
+function noteMissingTrack(){
+  if(!clip||!map)return;
+
+  const want=String(clip.path||'').replace(/\.mp4$/i,'.geojson').toLowerCase();
+
+  // 每路视频只提示一次，否则每一帧都会刷屏
+  if(missingTrackPath===want)return;
+  missingTrackPath=want;
+
+  const f=geoFiles.find(x=>String(x.relative_path||'').toLowerCase()===want);
+
+  if(!f){
+    show(
+      mapNotice,
+      `这个视频没有对应的 GeoJSON（找的是 ${want}），`
+      +'所以地图上不会出现它的位置和视场。请先在左侧「GeoJSON 文件」里扫描确认。',
+      true
+    );
+    return;
+  }
+
+  show(mapNotice,`正在补加载这个视频对应的轨迹：${f.relative_path}……`);
+  loadTrackForClip(f);
+}
+
+async function loadTrackForClip(f){
+  try{
+    const d=await fetchGeo(f);
+
+    addGeo(d,loadedTracks.length%colors.length,f.file_name,f);
+
+    show(mapNotice,`已自动加载对应轨迹：${f.relative_path}。地图上的箭头和视场会跟着视频走。`);
+  }catch(e){
+    show(mapNotice,e.message,true);
+  }
+}
+
+// 建 marker 之前先确保图标存在。
+// 图标为 null 时 Leaflet 会在它自己（跨域加载）的代码里抛 createIcon 相关异常，
+// 浏览器只报「Script error.」，位置和原因都看不到 —— 宁可不建，也不要抛进去。
+// 正常路径下 boot() 已经建好图标，这里是一道兜底。
+function iconsUsable(){
+  if(droneIcon&&crosshairIcon&&probeIcon)return true;
+  return ensureMapIcons();
+}
+
+// 把箭头移到“当前视频时间”对应的航迹点上
+function syncDroneMarker(explicitVideoSeconds){
+  if(!clip||!map)return;
+
+  if(!clip.track)clip.track=trackForClip();
+
+  const track=clip.track;
+
+  if(!track){
+    // 没加载对应航迹：地图上什么都不会动。必须提示 + 尝试补加载，
+    // 不能静默返回（否则用户只看到「地图不动、信息栏却正常」）。
+    noteMissingTrack();
+    return;
+  }
+
+  const times=track.times;
+  if(!times||!times.length)return;
+
+  const vs=(explicitVideoSeconds!=null)?explicitVideoSeconds:videoPlayer.currentTime;
+
+  // 转码片段是从 bucket 秒开始的，原片直出则是 1:1
+  const trackSeconds=clip.useProxy?proxyBucketOf(clip.start)+vs:vs;
+
+  const index=indexAtTime(times,trackSeconds);
+  if(index<0)return;
+
+  const c=track.coords[index];
+  if(!Array.isArray(c)||c.length<2)return;
+
+  const latlng=L.latLng(Number(c[1]),Number(c[0]));
+
+  if(!droneMarker){
+    if(!iconsUsable())return;
+    droneMarker=L.marker(latlng,{
+      icon:droneIcon,
+      interactive:false,
+      zIndexOffset:1000
+    }).addTo(map);
+  }else{
+    droneMarker.setLatLng(latlng);
+  }
+
+  // 箭头朝向 = 画面中心方向，也就是字幕里的云台朝向 gb_yaw。
+  // 说明：SRT 里只有云台姿态（gb_yaw/gb_pitch/gb_roll），没有飞行器机体朝向；
+  // 而且箭头指向准星、和画面中心对得上，才是这里要表达的意思。
+  // 万一没有字幕数据（没生成 SRT 的素材），退回用航迹的飞行方向。
+  let bearing=null;
+
+  const telemetryIndex=telemetryIndexAt(trackSeconds);
+
+  if(
+    telemetryIndex>=0&&
+    Number.isFinite(telemetry.yaw[telemetryIndex])
+  ){
+    bearing=telemetry.yaw[telemetryIndex];
+  }else{
+    bearing=bearingAt(track.coords,index);
+  }
+
+  if(bearing!==null)droneBearing=bearing;
+
+  // 只改内层 transform，避免每次都重建图标 DOM
+  const el=droneMarker.getElement();
+  const arrow=el?el.querySelector('.drone-arrow'):null;
+  if(arrow)arrow.style.transform=`rotate(${droneBearing}deg)`;
+
+  // 记下当前位置，供地图跟随使用
+  clip.index=index;
+  clip.droneLatLng=latlng;
+  clip.trackSeconds=trackSeconds;
+
+  renderTelemetry();
+  syncCrosshair();
+  syncFootprint();
+  followViewport();
+  syncMapPip();
+}
+
+function hideDroneMarker(){
+  if(droneMarker&&map)map.removeLayer(droneMarker);
+  droneMarker=null;
+  hideMapCrosshair();
+  hideFootprint();
+  if(clip)clip.track=null;
+}
+
+/* ============================================================
+   地图跟随
+   fit    : 目标点 + 飞机 + 前方一段航迹都在视野内（默认）
+   center : 飞机固定在中心，只平移不缩放
+   off    : 不跟随
+   原则是“装得下就一动不动”，只在真装不下时才调整，避免地图一直抖。
+   ============================================================ */
+
+const FOLLOW_LOOKAHEAD=60;       // 调整视野时往前多留这么多秒的航迹
+const FOLLOW_HEADROOM=0.30;      // 调整时再多留的余量，减少后续调整次数
+const FOLLOW_PADDING=[70,70];
+const FOLLOW_MARGIN=0.10;        // 安全区：视野四边内缩比例
+const FOLLOW_MIN_INTERVAL=1500;  // 两次自动调整的最小间隔（毫秒）
+
+// 取一段航迹上的点，抽稀到 maxSamples 个以内
+function trackLatLngs(track,fromIndex,toIndex,maxSamples){
+  const out=[];
+  const coords=track.coords;
+  const n=coords.length;
+  const a=Math.max(0,Math.min(fromIndex,toIndex));
+  const b=Math.min(n-1,Math.max(fromIndex,toIndex));
+
+  if(b<a)return out;
+
+  const step=Math.max(1,Math.ceil((b-a+1)/maxSamples));
+
+  for(let i=a;i<=b;i+=step){
+    const c=coords[i];
+    if(Array.isArray(c)&&c.length>=2)out.push(L.latLng(Number(c[1]),Number(c[0])));
+  }
+
+  const last=coords[b];
+  if(Array.isArray(last)&&last.length>=2){
+    const ll=L.latLng(Number(last[1]),Number(last[0]));
+    const tail=out[out.length-1];
+    if(!tail||tail.lat!==ll.lat||tail.lng!==ll.lng)out.push(ll);
+  }
+
+  return out;
+}
+
+function followViewport(){
+  if(!clip||!map||!followModeSelect)return;
+
+  const mode=followModeSelect.value;
+
+  if(mode==='off')return;
+
+  const drone=clip.droneLatLng;
+  if(!drone)return;
+
+  // 飞机固定在中心：只在地图中心偏得较多时平移，缩放不动
+  if(mode==='center'){
+    const size=map.getSize();
+    const p=map.latLngToContainerPoint(drone);
+    const offX=Math.abs(p.x-size.x/2)/(size.x/2);
+    const offY=Math.abs(p.y-size.y/2)/(size.y/2);
+    if(offX>0.25||offY>0.25)map.panTo(drone,{animate:true,duration:0.3});
+    return;
+  }
+
+  // fit 模式
+  if(Date.now()-(clip.lastFollowAt||0)<FOLLOW_MIN_INTERVAL)return;
+
+  // 触发条件只看“必须始终可见”的两个点：飞机 + 目标点。
+  // 不能把前方航迹也算进触发条件——那段窗口一直在前移，会永远顶着
+  // 安全区边界，导致每个 tick 都重算，地图一直抖。
+  const core=probeLatLng?[drone,probeLatLng]:[drone];
+
+  // 坐标有 NaN 的话 L.latLngBounds 会在 Leaflet 内部抛错（跨域脚本，只报
+  // 「Script error.」），所以先自己挡掉，别把坏数据喂进去
+  if(!core.every(p=>p&&Number.isFinite(p.lat)&&Number.isFinite(p.lng)))return;
+
+  const coreBounds=L.latLngBounds(core);
+  const inner=map.getBounds().pad(-FOLLOW_MARGIN);
+
+  if(
+    inner.contains(coreBounds.getSouthWest())&&
+    inner.contains(coreBounds.getNorthEast())
+  ){
+    return;
+  }
+
+  // 确实需要调整了，才把前方航迹一起算进来，并额外留出余量，
+  // 让飞机能在这个视野里飞一段时间再调整下一次。
+  const need=core.slice();
+  const track=clip.track;
+
+  if(track&&track.times&&clip.index!=null&&clip.trackSeconds!=null){
+    const aheadIndex=indexAtTime(
+      track.times,
+      clip.trackSeconds+FOLLOW_LOOKAHEAD
+    );
+    trackLatLngs(track,clip.index,aheadIndex,80).forEach(ll=>need.push(ll));
+  }
+
+  const target=L.latLngBounds(need).pad(FOLLOW_HEADROOM);
+
+  clip.lastFollowAt=Date.now();
+
+  map.fitBounds(target,{
+    padding:FOLLOW_PADDING,
+    maxZoom:TRACK_FIT_MAX_ZOOM,
+    animate:true,
+    duration:0.4
+  });
+}
+
+/* ============================================================
+   视频窗口拖动 / 缩放：便于和地图对照看
+   位置和大小会保留，关掉再开还在原处。
+   ============================================================ */
+
+/* 视频面板固定在右栏里，位置由 CSS 布局决定 —— 原来那套
+   transform 偏移定位（dialogOffset / dialogWidth / videoMaxH /
+   applyDialogPlacement / dialogBaseRect）已经全部删除。
+   这里只保留「窄栏时让控件换行」这一件事。 */
+function applyVideoPanelLayout(){
+  if(!videoDialog)return;
+
+  // 栏窄到放不下所有控件时，允许它们换到第二行（避免被挤成一列竖排的字）
+  videoDialog.classList.toggle('narrow-tools',videoDialog.getBoundingClientRect().width<780);
+
+  refreshMapPipSize();
+}
+
+// 视频面板固定在右栏里，不再支持「拖标题栏移动」和「拖右下角缩放」，
+// 所以这两段指针处理整体删除（以及它们依赖的 dialogOffset / dialogWidth /
+// videoMaxH / dialogBaseRect / applyDialogPlacement / videoPlacementManual）。
+// 位置和大小全部交给 CSS 布局：栏多宽面板就多宽。
+
+/* ============================================================
+   视频实时信息：镜头 / 变焦倍率 / 镜头朝向 / 俯仰角 / 画面中心地面距离
+   数据来自 SRT（GeoJSON 里没有姿态和焦距），由后端按 10Hz 抽稀后返回。
+   ============================================================ */
+
+// 大疆经纬 M4T 是四摄：广角 24mm / 中长焦 70mm / 长焦 168mm / 热成像 53mm。
+// 记录文件跟着当前激活的镜头走，所以「当前镜头」要按焦距判断；
+// 而且必须用「光学焦距」（报告焦距 ÷ 数码变焦），否则广角开了数码变焦会被误判。
+const BASE_FOCAL=24;          // 广角端等效焦距，也是变焦倍率的基准
+const GROUND_MIN_PITCH=5;     // 俯仰再小的话地面交点太远，不给距离
+
+// 三颗可见光镜头的 DJI 标称倍率：广角 1× / 中长焦 3× / 长焦 7×。
+// 注意中长焦的精确比值是 70/24=2.92，DJI App 显示成 3×，这里跟它保持一致。
+// 三档之外，都是在这三颗镜头的基础上再叠数码变焦。
+const M4T_LENS_BANDS=[
+  {maxOptical:40,       name:'广角',   base:1},
+  {maxOptical:110,      name:'中长焦', base:3},
+  {maxOptical:Infinity, name:'长焦',   base:7}
+];
+
+let telemetry=null;           // 当前视频的实时信息
+const telemetryCache={};      // 按视频路径缓存，切回来不用重新取
+
+const COMPASS_NAMES=['北','东','南','西'];
+
+// 方位角 -> “东偏南 35°”这种中文说法
+function compassText(deg){
+  if(!Number.isFinite(deg))return '—';
+
+  const d=((deg%360)+360)%360;
+  const cardinals=[0,90,180,270];
+
+  let best=0;
+  let bestDiff=Infinity;
+
+  for(let i=0;i<4;i++){
+    let diff=Math.abs(d-cardinals[i]);
+    if(diff>180)diff=360-diff;
+    if(diff<bestDiff){bestDiff=diff;best=i}
+  }
+
+  if(bestDiff<0.5)return '正'+COMPASS_NAMES[best];
+
+  // 从最近的基准方向往哪一侧偏
+  const delta=((d-cardinals[best]+540)%360)-180;
+  const towards=delta>0?COMPASS_NAMES[(best+1)%4]:COMPASS_NAMES[(best+3)%4];
+
+  return `${COMPASS_NAMES[best]}偏${towards} ${Math.abs(delta).toFixed(0)}°`;
+}
+
+// 画面中心那条视线打到地面的点，到无人机正下方地面点的水平距离。
+// 注意是地面水平距离 h/tan(俯角)，不是空中直线距离 h/sin(俯角)。
+function groundCenterDistance(alt,pitch){
+  if(!Number.isFinite(alt)||!Number.isFinite(pitch)||alt<=0)return null;
+
+  const down=Math.abs(pitch);
+  if(down<GROUND_MIN_PITCH)return null;
+
+  return alt/Math.tan(down*Math.PI/180);
+}
+
+// 红外那一路独立；可见光那一路是 M4T 的三摄混合变焦，按光学焦距判断当前是哪颗
+function isInfraredPath(relativePath){
+  return /_t\.(mp4|mov)$/i.test(String(relativePath||''));
+}
+
+// 报告焦距 ÷ 数码变焦 = 光学焦距（M4T 的三种光学焦距是 24 / 70 / 168）
+function opticalFocalOf(focal,dzoom){
+  if(!Number.isFinite(focal))return null;
+  const zoom=(Number.isFinite(dzoom)&&dzoom>0)?dzoom:1;
+  return focal/zoom;
+}
+
+function lensInfoOf(relativePath,focal,dzoom){
+  if(isInfraredPath(relativePath)){
+    return {name:'红外',base:null,digital:null,total:null,text:'红外'};
+  }
+
+  const optical=opticalFocalOf(focal,dzoom);
+
+  if(optical==null){
+    return {name:'—',base:null,digital:null,total:null,text:'—'};
+  }
+
+  let band=M4T_LENS_BANDS[M4T_LENS_BANDS.length-1];
+
+  for(const item of M4T_LENS_BANDS){
+    if(optical<item.maxOptical){band=item;break}
+  }
+
+  const digital=(Number.isFinite(dzoom)&&dzoom>0)?dzoom:1;
+  const total=Math.round(band.base*digital*10)/10;
+
+  // DJI App 的写法：整数倍率不带小数，其余保留一位，例如“长焦 7×”“长焦 9.1×”
+  const text=`${band.name} ${Number.isInteger(total)?total:total.toFixed(1)}×`;
+
+  return {name:band.name,base:band.base,digital,total,text};
+}
+
+async function loadTelemetry(path){
+  if(!clip||clip.path!==path)return;
+
+  if(telemetryCache[path]!==undefined){
+    telemetry=telemetryCache[path];
+    thermalSource=telemetry.thermal||null;
+    renderTelemetry();
+    applyThermalVisibility();
+    return;
+  }
+
+  telemetryCache[path]=null;   // 占位，避免同一路重复请求
+
+  try{
+    const q=new URLSearchParams({
+      name:projectSelect.value,
+      folder_index:String(clip.folderIndex),
+      path
+    });
+
+    const d=await api('/api/project/telemetry?'+q.toString());
+
+    telemetryCache[path]=d;
+
+    if(clip&&clip.path===path){
+      telemetry=d;
+      thermalSource=d.thermal||null;
+      renderTelemetry();
+      applyThermalVisibility();
+    }
+  }catch(e){
+    telemetryCache[path]={error:e.message};
+
+    if(clip&&clip.path===path){
+      telemetry=telemetryCache[path];
+      renderTelemetry();
+    }
+  }
+}
+
+function renderTelemetry(){
+  if(!clip||!videoTelemetry){
+    if(videoTelemetry)videoTelemetry.innerHTML='';
+    return;
+  }
+
+  const parts=[];
+  if(!telemetry){
+    parts.push('<span class="dim">正在读取云台与焦距数据……</span>');
+
+  }else if(telemetry.error){
+    parts.push(`<span class="dim">实时信息不可用：${esc(telemetry.error)}</span>`);
+
+  }else if(!telemetry.times||!telemetry.times.length){
+    parts.push('<span class="dim">该视频没有可用的姿态数据</span>');
+
+  }else{
+    // 转码片段要补上 bucket 偏移，才能对上 SRT 的时间轴
+    const i=indexAtTime(telemetry.times,currentTelemetryTime());
+
+    const yaw=telemetry.yaw[i];
+    const pitch=telemetry.pitch[i];
+    const focal=telemetry.focal[i];
+    const dzoom=telemetry.dzoom[i];
+    const alt=telemetry.alt[i];
+
+    // 当前镜头：DJI App 的写法，例如“长焦 7×”“广角 1×”“中长焦 3×”
+    const lens=lensInfoOf(clip.path,focal,dzoom);
+
+    const optical=opticalFocalOf(focal,dzoom);
+
+    let lensTitle='焦距数据缺失';
+
+    if(focal!=null){
+      lensTitle=`等效焦距 ${(+focal).toFixed(1)} mm`;
+
+      if(optical!=null&&Math.abs(optical-focal)>0.05){
+        lensTitle+=`（光学 ${optical.toFixed(1)} mm）`;
+      }
+
+      if(lens.base!=null){
+        lensTitle+=`；DJI 标称 ${lens.name} ${lens.base}×`;
+        if(lens.base===3)lensTitle+=`（精确比值 ${(70/BASE_FOCAL).toFixed(2)}×）`;
+      }
+
+      if(lens.digital!=null&&Math.abs(lens.digital-1)>0.01){
+        lensTitle+=`，数码变焦 ${lens.digital.toFixed(2)}×`;
+      }
+    }
+
+    parts.push(`<span title="${esc(lensTitle)}"><b>镜头</b>${lens.text}</span>`);
+    parts.push(`<span><b>朝向</b>${compassText(yaw)}</span>`);
+
+    // 俯仰角用带符号的数字表示：俯角为负、仰角为正，一眼就能看出方向。
+    // （原来写成「俯角 27.2°」「仰角 5.0°」，得先读文字才知道朝哪边。）
+    let pitchText='—';
+    if(Number.isFinite(pitch)){
+      pitchText=Math.abs(pitch)<1
+        ?'水平'
+        :(pitch<0?'-':'+')+Math.abs(pitch).toFixed(1)+'°';
+    }
+    parts.push(`<span><b>俯仰角</b>${pitchText}</span>`);
+
+    const distance=groundCenterDistance(alt,pitch);
+    const distTitle='画面中心视线与地面的交点，到无人机正下方地面点的水平距离'
+      +`（按相对起飞点高度 ${alt!=null?(+alt).toFixed(1)+' m':'未知'} 估算，非空中直线距离）`;
+
+    let distText='—';
+    if(distance!=null){
+      distText=distance>=1000
+        ?(distance/1000).toFixed(2)+' km'
+        :distance.toFixed(0)+' m';
+    }else if(Number.isFinite(pitch)&&Math.abs(pitch)<GROUND_MIN_PITCH&&alt>0){
+      distText='接近水平';
+    }
+
+    parts.push(`<span title="${esc(distTitle)}"><b>画面中心地面距离</b>${distText}</span>`);
+  }
+
+  videoTelemetry.innerHTML=parts.join('');
+}
+
+/* ============================================================
+   画面中心准星
+   地图上一个 + 视频画面中心一个，两者指的是同一个点。
+   地图上的位置 = 从飞机正下方，沿镜头朝向走“画面中心地面距离”。
+   ============================================================ */
+
+let mapCrosshair=null;
+
+// 当前播放位置对应 SRT 时间轴上的秒数（转码片段要补 bucket 偏移）
+function currentTelemetryTime(){
+  if(!clip)return 0;
+  if(clip.trackSeconds!=null)return clip.trackSeconds;
+
+  return clip.useProxy
+    ?proxyBucketOf(clip.start)+videoPlayer.currentTime
+    :videoPlayer.currentTime;
+}
+
+function telemetryIndexAt(seconds){
+  if(!telemetry||!telemetry.times||!telemetry.times.length)return -1;
+  return indexAtTime(telemetry.times,seconds);
+}
+
+function currentTelemetryIndex(){
+  return telemetryIndexAt(currentTelemetryTime());
+}
+
+// 从一点沿方位角走一段地面距离（大地方位公式）
+function offsetLatLng(origin,distance,bearingDeg){
+  const R=6371000;
+  const delta=distance/R;
+  const theta=bearingDeg*Math.PI/180;
+  const phi1=origin.lat*Math.PI/180;
+  const lambda1=origin.lng*Math.PI/180;
+
+  const phi2=Math.asin(
+    Math.sin(phi1)*Math.cos(delta)
+    +Math.cos(phi1)*Math.sin(delta)*Math.cos(theta)
+  );
+
+  const lambda2=lambda1+Math.atan2(
+    Math.sin(theta)*Math.sin(delta)*Math.cos(phi1),
+    Math.cos(delta)-Math.sin(phi1)*Math.sin(phi2)
+  );
+
+  return L.latLng(phi2*180/Math.PI,lambda2*180/Math.PI);
+}
+
+// 从飞机位置沿方位角走一段地面距离，得到画面中心的落点
+function centerGroundLatLng(drone,yaw,pitch,alt){
+  const distance=groundCenterDistance(alt,pitch);
+
+  if(distance==null||!Number.isFinite(yaw))return null;
+
+  // 近乎正下视，落点就是飞机正下方
+  if(distance<0.5)return L.latLng(drone.lat,drone.lng);
+
+  return offsetLatLng(drone,distance,yaw);
+}
+
+function hideMapCrosshair(){
+  if(mapCrosshair&&map)map.removeLayer(mapCrosshair);
+  mapCrosshair=null;
+}
+
+function syncCrosshair(){
+  if(
+    !clip||!crosshairOn||!map||
+    !telemetry||!telemetry.times||!telemetry.times.length
+  ){
+    hideMapCrosshair();
+    return;
+  }
+
+  const drone=clip.droneLatLng;
+
+  const i=indexAtTime(telemetry.times,currentTelemetryTime());
+
+  // 变焦特效：总倍率超过 1× 就把准星变成浅红（中长焦 3×、长焦 7×，
+  // 或广角叠加数码变焦都算）。total 已经取整到一位小数，所以 >1 即生效。
+  const lens=lensInfoOf(clip.path,telemetry.focal[i],telemetry.dzoom[i]);
+  const zoomed=(lens.total!=null&&lens.total>1);
+
+  if(videoCrosshair){
+    videoCrosshair.classList.toggle('zoomed',zoomed);
+  }
+
+  if(!drone){hideMapCrosshair();return}
+
+  const target=centerGroundLatLng(
+    drone,
+    telemetry.yaw[i],
+    telemetry.pitch[i],
+    telemetry.alt[i]
+  );
+
+  // 镜头接近水平时没有有效的地面交点，宁可不显示，也不给一个假位置
+  if(!target){hideMapCrosshair();return}
+
+  if(!mapCrosshair){
+    if(!iconsUsable())return;
+    mapCrosshair=L.marker(target,{
+      icon:crosshairIcon,
+      interactive:false,
+      zIndexOffset:900
+    }).addTo(map);
+  }else{
+    mapCrosshair.setLatLng(target);
+  }
+
+  const el=mapCrosshair.getElement();
+  if(el)el.classList.toggle('zoomed',zoomed);
+}
+
+// 开关按钮统一在这里改状态：不写字面「开/关」，只切 .off 类换底色
+function setToggleState(button,on){
+  if(!button)return;
+  button.classList.toggle('off',!on);
+  button.setAttribute('aria-pressed',on?'true':'false');
+}
+
+function applyCrosshairVisibility(){
+  setToggleState(crosshairToggle,crosshairOn);
+
+  if(videoCrosshair){
+    videoCrosshair.style.display=crosshairOn?'block':'none';
+  }
+
+  if(crosshairOn)syncCrosshair();
+  else hideMapCrosshair();
+}
+
+if(crosshairToggle){
+  crosshairToggle.addEventListener('click',()=>{
+    crosshairOn=!crosshairOn;
+    applyCrosshairVisibility();
+  });
+}
+
+// 注意：这里不要直接调用 applyCrosshairVisibility()。
+// 顶层这类初始化统一放到脚本末尾的 boot() 里 —— 那时所有 let/const 都已初始化，
+// 不会踩「暂时性死区」（曾经因为顶层调用而让整页脚本中断）。
+
+/* ============================================================
+   镜头视场范围（画面覆盖到地面上的那一块）
+   方案：只画「画面下边缘 + 左右两条边缘」，上边缘不画 —— 因为
+   这个航次是 20~40° 下倾斜视，远边对俯仰角极其敏感（1° 误差 ≈ 112 m），
+   画出来没有意义。远边改用一个「超过这个地面距离就看不清」的模糊
+   虚线边界收口。
+   几何：针孔模型，由等效焦距推视场角，图像四角射线与地面求交。
+   ============================================================ */
+
+const FOOTPRINT_MAX_DISTANCE=300;   // 模糊边界：超过这个地面距离（米）当作看不清
+// 35mm 全幅对角线 43.27mm；DJI 的等效焦距按对角线折算，视频 16:9
+const FULLFRAME_DIAGONAL=43.2666;
+const FRAME_ASPECT=[16,9];
+
+let footprintLayers=null;
+
+function cssVar(name){
+  try{
+    return getComputedStyle(document.body).getPropertyValue(name).trim();
+  }catch(e){
+    return '';
+  }
+}
+
+// 等效焦距 -> [水平视场角, 垂直视场角]，单位度
+function fovOf(focal){
+  const diagonal=Math.sqrt(
+    FRAME_ASPECT[0]*FRAME_ASPECT[0]+FRAME_ASPECT[1]*FRAME_ASPECT[1]
+  );
+  const tanDiagonal=Math.tan(
+    Math.atan(FULLFRAME_DIAGONAL/(2*focal))
+  );
+
+  const tanH=tanDiagonal*FRAME_ASPECT[0]/diagonal;
+  const tanV=tanDiagonal*FRAME_ASPECT[1]/diagonal;
+
+  return [
+    2*Math.atan(tanH)*180/Math.PI,
+    2*Math.atan(tanV)*180/Math.PI
+  ];
+}
+
+// 图像上一点 (xImg,yImg ∈ [-1,1]，右/上为正) 对应的地面落点
+function groundPointForImage(origin,height,yaw,pitch,roll,xImg,yImg,hfov,vfov){
+  const tanH=Math.tan(hfov*Math.PI/360);
+  const tanV=Math.tan(vfov*Math.PI/360);
+
+  const yawR=yaw*Math.PI/180;
+  const pitchR=pitch*Math.PI/180;
+  const rollR=(Number.isFinite(roll)?roll:0)*Math.PI/180;
+
+  const sinY=Math.sin(yawR), cosY=Math.cos(yawR);
+  const sinP=Math.sin(pitchR), cosP=Math.cos(pitchR);
+
+  // 相机三轴（ENU：东、北、上）。gb_pitch 为负表示往下看。
+  const f=[cosP*sinY, cosP*cosY, sinP];
+  let u=[-sinP*sinY, -sinP*cosY, cosP];
+  let r=[
+    f[1]*u[2]-f[2]*u[1],
+    f[2]*u[0]-f[0]*u[2],
+    f[0]*u[1]-f[1]*u[0]
+  ];
+
+  // 云台增稳后 roll 基本是 0（实测 |roll| ≤ 0.2°），带上只是求完整
+  if(rollR){
+    const cr=Math.cos(rollR), sr=Math.sin(rollR);
+    const u2=[u[0]*cr+r[0]*sr, u[1]*cr+r[1]*sr, u[2]*cr+r[2]*sr];
+    const r2=[r[0]*cr-u[0]*sr, r[1]*cr-u[1]*sr, r[2]*cr-u[2]*sr];
+    u=u2; r=r2;
+  }
+
+  const d=[
+    r[0]*(xImg*tanH)+u[0]*(yImg*tanV)+f[0],
+    r[1]*(xImg*tanH)+u[1]*(yImg*tanV)+f[1],
+    r[2]*(xImg*tanH)+u[2]*(yImg*tanV)+f[2]
+  ];
+
+  // 射线指向地平线以上，打不到地面
+  if(d[2]>=-1e-6)return null;
+
+  const t=-height/d[2];
+  const east=t*d[0];
+  const north=t*d[1];
+  const distance=Math.hypot(east,north);
+
+  if(!Number.isFinite(distance))return null;
+
+  if(distance<0.05){
+    return {latlng:L.latLng(origin.lat,origin.lng),distance:0};
+  }
+
+  const bearing=(Math.atan2(east,north)*180/Math.PI+360)%360;
+
+  return {latlng:offsetLatLng(origin,distance,bearing),distance};
+}
+
+// 沿画面左右边缘从近到远找「地面距离刚好到 maxDistance」的那一点
+function edgePointAtDistance(project,xImg,maxDistance,farCorner){
+  const pNear=project(xImg,-1);
+
+  if(!pNear)return null;
+
+  // 远端本来就在范围内，直接用真实角点
+  if(farCorner&&farCorner.distance<=maxDistance)return farCorner.latlng;
+
+  // 连近端都超过上限，那就用近端（画面整个都很远）
+  if(pNear.distance>=maxDistance)return pNear.latlng;
+
+  let near=-1;
+  let far=1;
+
+  for(let i=0;i<26;i++){
+    const mid=(near+far)/2;
+    const p=project(xImg,mid);
+    if(!p){far=mid;continue}
+    if(p.distance>maxDistance)far=mid;else near=mid;
+  }
+
+  const hit=project(xImg,near);
+
+  return hit?hit.latlng:null;
+}
+
+// 算出要画的边缘：左端、左下、右下、右端
+function footprintGeometry(origin,alt,yaw,pitch,roll,focal,dzoom){
+  if(!Number.isFinite(alt)||alt<=0)return null;
+  if(!Number.isFinite(yaw)||!Number.isFinite(pitch)||!Number.isFinite(focal))return null;
+  // 镜头朝上或完全水平时没有地面投影
+  if(pitch>=0)return null;
+
+  // 注意：视场要用「报告焦距」（含数码变焦），不能用光学焦距。
+  // 数码变焦是在裁切画面，用户看到的视场确实变窄了；
+  // 光学焦距只用来判断当前是哪颗镜头，跟视场大小无关。
+  const fov=fovOf(focal);
+
+  const project=(xImg,yImg)=>groundPointForImage(
+    origin,alt,yaw,pitch,roll,xImg,yImg,fov[0],fov[1]
+  );
+
+  const bl=project(-1,-1);
+  const br=project(1,-1);
+  const tl=project(-1,1);
+  const tr=project(1,1);
+
+  // 下边缘必须有落点，否则这块不画
+  if(!bl||!br)return null;
+
+  const left=edgePointAtDistance(project,-1,FOOTPRINT_MAX_DISTANCE,tl);
+  const right=edgePointAtDistance(project,1,FOOTPRINT_MAX_DISTANCE,tr);
+
+  if(!left||!right)return null;
+
+  return {bl:bl.latlng,br:br.latlng,left,right};
+}
+
+// ============================================================
+// 画面右键取点：像素 -> 地面经纬度 -> 地图上带名称的标记
+// 左键仍是浏览器自己的「播放/暂停」（不干预）；只接管右键菜单。
+// ============================================================
+
+let videoMarkLayer=null;   // 用户标记的图层组（懒建：L 可能是异步到的）
+let pendingMark=null;      // 等待命名的那个落点
+
+function ensureVideoMarkLayer(){
+  if(!map)return null;
+  if(!videoMarkLayer)videoMarkLayer=L.layerGroup().addTo(map);
+  return videoMarkLayer;
+}
+
+// 点在画面上的哪个位置 -> 归一化画面坐标（xImg/yImg ∈ [-1,1]，右、上为正）
+function videoImagePoint(e){
+  const rect=videoPlayer.getBoundingClientRect();
+  if(!rect.width||!rect.height)return null;
+
+  const px=(e.clientX-rect.left)/rect.width;
+  const py=(e.clientY-rect.top)/rect.height;
+
+  if(px<0||px>1||py<0||py>1)return null;
+
+  return {xImg:px*2-1,yImg:1-py*2};
+}
+
+// 当前播放时刻、画面上这一点对应的地面位置
+function groundPointAtEvent(e){
+  if(!clip||!telemetry||!telemetry.times||!telemetry.times.length)return null;
+
+  const drone=clip.droneLatLng;
+  const i=currentTelemetryIndex();
+
+  if(!drone||i<0)return null;
+
+  const alt=telemetry.alt[i];
+  const yaw=telemetry.yaw[i];
+  const pitch=telemetry.pitch[i];
+  const focal=telemetry.focal[i];
+
+  if(!Number.isFinite(alt)||alt<=0)return null;
+  if(!Number.isFinite(focal))return null;
+  // 平视或朝上：射线打不到地面（和视场框同样的判断）
+  if(!Number.isFinite(pitch)||pitch>=0)return null;
+  if(!Number.isFinite(yaw))return null;
+
+  const pt=videoImagePoint(e);
+  if(!pt)return null;
+
+  // 用「报告焦距」（含数码变焦）算视场，和地图上的视场框保持一致
+  const fov=fovOf(focal);
+
+  return groundPointForImage(
+    drone,alt,yaw,pitch,0,
+    pt.xImg,pt.yImg,fov[0],fov[1]
+  );
+}
+
+// 在地图上打一个带名称的点
+function addVideoMark(latlng,name){
+  const layer=ensureVideoMarkLayer();
+  if(!layer)return null;
+
+  const marker=L.circleMarker(latlng,{
+    radius:6,
+    color:'#b45309',
+    weight:2,
+    fillColor:'#f59e0b',
+    fillOpacity:.9
+  }).addTo(layer);
+
+  // 名称常驻显示，不用悬停
+  marker.bindTooltip(name,{
+    permanent:true,
+    direction:'top',
+    offset:[0,-6]
+  });
+
+  return marker;
+}
+
+function closeVideoMarkDialog(){
+  if(videoMarkModal)videoMarkModal.style.display='none';
+}
+
+function openVideoMarkDialog(latlng,info){
+  pendingMark=latlng;
+  if(!videoMarkModal)return;
+
+  videoMarkName.value='';
+  videoMarkName.placeholder=
+    `例如：3 号排水口（距无人机约 ${Math.round(info.distance)} m）`;
+  videoMarkModal.style.display='flex';
+  videoMarkName.focus();
+}
+
+function confirmVideoMark(){
+  if(!pendingMark)return;
+
+  const name=(videoMarkName.value||'').trim()||'标记';
+
+  addVideoMark(pendingMark,name);
+  closeVideoMarkDialog();
+  pendingMark=null;
+}
+
+// 右键：屏蔽浏览器菜单，算落点，弹命名框
+if(videoPlayer)videoPlayer.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+
+  if(!clip){
+    videoStatus.textContent='先播放一段视频，再在画面上右键标记。';
+    return;
+  }
+
+  const hit=groundPointAtEvent(e);
+
+  if(!hit){
+    videoStatus.textContent=
+      '这里算不出地面位置：可能画面朝上/接近水平，或该时刻还没有遥测数据。';
+    return;
+  }
+
+  videoStatus.textContent=
+    `已取点：${hit.latlng.lat.toFixed(6)}, ${hit.latlng.lng.toFixed(6)}`
+    +`（距无人机约 ${Math.round(hit.distance)} m）`;
+
+  openVideoMarkDialog(hit.latlng,hit);
+});
+
+function ensureFootprintLayers(){
+  if(footprintLayers)return footprintLayers;
+
+  const color=cssVar('--reticle')||'#5eead4';
+
+  footprintLayers={
+    fill:L.polygon([],{
+      color:color,weight:0,fillColor:color,fillOpacity:0.12,
+      interactive:false
+    }).addTo(map),
+    solid:L.polyline([],{
+      color:color,weight:2.5,opacity:0.95,interactive:false
+    }).addTo(map),
+    dashed:L.polyline([],{
+      color:color,weight:2,opacity:0.85,dashArray:'7,7',interactive:false
+    }).addTo(map)
+  };
+
+  return footprintLayers;
+}
+
+// 把当前时刻的视场几何算出来（主地图和右下角地图小窗共用）。
+// 同一时刻只算一次：两个地图都会调用，没必要重复做几十次射线求交。
+let footprintGeoKey='';
+let footprintGeo=null;
+
+function currentFootprintGeometry(){
+  if(
+    !clip||!telemetry||
+    !telemetry.times||!telemetry.times.length
+  ){
+    return null;
+  }
+
+  const drone=clip.droneLatLng;
+  const i=currentTelemetryIndex();
+
+  if(!drone||i<0)return null;
+
+  const key=clip.path+'#'+i;
+
+  if(key===footprintGeoKey)return footprintGeo;
+
+  // roll 没取（增稳后 |roll| ≤ 0.2°，影响可忽略）
+  footprintGeoKey=key;
+  footprintGeo=footprintGeometry(
+    drone,
+    telemetry.alt[i],
+    telemetry.yaw[i],
+    telemetry.pitch[i],
+    0,
+    telemetry.focal[i],
+    telemetry.dzoom[i]
+  );
+
+  return footprintGeo;
+}
+
+// 把一组视场图层设成给定几何；geometry 为空就清空
+function applyFootprintToLayers(layers,geometry){
+  if(!layers)return;
+
+  if(!geometry){
+    layers.fill.setLatLngs([]);
+    layers.solid.setLatLngs([]);
+    layers.dashed.setLatLngs([]);
+    return;
+  }
+
+  // 下边缘 + 左右两条边缘：实线（正好跳过上边缘）
+  layers.solid.setLatLngs([
+    geometry.left,geometry.bl,geometry.br,geometry.right
+  ]);
+
+  // 远边：模糊虚线收口
+  layers.dashed.setLatLngs([geometry.right,geometry.left]);
+
+  layers.fill.setLatLngs([
+    geometry.left,geometry.bl,geometry.br,geometry.right
+  ]);
+}
+
+function hideFootprint(){
+  applyFootprintToLayers(footprintLayers,null);
+}
+
+function syncFootprint(){
+  if(!clip||!map||!footprintOn){
+    hideFootprint();
+    return;
+  }
+
+  applyFootprintToLayers(
+    ensureFootprintLayers(),
+    currentFootprintGeometry()
+  );
+}
+
+function applyFootprintVisibility(){
+  setToggleState(footprintToggle,footprintOn);
+
+  if(footprintOn)syncFootprint();
+  else hideFootprint();
+
+  // 地图小窗里也画了视场，开关要同步过去
+  syncMapPip();
+}
+
+if(footprintToggle){
+  footprintToggle.addEventListener('click',()=>{
+    footprintOn=!footprintOn;
+    applyFootprintVisibility();
+  });
+}
+
+// 同上：不在这里调用 applyFootprintVisibility()，统一放到 boot()
+
+/* ============================================================
+   红外同步小窗
+   可见光视频左下角放一个小窗，同步播放同一时刻的红外画面。
+   同步依据：三路文件（V/S/T）的 SRT 时间轴是对齐的 —— 实测同一
+   时间戳上 V 与 T 的位置偏差最大 1.58 m（多数 0.00 m），
+   反推最优偏移为 0.0 s（相邻的 ±0.5 s 偏差就到 5 m 了）。
+   所以直接把主视频的绝对秒数当作红外的时间。
+   ============================================================ */
+
+let thermalSource=null;   // 后端在遥测接口里一起返回 {video, path}
+let thermalOffset=0;      // 小窗自身时间轴相对 SRT 时间轴的偏移
+let thermalProxy=false;   // 小窗是否已退回转码片段
+
+// 只有可见光视频、且确实存在配对的红外文件时才提供
+function thermalAvailable(){
+  return !!(
+    thermalSource&&thermalSource.path&&
+    clip&&!isInfraredPath(clip.path)
+  );
+}
+
+// 主视频当前时间 -> SRT 时间轴上的绝对秒数
+function mainAbsoluteTime(){
+  if(!clip)return 0;
+  return clip.useProxy
+    ?proxyBucketOf(clip.start)+videoPlayer.currentTime
+    :videoPlayer.currentTime;
+}
+
+function thermalSeekTarget(){
+  return mainAbsoluteTime()-thermalOffset;
+}
+
+function stopThermal(){
+  thermalPip.hidden=true;
+
+  try{videoThermal.pause()}catch(e){}
+
+  if(videoThermal.getAttribute('src')){
+    videoThermal.removeAttribute('src');
+    videoThermal.load();
+  }
+
+  thermalProxy=false;
+}
+
+function startThermal(){
+  if(!thermalAvailable())return;
+
+  thermalPip.hidden=false;
+
+  if(videoThermal.getAttribute('src'))return;
+
+  // 主视频在放转码片段时，小窗直接放原片、用偏移对齐（省一次转码）
+  thermalProxy=false;
+  thermalOffset=clip.useProxy?proxyBucketOf(clip.start):0;
+
+  const q=new URLSearchParams({
+    name:projectSelect.value,
+    folder_index:String(clip.folderIndex),
+    path:thermalSource.path
+  });
+
+  videoThermal.src='/api/project/video?'+q.toString();
+  videoThermal.load();
+}
+
+function syncThermal(force){
+  if(!thermalOn||thermalPip.hidden)return;
+  if(!videoThermal.getAttribute('src'))return;
+  if(videoThermal.readyState<2)return;
+  if(!Number.isFinite(videoThermal.duration))return;
+
+  const target=thermalSeekTarget();
+
+  if(target<0||target>videoThermal.duration)return;
+
+  // 漂移超过 0.3 秒才纠正：频繁 seek 会让小窗卡顿
+  if(force||Math.abs(videoThermal.currentTime-target)>0.3){
+    try{videoThermal.currentTime=target}catch(e){}
+  }
+
+  videoThermal.playbackRate=videoPlayer.playbackRate;
+
+  if(videoPlayer.paused){
+    if(!videoThermal.paused)videoThermal.pause();
+  }else if(videoThermal.paused){
+    videoThermal.play().catch(()=>{});
+  }
+}
+
+function applyThermalVisibility(){
+  const available=thermalAvailable();
+
+  if(thermalToggle){
+    thermalToggle.hidden=!available;
+  }
+
+  setToggleState(thermalToggle,thermalOn);
+
+  if(available&&thermalOn)startThermal();
+  else stopThermal();
+}
+
+// 原片解不了就退回转码片段（和主视频同一套兜底思路，用同一个 bucket）
+videoThermal.addEventListener('error',()=>{
+  if(thermalProxy||!thermalAvailable())return;
+
+  thermalProxy=true;
+  thermalOffset=proxyBucketOf(clip.start);
+
+  const q=new URLSearchParams({
+    name:projectSelect.value,
+    folder_index:String(clip.folderIndex),
+    path:thermalSource.path,
+    start:String(thermalOffset),
+    duration:String(PROXY_SECONDS)
+  });
+
+  videoThermal.src='/api/project/proxy?'+q.toString();
+  videoThermal.load();
+});
+
+videoThermal.addEventListener('loadeddata',()=>syncThermal(true));
+
+if(thermalToggle){
+  thermalToggle.addEventListener('click',()=>{
+    thermalOn=!thermalOn;
+    applyThermalVisibility();
+  });
+}
+
+// 主视频的播放状态直接带着小窗走
+['play','pause','seeked','seeking','ratechange','ended'].forEach(evt=>{
+  videoPlayer.addEventListener(evt,()=>syncThermal(true));
+});
+
+/* ============================================================
+   画面右下角的地图小窗
+   在视频上再叠一个小地图（独立实例），跟着飞机走，
+   并把飞机和画面中心准星一起框进视野，这样不用挪窗口也能对照。
+   ============================================================ */
+
+let mapPip=null;
+let mapPipLayer=null;
+let mapPipTrack=null;
+let mapPipDrone=null;
+let mapPipCross=null;
+let mapPipSizedFor=0;                  // 上次 invalidateSize 时的宽度
+let mapPipView={zoom:0,lat:0,lng:0};   // 上次设定的视野
+let mapPipFootprintLayers=null;        // 小窗里的视场范围
+
+function ensureMapPip(){
+  if(mapPip)return mapPip;
+  if(!mapPipCanvas)return null;
+
+  mapPip=L.map(mapPipCanvas,{
+    zoomControl:false,attributionControl:false,
+    dragging:false,scrollWheelZoom:false,doubleClickZoom:false,
+    boxZoom:false,keyboard:false,touchZoom:false,
+    zoomSnap:0.5
+  }).setView([23,114],16);
+
+  mapPipTrack=L.polyline([],{
+    color:'#1e88e5',weight:2,opacity:.85,interactive:false
+  }).addTo(mapPip);
+
+  mapPipDrone=L.marker([0,0],{icon:droneIcon,interactive:false}).addTo(mapPip);
+  mapPipCross=L.marker([0,0],{icon:crosshairIcon,interactive:false}).addTo(mapPip);
+
+  applyMapPipBase();
+
+  return mapPip;
+}
+
+// 小窗只用当前底图的主图层：尺寸这么小，注记层只会变成一团糊
+function applyMapPipBase(){
+  if(!mapPip)return;
+
+  if(mapPipLayer){
+    mapPip.removeLayer(mapPipLayer);
+    mapPipLayer=null;
+  }
+
+  const def=BASEMAP_DEFS[currentBaseMapKind]||BASEMAP_DEFS.street;
+  const item=def.layers[0];
+
+  mapPipLayer=L.tileLayer(
+    `/maptile/${item.source}/{z}/{x}/{y}.png`,
+    {minZoom:3,maxZoom:item.maxZoom}
+  ).addTo(mapPip);
+
+  mapPipLayer.bringToBack();
+}
+
+// 小窗里的视场范围。线比主图细一点、填充浓一点 —— 窗口小，太淡会看不见。
+function ensureMapPipFootprintLayers(){
+  if(mapPipFootprintLayers)return mapPipFootprintLayers;
+
+  const color=cssVar('--reticle')||'#5eead4';
+
+  mapPipFootprintLayers={
+    fill:L.polygon([],{
+      color:color,weight:0,fillColor:color,fillOpacity:0.22,
+      interactive:false
+    }).addTo(mapPip),
+    solid:L.polyline([],{
+      color:color,weight:2,opacity:0.95,interactive:false
+    }).addTo(mapPip),
+    dashed:L.polyline([],{
+      color:color,weight:1.6,opacity:0.85,dashArray:'5,5',interactive:false
+    }).addTo(mapPip)
+  };
+
+  // 视场要压在航迹和箭头下面
+  mapPipFootprintLayers.fill.bringToBack();
+  mapPipFootprintLayers.solid.bringToBack();
+  mapPipFootprintLayers.dashed.bringToBack();
+
+  return mapPipFootprintLayers;
+}
+
+// 容器宽度变了才重算，避免每帧都触发一次 Leaflet 重排
+function refreshMapPipSize(){
+  if(!mapPip||!mapPipCanvas)return;
+
+  const width=Math.round(mapPipCanvas.getBoundingClientRect().width);
+
+  if(!width||width===mapPipSizedFor)return;
+
+  mapPipSizedFor=width;
+  mapPip.invalidateSize(false);
+}
+
+// 全屏 / 退出全屏是异步的：类名切换那一帧还量不到新尺寸（往往是 0），
+// 上面那个 if(!width) 会直接早退 —— 于是 mapPipSizedFor 停在旧值，
+// 跟随逻辑用错误尺寸算 getBoundsZoom，表现就是「全屏里缩得太近、
+// 退出后缩到全国」。这里清掉缓存并分几次强制重算，覆盖过渡过程。
+function refitMapPip(){
+  mapPipSizedFor=-1;
+  refreshMapPipSize();
+}
+
+function refitMapPipSoon(){
+  refitMapPip();
+  [80,240,600].forEach(ms=>setTimeout(refitMapPip,ms));
+}
+
+function syncMapPip(){
+  if(!mapPipDiv)return;
+
+  const active=mapPipOn&&!!clip;
+  mapPipDiv.hidden=!active;
+
+  if(!active)return;
+
+  const pip=ensureMapPip();
+  if(!pip)return;
+
+  refreshMapPipSize();
+
+  // 视场范围：跟主地图的「视场」开关同步（同一份几何，不重复计算）
+  applyFootprintToLayers(
+    footprintOn?ensureMapPipFootprintLayers():mapPipFootprintLayers,
+    footprintOn?currentFootprintGeometry():null
+  );
+
+  const coords=trackLatLngs(clip.track);
+  mapPipTrack.setLatLngs(coords&&coords.length?coords:[]);
+
+  const drone=clip.droneLatLng;
+  if(!drone)return;
+
+  mapPipDrone.setLatLng(drone);
+
+  // 箭头朝向与大地图保持一致
+  const droneEl=mapPipDrone.getElement();
+  const arrow=droneEl?droneEl.querySelector('.drone-arrow'):null;
+  if(arrow)arrow.style.transform=`rotate(${droneBearing}deg)`;
+
+  const crossEl=mapCrosshair?mapCrosshair.getElement():null;
+  const cross=crossEl?mapCrosshair.getLatLng():null;
+  const zoomed=crossEl?crossEl.classList.contains('zoomed'):false;
+  const crossPipEl=mapPipCross.getElement();
+
+  if(cross){
+    mapPipCross.setLatLng(cross);
+    if(crossPipEl){
+      crossPipEl.style.display='';
+      crossPipEl.classList.toggle('zoomed',zoomed);
+    }
+  }else if(crossPipEl){
+    crossPipEl.style.display='none';
+  }
+
+  // 视野：把飞机、准星、以及视场范围一起框进来。
+  // 标记每帧都动，但视野只在变化明显时才重设 —— 否则每秒 4 次重算瓦片，白白占资源。
+  const points=[drone];
+
+  if(cross)points.push(cross);
+
+  if(footprintOn){
+    const geo=currentFootprintGeometry();
+    if(geo)points.push(geo.left,geo.bl,geo.br,geo.right);
+  }
+
+  // 只剩飞机一个点，就跟着它定高
+  if(points.length<2){
+    if(Math.abs(mapPipView.zoom-17)>0.01){
+      mapPipView={zoom:17,lat:drone.lat,lng:drone.lng};
+      pip.setView(drone,17,{animate:false});
+    }else{
+      pip.panTo(drone,{animate:false});
+    }
+    return;
+  }
+
+  const bounds=L.latLngBounds(points).pad(0.25);
+  const targetZoom=pip.getBoundsZoom(bounds,false);
+  const targetCenter=bounds.getCenter();
+
+  const center=new L.LatLng(mapPipView.lat,mapPipView.lng);
+
+  if(
+    Math.abs(targetZoom-mapPipView.zoom)>0.01||
+    center.distanceTo(targetCenter)>15
+  ){
+    mapPipView={zoom:targetZoom,lat:targetCenter.lat,lng:targetCenter.lng};
+    pip.setView(targetCenter,targetZoom,{animate:false});
+  }
+}
+
+function applyMapPipVisibility(){
+  setToggleState(mapPipToggle,mapPipOn);
+
+  syncMapPip();
+}
+
+if(mapPipToggle){
+  mapPipToggle.addEventListener('click',()=>{
+    mapPipOn=!mapPipOn;
+    applyMapPipVisibility();
+  });
+}
+
+/* ============================================================
+   视频窗口默认停靠在右栏
+   ============================================================ */
+
+// 视频面板固定在右栏里，位置和大小由 CSS 布局决定 ——
+// 原来这里有一整套「用 transform 偏移把悬浮层停靠到右栏」的逻辑
+// （两遍测量、居中基准、视口兜底……），现在全部删除：
+// 面板就是右栏里的普通元素，栏多宽它多宽，不会再出现落点算偏的问题。
+
+/* ============================================================
+   左栏收起 / 展开
+   收起后中栏变宽，Leaflet 必须重算尺寸，否则地图会出现灰块和瓦片错位。
+   ============================================================ */
+
+function applySideCollapsed(collapsed){
+  document.body.classList.toggle('side-collapsed',collapsed);
+
+  // 布局宽度变了，两张地图都要重算。隔一点时间再确认一次，防布局过渡未结束。
+  // 视频面板是栏内普通元素，自动跟着变宽变窄；只需要更新一下控件换行和地图小窗尺寸。
+  const relayout=()=>{
+    if(map)map.invalidateSize();
+
+    applyVideoPanelLayout();
+
+    refreshMapPipSize();
+    if(mapPip)mapPip.invalidateSize(false);
+  };
+
+  setTimeout(relayout,60);
+  setTimeout(relayout,320);
+}
+
+if(sideToggle){
+  sideToggle.addEventListener('click',()=>applySideCollapsed(true));
+}
+
+if(sideRail){
+  sideRail.addEventListener('click',()=>applySideCollapsed(false));
+}
+
+// 窗口尺寸变化同样要让 Leaflet 重算（分栏布局对宽度很敏感）。
+// 视频面板在栏内，自动跟着变；只需更新控件换行与地图小窗尺寸。
+window.addEventListener('resize',()=>{
+  if(map)map.invalidateSize();
+  applyVideoPanelLayout();
+  refreshMapPipSize();
+  if(mapPip)mapPip.invalidateSize(false);
+});
+
+// 同上：applyMapPipVisibility() 放到 boot()
+
+function startClip(){
+  if(clipTimer){clearTimeout(clipTimer);clipTimer=null}
+  const st=clip;
+  if(!st)return;
+
+  const bucket=proxyBucketOf(st.start);
+  const seekTo=st.useProxy?Math.max(0,st.start-bucket):Math.max(0,st.start);
+  const end=Number(st.data.video_end||0);
+  videoStopAt=(!st.useProxy&&end>st.start)?end:null;
+
+  const q=new URLSearchParams({
+    name:projectSelect.value,
+    folder_index:String(st.folderIndex),
+    path:st.path
+  });
+  if(st.useProxy){
+    q.set('start',String(bucket));
+    q.set('duration',String(PROXY_SECONDS));
+  }
+
+  videoInfo.textContent=st.useProxy
+    ? `从 ${formatTime(st.start)} 开始播放（转码片段 ${PROXY_SECONDS} 秒）`
+    : `从 ${formatTime(st.start)} 开始播放${videoStopAt!==null?'，到 '+formatTime(videoStopAt)+' 自动暂停':''}`;
+  videoStatus.textContent=st.useProxy
+    ?'正在准备转码片段，首次播放需要十几秒……'
+    :'正在加载原片（若本机浏览器不支持该编码，会自动切换为转码片段）……';
+
+  videoPlayer.pause();
+  videoPlayer.src=(st.useProxy?'/api/project/proxy?':'/api/project/video?')+q.toString();
+  videoPlayer.load();
+
+  // 先把箭头放到起播位置，不用等第一帧
+  syncDroneMarker(seekTo);
+
+  const onMeta=()=>{
+    videoPlayer.removeEventListener('loadedmetadata',onMeta);
+    if(clipTimer){clearTimeout(clipTimer);clipTimer=null}
+
+    // 画幅确定后把画面区域设成同样的比例 —— 这样播放器高度刚好等于画面高度，
+    // 上下就不会再出现黑边（热成像是 5:4、可见光是 16:9，都要按实际值来）。
+    if(videoStage&&videoPlayer.videoWidth&&videoPlayer.videoHeight){
+      videoStage.style.aspectRatio=`${videoPlayer.videoWidth} / ${videoPlayer.videoHeight}`;
+    }
+
+    videoPlayer.currentTime=seekTo;
+    videoPlayer.play().then(()=>{
+      videoStatus.textContent='正在播放'+(clip&&clip.useProxy?'（转码片段）':'（原片）');
+    }).catch(()=>{
+      videoStatus.textContent='视频已加载，请点击播放器播放按钮。';
+    });
+  };
+  videoPlayer.addEventListener('loadedmetadata',onMeta);
+
+  // auto 模式：原片迟迟没就绪就自动转码，别让用户干等
+  if(st.allowFallback){
+    clipTimer=setTimeout(()=>{
+      clipTimer=null;
+      if(clip===st&&videoPlayer.readyState<1){
+        fallbackToProxy('原片长时间没有就绪');
+      }
+    },7000);
+  }
+}
+
+function fallbackToProxy(reason){
+  if(!clip||clip.useProxy)return;
+  clip.useProxy=true;
+  clip.allowFallback=false;
+  videoStatus.textContent=`${reason}，已自动切换为转码片段……`;
+  startClip();
+}
+
+function openVideoFromPopup(encoded){
+  // 开始播放后，轨迹气泡就没用了，顺手关掉（结果卡里的按钮同样走这里，
+  // 那种情况下本来也没有气泡，closePopup 是空操作）
+  if(map)map.closePopup();
+
+  try{
+    const data=JSON.parse(decodeURIComponent(encoded));
+    const mode=proxyMode();
+
+    clip={
+      data,
+      start:Number(data.video_start||0),
+      folderIndex:data.folder_index,
+      path:data.relative_path,
+      useProxy:mode==='proxy',
+      allowFallback:mode==='auto'
+    };
+
+    videoTitle.textContent=data.video||'视频播放';
+    videoModal.style.display='flex';
+
+    // 面板固定在右栏里，把占位说明收起来，再更新一次控件换行
+    hide(videoSlot);
+    applyVideoPanelLayout();
+
+    telemetry=null;
+    thermalSource=null;
+    renderTelemetry();
+    applyThermalVisibility();
+    loadTelemetry(clip.path);
+
+    startClip();
+  }catch(e){
+    alert('打开视频失败：'+e.message);
+  }
+}
+
+videoPlayer.addEventListener('timeupdate',()=>{
+  if(videoStopAt!==null && videoPlayer.currentTime>=videoStopAt){
+    videoPlayer.currentTime=videoStopAt;
+    videoPlayer.pause();
+    videoStatus.textContent='已播放到当前轨迹段结束位置。';
+  }
+  // 播放/暂停/拖进度条都会走到这里，箭头跟着视频走
+  syncDroneMarker();
+  // 顺带纠一下红外小窗的漂移
+  syncThermal(false);
+});
+
+videoPlayer.addEventListener('seeked',()=>syncDroneMarker());
+videoPlayer.addEventListener('play',()=>syncDroneMarker());
+videoPlayer.addEventListener('pause',()=>syncDroneMarker());
+
+// 元数据到了、画幅确定后，控件是否需要换行可能变了，顺带更新一次。
+// （面板位置由 CSS 决定，不再需要重新停靠。）
+videoPlayer.addEventListener('loadedmetadata',()=>{
+  if(clip)applyVideoPanelLayout();
+});
+
+async function serverAlive(){
+  try{
+    const r=await fetch('/api/project/list',{cache:'no-store'});
+    return r.ok;
+  }catch(e){
+    return false;
+  }
+}
+
+videoPlayer.addEventListener('error',async()=>{
+  if(videoModal.style.display==='none')return;
+
+  const mediaError=videoPlayer.error;
+  const code=mediaError?mediaError.code:0;
+
+  videoStatus.textContent='视频加载失败，正在检查服务端……';
+
+  // 服务端没起来的话，原片和转码片段都会失败，先明确告诉用户
+  if(!await serverAlive()){
+    videoStatus.innerHTML='<b>服务端没有响应。</b>请确认 <code>python project_manager.py</code> 还在运行；'
+      +'如果刚改过后端代码或重启过服务，请刷新本页面再试。'
+      +`<br>错误码 ${code}　网络状态 ${videoPlayer.networkState}`;
+    return;
+  }
+
+  // 服务端正常，那才可能是编码/文件问题——原片失败就自动转码
+  if(clip&&!clip.useProxy&&clip.allowFallback){
+    fallbackToProxy(`原片无法播放（错误码 ${code}：${MEDIA_ERROR_TEXT[code]||'未知'}）`);
+    return;
+  }
+
+  videoStatus.innerHTML=`视频加载失败：${esc(MEDIA_ERROR_TEXT[code]||('错误码 '+code))}。`
+    +`<br>服务端已连上，因此是文件或编码问题。`
+    +`<br>错误码 ${code}　网络状态 ${videoPlayer.networkState}　就绪状态 ${videoPlayer.readyState}`
+    +`<br><span style="word-break:break-all">${esc(videoPlayer.currentSrc||'(无地址)')}</span>`;
+});
+
+function closeVideo(){
+  if(clipTimer){clearTimeout(clipTimer);clipTimer=null}
+
+  // 关窗口时先退出全屏与铺满状态，否则下次打开还留着上一次的铺满布局
+  if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+  videoDialog.classList.remove('theater');
+  syncFullscreenBtn();
+
+  hideDroneMarker();
+  stopThermal();
+  thermalSource=null;
+  clip=null;
+  telemetry=null;
+  renderTelemetry();   // clip 已清空，这里会把信息栏清掉
+  applyThermalVisibility();
+  applyMapPipVisibility();
+  videoPlayer.pause();
+  videoPlayer.removeAttribute('src');
+  videoPlayer.load();
+  videoModal.style.display='none';
+  // 关掉视频后，把右栏的占位说明放回来
+  if(videoSlot)videoSlot.style.display='';
+  videoStopAt=null;
+}
+
+videoClose.addEventListener('click',closeVideo);
+// 遮罩已设为 pointer-events:none（让地图保持可操作），所以不再用“点遮罩关闭”。
+// 关闭方式：右上角 × 或 Esc。
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape')return;
+
+  // Esc 的优先级：先关「新建项目」弹窗，再退全屏，再退铺满，最后才关视频窗口
+  if(newProjectModal&&newProjectModal.style.display!=='none'){closeNewProjectDialog();return}
+  if(importModal&&importModal.style.display!=='none'){closeImportDialog();return}
+  if(videoMarkModal&&videoMarkModal.style.display!=='none'){
+    closeVideoMarkDialog();pendingMark=null;return;
+  }
+  if(document.fullscreenElement){document.exitFullscreen().catch(()=>{});return}
+  if(isTheater()){setTheater(false);return}
+  if(videoModal.style.display!=='none')closeVideo();
+});
+
+/* ============================================================
+   空格 = 播放 / 暂停，任何时候都成立
+   ------------------------------------------------------------
+   浏览器默认会「激活当前获得焦点的元素」。点过视频自带的全屏按钮之后，
+   焦点留在那个按钮上，空格就变成反复切全屏 —— 得用鼠标点一下画面把焦点
+   移走才恢复。
+
+   注意必须用「捕获阶段 + stopPropagation」：
+   Chrome 自带视频控件的键盘处理，是在它自己 shadow DOM 里的监听器，
+   那不属于“默认行为”，所以在冒泡阶段 preventDefault() 拦不住它
+   （试过，无效：空格照样切全屏）。只有在捕获阶段先截住，
+   事件才根本到不了那个控件。
+
+   焦点在输入框/下拉框里时不接管，否则打不了空格。
+   ============================================================ */
+
+function isTypingTarget(el){
+  if(!el||!el.tagName)return false;
+  const tag=String(el.tagName).toLowerCase();
+  return tag==='input'||tag==='textarea'||tag==='select'||el.isContentEditable===true;
+}
+
+function togglePlay(){
+  if(!clip)return;
+
+  if(videoPlayer.paused){
+    // 停在轨迹段末尾时再按空格：当成“继续播放”，把停止点清掉，
+    // 否则一 play 就又被 timeupdate 立刻暂停，像是没反应
+    if(videoStopAt!==null&&videoPlayer.currentTime>=videoStopAt){
+      videoStopAt=null;
+      videoStatus.textContent='已越过轨迹段结束位置，继续播放。';
+    }
+    videoPlayer.play().catch(()=>{});
+  }else{
+    videoPlayer.pause();
+  }
+}
+
+function isSpaceKey(e){
+  return e.key===' '||e.key==='Spacebar'||e.code==='Space';
+}
+
+// 截住空格。返回 true 表示这一次按键归我们处理。
+function grabSpace(e){
+  if(!isSpaceKey(e))return false;
+  if(isTypingTarget(e.target))return false;
+  if(!clip)return false;    // 没打开视频时不接管，让空格照常作用于页面按钮
+
+  e.preventDefault();
+  e.stopPropagation();      // 关键：别让事件传到自带视频控件
+  return true;
+}
+
+window.addEventListener('keydown',e=>{
+  if(!grabSpace(e))return;
+
+  togglePlay();
+
+  // 焦点留在按钮上时，浏览器会把空格当成“再按一次这个按钮”。
+  // 主动把焦点移开，从根上再堵一层。
+  const ae=document.activeElement;
+  if(ae&&ae!==document.body&&typeof ae.blur==='function')ae.blur();
+},true);
+
+window.addEventListener('keyup',e=>{
+  // 按钮的激活行为发生在 keyup，所以 keyup 也要截
+  grabSpace(e);
+},true);
+
+/* ============================================================
+   全屏：让「整个视频窗口」铺满，而不是只让 <video> 全屏
+   ------------------------------------------------------------
+   浏览器自带控件上的全屏按钮会把 <video> 单独全屏，而小地图、红外小窗、
+   上方那排开关都在 <video> 外面（对话框里），于是全屏后它们全看不见。
+   所以这里做两件事：
+     1. 自己加一个「全屏」按钮：对整个对话框 requestFullscreen()，
+        这样铺满的是对话框，里面的浮层一个都不少；
+     2. 万一用户点的还是自带控件那个全屏按钮，就在 fullscreenchange 里
+        退出原生全屏、改用同样铺满的 .theater 模式，效果一致。
+   ============================================================ */
+
+function isTheater(){
+  return videoDialog.classList.contains('theater');
+}
+
+function syncFullscreenBtn(){
+  // 自制的「全屏」按钮已删除（统一用浏览器自带控件那个），所以这里直接返回。
+  // 函数保留是因为 Esc 链路和 fullscreenchange 仍会调用它，删掉会引出更多改动。
+  if(!fullscreenToggle)return;
+  setToggleState(fullscreenToggle,!!document.fullscreenElement||isTheater());
+}
+
+function setTheater(on){
+  videoDialog.classList.toggle('theater',on);
+
+  // 面板位置由 CSS 决定：退出铺满就是回到右栏的普通位置，不需要重新算偏移。
+  // 地图小窗的尺寸变化是异步的（铺满切换要等下一帧甚至更久才生效），
+  // 所以这里用 refitMapPipSoon() 分几次重算，而不是只算这一次。
+  refitMapPipSoon();
+
+  syncFullscreenBtn();
+}
+
+function toggleFullscreen(){
+  if(!clip||!videoDialog)return;
+
+  if(document.fullscreenElement){
+    document.exitFullscreen().catch(()=>{});
+    return;
+  }
+
+  if(isTheater()){
+    setTheater(false);
+    return;
+  }
+
+  // 走和浏览器自带控件那条完全一样的路：把 <video> 本身全屏。
+  // 实测原生按钮的效果是正常的（视频真正铺满、零黑边），而「对话框铺满」
+  // 那套 theater 布局在全屏下始终有黑边，所以直接复用已验证可行的方案；
+  // fullscreenchange 里会给对话框加 native-fs，把浮层藏掉。
+  const request=videoPlayer.requestFullscreen
+    ||videoPlayer.webkitRequestFullscreen
+    ||videoPlayer.msRequestFullscreen;
+
+  if(!request){setTheater(true);return}
+
+  try{
+    const result=request.call(videoDialog);
+    if(result&&typeof result.catch==='function')result.catch(()=>setTheater(true));
+  }catch(e){
+    setTheater(true);
+  }
+}
+
+if(fullscreenToggle)fullscreenToggle.addEventListener('click',toggleFullscreen);
+
+// 自带控件的全屏按钮 -> 退出原生全屏，改用铺满模式，浮层就都还在
+['fullscreenchange','webkitfullscreenchange'].forEach(ev=>{
+  document.addEventListener(ev,()=>{
+    // 焦点可能还留在自带控件的按钮上，主动移开（否则空格会再触发它）
+    const ae=document.activeElement;
+    if(ae&&ae!==document.body&&typeof ae.blur==='function')ae.blur();
+
+    if(document.fullscreenElement===videoPlayer){
+      // 浏览器自带控件那个全屏按钮：它只把 <video> 全屏，而小地图、红外、
+      // 工具栏都是 video 外面的浮层 —— 它们会留在页面上盖住全屏视频
+      // （用户实测：地图界面仍在当前页面上）。按需求简单处理：
+      // 这种全屏就只显示视频本身，其余全部藏起来。
+      videoDialog.classList.add('native-fs');
+      return;
+    }
+
+    videoDialog.classList.remove('native-fs');
+
+    // 真正的全屏（requestFullscreen）进出都会走到这里：
+    // 小窗尺寸随之变化，异步生效，所以分几次重算
+    refitMapPipSoon();
+    syncFullscreenBtn();
+  });
+});
+
+// 删除某一个 GeoJSON 文件（真的从磁盘删掉）。
+// 源视频和 SRT 不动，所以之后可以点「生成 GeoJSON」重新生成，
+// 或者重新导入一次源数据 —— 确认框里说明这一点。
+async function deleteGeoFile(index){
+  const name=currentProjectName();
+  const f=geoFiles[index];
+  if(!name||!f)return;
+
+  const sure=window.confirm(
+    `确定要删除这个视频对应的生成文件吗？\n\n`
+    +`文件：${f.file_name}\n`
+    +`位置：${f.folder_name}\\${f.relative_path}\n\n`
+    +'· 会删掉：这个文件的 GeoJSON（含 3D 版）和 SRT\n'
+    +'· 不会删：视频源文件（MP4）—— 原片完整保留\n'
+    +'· 想恢复：点上面的「生成 SRT / 生成 GeoJSON」重新生成，\n'
+    +'  或重新导入一次源数据'
+  );
+
+  if(!sure)return;
+
+  try{
+    // geojson-list 只返回 folder_index，而删除接口要的是文件夹路径，
+    // 所以先取一次项目（folders[i].path 就是它），不用改后端协议。
+    const proj=await api('/api/project/get?name='+encodeURIComponent(name));
+    const folder=((proj&&proj.project&&proj.project.folders)||[])[f.folder_index];
+
+    if(!folder||!folder.path)throw new Error('找不到这个文件所属的数据文件夹。');
+
+    await jsonPost('/api/project/delete-geojson',{
+      project_name:name,
+      folder_path:folder.path,
+      relative_path:f.relative_path
+    });
+
+    show(projectNotice,`已删除 ${f.file_name}`);
+    await scanGeoJSON();
+  }catch(e){
+    show(projectNotice,'删除失败：'+e.message,true);
+  }
+}
+
+function updateStats(datas){
+  let records=0,segments=0,features=0;
+  datas.forEach(d=>{const p=d.properties||{};records+=Number(p.record_count||0);segments+=Number(p.segment_count||0);features+=(d.features||[]).length});
+  stats.innerHTML=`<div class="stat"><div class="stat-title">GeoJSON 文件</div><div class="stat-value">${datas.length}</div></div><div class="stat"><div class="stat-title">轨迹段</div><div class="stat-value">${segments}</div></div><div class="stat"><div class="stat-title">轨迹要素</div><div class="stat-value">${features}</div></div><div class="stat"><div class="stat-title">原始定位记录</div><div class="stat-value">${records.toLocaleString()}</div></div>`;
+}
+
+async function loadOne(i){
+  initMap();layerGroup.clearLayers();loadedTracks=[];allLoaded=false;clearHighlight();hideDroneMarker();hideNearbyResult();legend.innerHTML='';hide(mapNotice);
+  try{
+    const f=geoFiles[i];const d=await fetchGeo(f);addGeo(d,0,f.file_name,f);updateStats([d]);const bounds=layerGroup.getBounds();if(bounds.isValid())map.fitBounds(bounds,{padding:[35,35],maxZoom:TRACK_FIT_MAX_ZOOM});
+    document.querySelectorAll('.file-item').forEach(x=>x.classList.remove('active'));document.querySelector(`.file-item[data-index="${i}"]`)?.classList.add('active');
+  }catch(e){show(mapNotice,e.message,true)}
+}
+
+// 加载全部航迹，供检索使用。保留当前选点，不改变地图视野。
+async function ensureAllLoaded(){
+  if(allLoaded)return true;
+
+  // 加载的是「当前筛选出来的那些」，不是磁盘上全部文件
+  const entries=filteredGeoFiles();
+
+  if(!entries.length){
+    show(mapNotice,geoFiles.length?'当前筛选条件下没有可加载的 GeoJSON。':'当前项目没有可加载的 GeoJSON。',true);
+    return false;
+  }
+
+  // 丢掉此前可能只加载了一部分的状态，避免同一条航迹被重复登记
+  layerGroup.clearLayers();loadedTracks=[];hideDroneMarker();legend.innerHTML='';
+  loadAllBtn.disabled=true;loadAllBtn.textContent='正在加载……';
+  try{
+    const datas=[];
+    // 注意用原始下标 i 作为配色索引：筛选后颜色不会跟着变
+    for(const {f,index} of entries){const d=await fetchGeo(f);datas.push(d);addGeo(d,index,f.file_name,f)}
+    updateStats(datas);allLoaded=true;return true;
+  }catch(e){show(mapNotice,e.message,true);return false}
+  finally{loadAllBtn.disabled=false;updateLoadAllLabel()}
+}
+
+async function loadAll(){
+  initMap();layerGroup.clearLayers();loadedTracks=[];allLoaded=false;clearHighlight();hideDroneMarker();hideNearbyResult();legend.innerHTML='';hide(mapNotice);
+  const ok=await ensureAllLoaded();
+  if(!ok)return;
+  const bounds=layerGroup.getBounds();if(bounds.isValid())map.fitBounds(bounds,{padding:[35,35],maxZoom:TRACK_FIT_MAX_ZOOM});
+}
+
+clearBtn.addEventListener('click',()=>{
+  // 标记点不保存：清空地图时一起清掉。
+  // （它们只存在内存里，刷新页面同样会清空 —— 这是需求定的行为。）
+  if(videoMarkLayer)videoMarkLayer.clearLayers();
+  initMap();layerGroup.clearLayers();loadedTracks=[];allLoaded=false;
+  clearProbe();clearHighlight();hideDroneMarker();hideNearbyResult();legend.innerHTML='';stats.innerHTML='';
+  document.querySelectorAll('.file-item').forEach(x=>x.classList.remove('active'));
+});
+refreshBtn.addEventListener('click',scanGeoJSON);
+// 筛选只影响「显示哪些文件」和「加载全部时加载哪些」；
+// allLoaded 要清掉，否则改了筛选后点加载会误以为已经加载过了
+if(filterDate)filterDate.addEventListener('change',()=>{
+  fileFilterDate=filterDate.value;allLoaded=false;renderFiles();
+});
+if(filterType)filterType.addEventListener('change',()=>{
+  fileFilterType=filterType.value;allLoaded=false;renderFiles();
+});
+baseMapSelect.addEventListener('change',()=>setBaseMap(baseMapSelect.value));
+loadAllBtn.addEventListener('click',loadAll);
+/* ============================================================
+   项目流程：新建项目 / 导入数据 / 移出列表 / 检测 / 生成
+   ------------------------------------------------------------
+   目标是「第一次创建项目、导入文件之后就全自动」：
+   自动检测字幕流与位置信息 -> 自动生成 SRT 与 GeoJSON -> 自动全部加载到地图，
+   之后在地图上点哪里就能播哪里。
+   ============================================================ */
+
+const newProjectName=document.getElementById('newProjectName');
+const createProjectBtn=document.getElementById('createProjectBtn');
+const addFolderBtn=document.getElementById('addFolderBtn');
+const deleteProjectBtn=document.getElementById('deleteProjectBtn');
+const detectBtn=document.getElementById('detectBtn');
+const detectResult=document.getElementById('detectResult');
+const makeSrtBtn=document.getElementById('makeSrtBtn');
+const makeGeoBtn=document.getElementById('makeGeoBtn');
+/* .flow-status 已删除：那行流程状态按需求去掉了（完成反馈靠按钮变绿打钩） */
+const flowStatus=null;
+
+// DJI 标准素材名：DJI_20260923085519_0003_V。
+// 只有这种命名的视频带遥测字幕流；其它素材（例如「10 右岸-珠海市.mp4」）
+// 本来就没有字幕流，生成不出轨迹，流程里直接跳过，不浪费时间。
+const DJI_VIDEO_RE=/^DJI_\d{8}\d{6}_\d+_[A-Za-z]+$/i;
+
+// 流程状态这行已按需求去掉：正常完成时三个按钮会变绿打钩，本身就是反馈，
+// 不需要再写一行字（原来会显示「生成 GeoJSON 完成：成功 8 个…」这类）。
+// 但「出错」必须留 —— 比如「自动流程中断：…」，那种消息转到 projectNotice。
+// 所以这里只放行 isError 的消息，成功/进度类一律丢弃。
+function setFlow(message,isError){
+  if(!message||!isError)return;
+  show(projectNotice,message,true);
+}
+
+// 每一步做完就把对应按钮标绿（用底色表示状态，不在文字里写"完成"）
+function markDone(button,on){
+  if(button)button.classList.toggle('done',!!on);
+}
+
+function resetFlowButtons(){
+  markDone(detectBtn,false);
+  markDone(makeSrtBtn,false);
+  markDone(makeGeoBtn,false);
+}
+
+// 把三个按钮的状态对齐当前项目的实际情况：
+// 没有待办了 = 这一步已经做完 = 绿。
+async function refreshFlowStates(){
+  const name=projectSelect.value;
+
+  if(!name||name==='暂无项目'){resetFlowButtons();return}
+
+  try{
+    const {media,srt,geo}=await collectPending(name);
+    markDone(detectBtn,(media.folder_count||0)>0);
+    markDone(makeSrtBtn,srt.length===0);
+    markDone(makeGeoBtn,geo.length===0);
+  }catch(e){
+    resetFlowButtons();
+  }
+}
+
+function currentProjectName(){
+  const name=projectSelect.value;
+  if(!name||name==='暂无项目'){
+    show(projectNotice,'请先选择一个项目。',true);
+    return null;
+  }
+  return name;
+}
+
+function stemOf(relativePath){
+  return String(relativePath||'').replace(/\.[^.]+$/,'');
+}
+
+function jsonPost(url,payload){
+  return api(url,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)
+  });
+}
+
+// 算出「还缺什么」：缺 SRT 的视频、缺 GeoJSON 的视频
+async function collectPending(name){
+  const media=await api('/api/project/media?name='+encodeURIComponent(name));
+  const listing=await api('/api/project/geojson-list?name='+encodeURIComponent(name));
+
+  const have=new Set();
+  (listing.files||[]).forEach(f=>have.add(String(f.folder_name)+'|'+String(f.relative_path).toLowerCase()));
+
+  const srt=[];
+  const geo=[];
+
+  (media.folders||[]).forEach(folder=>{
+    (folder.videos||[]).forEach(video=>{
+      const stem=stemOf(video.relative_path);
+      if(!DJI_VIDEO_RE.test(stem))return;
+      if(!video.srt)srt.push({folder,video});
+      if(!have.has(folder.name+'|'+(stem+'.geojson').toLowerCase()))geo.push({folder,video});
+    });
+  });
+
+  return {media,srt,geo};
+}
+
+// 逐个跑，单个失败不影响其它（并如实记下跳过了哪些）
+async function runJobs(label,items,url){
+  let ok=0;
+  const failed=[];
+
+  for(let i=0;i<items.length;i++){
+    const {folder,video}=items[i];
+    setFlow(`${label} ${i+1}/${items.length}\n${video.relative_path}`);
+
+    try{
+      await jsonPost(url,{
+        project_name:projectSelect.value,
+        folder_path:folder.path,
+        relative_path:video.relative_path
+      });
+      ok++;
+    }catch(e){
+      failed.push(video.relative_path+'　'+e.message);
+    }
+  }
+
+  return {ok,failed};
+}
+
+// 全自动：检测 -> 生成 SRT -> 生成 GeoJSON -> 加载到地图
+async function runAutoPipeline(){
+  const name=currentProjectName();
+  if(!name)return;
+
+  try{
+    setFlow('① 检测字幕流与位置信息……');
+    const first=await collectPending(name);
+    markDone(detectBtn,(first.media.folder_count||0)>0);
+
+    const srtResult=first.srt.length
+      ?await runJobs('② 生成 SRT',first.srt,'/api/project/extract-srt')
+      :{ok:0,failed:[]};
+    markDone(makeSrtBtn,srtResult.failed.length===0);
+
+    // GeoJSON 依赖 SRT，所以重新算一次「现在缺哪些」再生成
+    const second=await collectPending(name);
+
+    const geoResult=second.geo.length
+      ?await runJobs('③ 生成 GeoJSON',second.geo,'/api/project/generate-geojson')
+      :{ok:0,failed:[]};
+    markDone(makeGeoBtn,geoResult.failed.length===0);
+
+    setFlow('④ 重新扫描并全部加载到地图……');
+    await scanGeoJSON();
+    await loadAll();
+
+    const lines=[
+      `项目：${name}`,
+      `生成 SRT：${srtResult.ok} 个${srtResult.failed.length?`，跳过 ${srtResult.failed.length} 个`:''}`,
+      `生成 GeoJSON：${geoResult.ok} 个${geoResult.failed.length?`，跳过 ${geoResult.failed.length} 个`:''}`,
+      `轨迹文件：${geoFiles.length} 个，已全部加载到地图`,
+      '',
+      '现在地图上点轨迹气泡就能直接播放。'
+    ];
+
+    const failed=srtResult.failed.concat(geoResult.failed);
+    if(failed.length)lines.push('','跳过的视频（没有遥测字幕流，生成不出轨迹）：',...failed);
+
+    setFlow(lines.join('\n'));
+  }catch(e){
+    setFlow('自动流程中断：'+e.message,true);
+  }
+}
+
+// ---- 新建项目：先弹窗填名字，确认后再建（数据文件夹由服务端弹原生选择框）----
+
+const newProjectModal=document.getElementById('newProjectModal');
+const importModal=document.getElementById('importModal');
+const videoMarkModal=document.getElementById('videoMarkModal');
+const videoMarkName=document.getElementById('videoMarkName');
+const videoMarkOk=document.getElementById('videoMarkOk');
+const videoMarkCancel=document.getElementById('videoMarkCancel');
+const pickFolderBtn=document.getElementById('pickFolderBtn');
+const pickFilesBtn=document.getElementById('pickFilesBtn');
+const importCancel=document.getElementById('importCancel');
+const newProjectError=document.getElementById('newProjectError');
+const newProjectOk=document.getElementById('newProjectOk');
+const newProjectCancel=document.getElementById('newProjectCancel');
+
+function openNewProjectDialog(){
+  if(!newProjectModal)return;
+  newProjectName.value='';
+  if(newProjectError)newProjectError.style.display='none';
+  newProjectModal.style.display='flex';
+  newProjectName.focus();
+}
+
+function closeNewProjectDialog(){
+  if(newProjectModal)newProjectModal.style.display='none';
+}
+
+function showNewProjectError(message){
+  if(!newProjectError)return;
+  newProjectError.textContent=message;
+  newProjectError.style.display='block';
+  newProjectName.focus();
+}
+
+async function doCreateProject(name){
+  const old=createProjectBtn.textContent;
+  createProjectBtn.disabled=true;
+  createProjectBtn.textContent='请在弹窗里选择数据文件夹……';
+
+  try{
+    await jsonPost('/api/project/create',{name});
+
+    await loadProjects();
+    projectSelect.value=name;
+    await scanGeoJSON();
+
+    show(projectNotice,`已创建项目 ${name}`);
+
+    // 建好就直接跑完整流程（不再有「全自动」开关）
+    await runAutoPipeline();
+  }catch(e){
+    show(projectNotice,e.message,true);
+  }finally{
+    createProjectBtn.disabled=false;
+    createProjectBtn.textContent=old;
+  }
+}
+
+if(createProjectBtn)createProjectBtn.addEventListener('click',openNewProjectDialog);
+
+if(newProjectOk)newProjectOk.addEventListener('click',()=>{
+  const name=(newProjectName.value||'').trim();
+
+  if(!name){showNewProjectError('请填项目名称。');return}
+  if(/[<>:"/\\|?*]/.test(name)){showNewProjectError('项目名称不能包含 < > : " / \\ | ? * 这些字符。');return}
+
+  closeNewProjectDialog();
+  doCreateProject(name);
+});
+
+if(newProjectCancel)newProjectCancel.addEventListener('click',closeNewProjectDialog);
+
+// 回车即确认；点遮罩空白处等于取消
+if(newProjectName)newProjectName.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();if(newProjectOk)newProjectOk.click()}
+});
+if(newProjectModal)newProjectModal.addEventListener('click',e=>{
+  if(e.target===newProjectModal)closeNewProjectDialog();
+});
+
+// 导入弹窗的两个入口与取消
+if(pickFolderBtn)pickFolderBtn.addEventListener('click',pickFolder);
+if(pickFilesBtn)pickFilesBtn.addEventListener('click',pickFiles);
+if(importCancel)importCancel.addEventListener('click',closeImportDialog);
+if(importModal)importModal.addEventListener('click',e=>{
+  if(e.target===importModal)closeImportDialog();
+});
+
+// 画面取点的命名框：确定 / 取消 / 回车确认 / 点遮罩取消
+if(videoMarkOk)videoMarkOk.addEventListener('click',confirmVideoMark);
+if(videoMarkCancel)videoMarkCancel.addEventListener('click',()=>{
+  closeVideoMarkDialog();
+  pendingMark=null;
+});
+if(videoMarkName)videoMarkName.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();confirmVideoMark()}
+});
+if(videoMarkModal)videoMarkModal.addEventListener('click',e=>{
+  if(e.target===videoMarkModal){closeVideoMarkDialog();pendingMark=null}
+});
+
+// ---- 导入数据：把文件夹/文件加进当前项目 ----
+// 导入数据：Windows/tkinter 没有「文件和文件夹都能选」的对话框
+// （askdirectory 只能选文件夹、askopenfilenames 只能选文件），
+// 所以点开后给两个入口，各自打开对应的原生对话框。
+
+async function importScannedFolder(folder){
+  const name=currentProjectName();
+  if(!name)return;
+
+  if(!folder){show(projectNotice,'没有选择数据。');return}
+
+  const r=await jsonPost('/api/project/add-folder',{project_name:name,folder});
+  await scanGeoJSON();
+
+  // 同一个文件夹再次导入时后端返回 updated=true（就地更新，不报错）
+  show(projectNotice,(r&&r.updated?'已更新数据文件夹：':'已导入数据文件夹：')+(folder.path||''));
+
+  // 导入完直接跑完整流程（缺的 SRT/GeoJSON 会在这里补齐）
+  await runAutoPipeline();
+}
+
+if(addFolderBtn)addFolderBtn.addEventListener('click',()=>{
+  if(!currentProjectName())return;
+  if(importModal){importModal.style.display='flex';return}
+  pickFolder();   // 没有弹窗时退回原来的直接选文件夹
+});
+
+async function pickFolder(){
+  const old=addFolderBtn?addFolderBtn.textContent:'';
+  if(addFolderBtn){addFolderBtn.disabled=true;addFolderBtn.textContent='请在弹窗里选择文件夹……'}
+  closeImportDialog();
+
+  try{
+    const picked=await api('/api/project/select-folder');
+
+    if(!picked||!picked.path){show(projectNotice,'没有选择文件夹。');return}
+
+    // 必须先把文件夹扫一遍再提交：add-folder 是原样存下这份数据、不会自己重扫，
+    // 只传 path 的话条目里没有文件清单，后面的检测就看不到这些视频。
+    const scanned=await api('/api/project/scan-folder?path='+encodeURIComponent(picked.path));
+
+    await importScannedFolder(scanned.folder);
+  }catch(e){
+    show(projectNotice,'选择文件夹未完成或被取消。',true);
+  }finally{
+    if(addFolderBtn){addFolderBtn.disabled=false;addFolderBtn.textContent=old}
+  }
+}
+
+async function pickFiles(){
+  const old=addFolderBtn?addFolderBtn.textContent:'';
+  if(addFolderBtn){addFolderBtn.disabled=true;addFolderBtn.textContent='请在弹窗里选择文件……'}
+  closeImportDialog();
+
+  try{
+    // 后端会把选中的文件整理成和 scan-folder 同构的 folder 对象，
+    // 所以后面完全走同一条路（add-folder -> 检测 -> 生成 -> 加载）
+    const picked=await api('/api/project/select-files');
+
+    if(!picked||!picked.folder){show(projectNotice,'没有选择文件。');return}
+
+    await importScannedFolder(picked.folder);
+  }catch(e){
+    show(projectNotice,'选择文件未完成或被取消。',true);
+  }finally{
+    if(addFolderBtn){addFolderBtn.disabled=false;addFolderBtn.textContent=old}
+  }
+}
+
+function closeImportDialog(){
+  if(importModal)importModal.style.display='none';
+}
+
+// ---- 把项目从项目列表里移除（数据文件一个都不动）----
+if(deleteProjectBtn)deleteProjectBtn.addEventListener('click',async()=>{
+  const name=currentProjectName();
+  if(!name)return;
+
+  const sure=window.confirm(
+    `确定要把「${name}」从项目列表里移除吗？\n\n`
+    +'· 只会移除这个项目在列表里的那一项（项目定义）\n'
+    +'· Data 里的原始视频、SRT、GeoJSON 全部保留在磁盘上，一个都不会删\n'
+    +'· 数据文件夹归哪个项目由你自己决定：之后可以重新导入到任意项目'
+  );
+
+  if(!sure)return;
+
+  const old=deleteProjectBtn.textContent;
+  deleteProjectBtn.disabled=true;
+
+  try{
+    await jsonPost('/api/project/delete',{name});
+
+    // 地图上还画着这个项目的轨迹，一起清掉
+    if(map){
+      layerGroup.clearLayers();
+      loadedTracks=[];
+      legend.innerHTML='';
+      stats.innerHTML='';
+      hideDroneMarker();
+      hideNearbyResult();
+    }
+
+    await loadProjects();
+    show(projectNotice,`已删除项目 ${name}`);
+    setFlow('');
+  }catch(e){
+    show(projectNotice,e.message,true);
+  }finally{
+    deleteProjectBtn.disabled=false;
+    deleteProjectBtn.textContent=old;
+  }
+});
+
+// ---- 3 检测 ----
+if(detectBtn)detectBtn.addEventListener('click',async()=>{
+  const name=currentProjectName();
+  if(!name)return;
+
+  const old=detectBtn.textContent;
+  detectBtn.disabled=true;
+  detectBtn.textContent='检测中……';
+
+  try{
+    const media=await api('/api/project/media?name='+encodeURIComponent(name));
+    const inspect=await api('/api/project/video-inspect?name='+encodeURIComponent(name));
+
+    detectResult.innerHTML=
+      `<b>素材</b>：${media.video_count} 个视频 / ${media.folder_count} 个文件夹<br>`
+      +`<b>字幕流</b>：${inspect.subtitle_video_count} 个带字幕流`
+      +(inspect.ffprobe?'':'（未找到 ffprobe，无法检测）')+'<br>'
+      +`<b>位置信息</b>：${inspect.telemetry_count} 个带 DJI 遥测<br>`
+      +`<b>已有 SRT</b>：${media.srt_count} 个，待处理 ${media.pending_count} 个`;
+    detectResult.style.display='block';
+    markDone(detectBtn,true);
+  }catch(e){
+    show(projectNotice,e.message,true);
+    markDone(detectBtn,false);
+  }finally{
+    detectBtn.disabled=false;
+    detectBtn.textContent=old;
+  }
+});
+
+// ---- 4 生成 ----
+if(makeSrtBtn)makeSrtBtn.addEventListener('click',async()=>{
+  const name=currentProjectName();
+  if(!name)return;
+
+  try{
+    const {srt}=await collectPending(name);
+    if(!srt.length){setFlow('没有需要生成 SRT 的 DJI 视频。');return}
+
+    const r=await runJobs('生成 SRT',srt,'/api/project/extract-srt');
+    markDone(makeSrtBtn,r.failed.length===0);
+    setFlow(`生成 SRT 完成：成功 ${r.ok} 个`
+      +(r.failed.length?`，跳过 ${r.failed.length} 个：\n`+r.failed.join('\n'):''));
+  }catch(e){
+    setFlow(e.message,true);
+  }
+});
+
+if(makeGeoBtn)makeGeoBtn.addEventListener('click',async()=>{
+  const name=currentProjectName();
+  if(!name)return;
+
+  try{
+    const {geo}=await collectPending(name);
+    if(!geo.length){setFlow('没有需要生成 GeoJSON 的 DJI 视频（或还缺 SRT，请先生成 SRT）。');return}
+
+    const r=await runJobs('生成 GeoJSON',geo,'/api/project/generate-geojson');
+    await scanGeoJSON();
+    markDone(makeGeoBtn,r.failed.length===0);
+    setFlow(`生成 GeoJSON 完成：成功 ${r.ok} 个`
+      +(r.failed.length?`，跳过 ${r.failed.length} 个：\n`+r.failed.join('\n'):'')
+      +'\n\n点「加载全部轨迹」即可画到地图上。');
+  }catch(e){
+    setFlow(e.message,true);
+  }
+});
+
+// 「全自动」开关已删除：新建项目 / 导入数据之后一律自动跑完整流程，
+// 所以原来那套「记住上次勾选」的 localStorage 逻辑也一并去掉。
+
+projectSelect.addEventListener('change',()=>{
+  if(map){layerGroup.clearLayers();legend.innerHTML='';stats.innerHTML=''}
+  loadedTracks=[];allLoaded=false;clearProbe();clearHighlight();hideDroneMarker();hideNearbyResult();
+  resetFlowButtons();
+  scanGeoJSON();
+  refreshFlowStates();
+});
+placeSearchBtn.addEventListener('click',doPlaceSearch);
+placeInput.addEventListener('keydown',e=>{if(e.key==='Enter')doPlaceSearch()});
+searchNearbyBtn.addEventListener('click',searchNearby);
+clearProbeBtn.addEventListener('click',()=>{clearProbe();clearHighlight();hideNearbyResult()});
+
+// 操作条里那两个常驻按钮只在初始化时挂一次监听，
+// 用的是 renderNearbyResult 记下的载荷（每次渲染重新挂会累积监听）。
+if(playHitBtn)playHitBtn.addEventListener('click',()=>{if(hitPayload)openVideoFromPopup(hitPayload)});
+if(resultFlyBtn)resultFlyBtn.addEventListener('click',()=>{if(hitFocusLatLng&&map)map.setView(hitFocusLatLng,TRACK_FOCUS_ZOOM)});
+followModeSelect.addEventListener('change',()=>{
+  // 改模式时立刻生效，不受节流限制
+  if(clip){clip.lastFollowAt=0;followViewport()}
+});
+
+/* ============================================================
+   选点 / 地名搜索 / 按此位置检索飞行视频
+   ============================================================ */
+
+function showProbePanel(latlng,source,label){
+  probeLatLng=latlng;
+  probeText=label||'';
+  probeSource.textContent=source;
+  probeCoord.textContent=`${latlng.lng.toFixed(6)}, ${latlng.lat.toFixed(6)}`;
+  probeLabel.textContent=label?`（${label}）`:'';
+  probeLine.style.display='block';
+  probePanel.style.display='block';
+  refreshMapSizeSoon();
+
+  if(!probeMarker){
+    if(!iconsUsable())return;
+    probeMarker=L.marker(latlng,{draggable:true,icon:probeIcon}).addTo(map);
+    probeMarker.bindTooltip('检索基准点，可拖动微调',{direction:'top'});
+    probeMarker.on('dragend',()=>{
+      hideNearbyResult();clearHighlight();
+      showProbePanel(probeMarker.getLatLng(),probeSource.textContent,probeText);
+    });
+  }else{
+    probeMarker.setLatLng(latlng);
+  }
+}
+
+function setProbe(latlng,source,label){
+  hideNearbyResult();clearHighlight();
+  showProbePanel(latlng,source,label);
+}
+
+function clearProbe(){
+  probeLatLng=null;probeText='';
+  if(probeMarker){if(map)map.removeLayer(probeMarker);probeMarker=null}
+  probeLine.style.display='none';
+  probePanel.style.display='none';
+  poiList.style.display='none';
+  refreshMapSizeSoon();
+}
+
+function clearHighlight(){
+  highlightLayers.forEach(l=>{try{if(map)map.removeLayer(l)}catch(e){}});
+  highlightLayers=[];
+}
+
+async function doPlaceSearch(){
+  const keyword=placeInput.value.trim();
+  if(!keyword){show(mapNotice,'请先输入要搜索的地名。',true);return}
+  hide(mapNotice);poiList.style.display='none';poiList.innerHTML='';
+  placeSearchBtn.disabled=true;placeSearchBtn.textContent='搜索中……';
+  try{
+    const d=await api('/api/geocode?q='+encodeURIComponent(keyword));
+    if(!d.results||!d.results.length){
+      show(mapNotice,`没有找到“${keyword}”。天地图对完整地址支持不好，试试只输入其中最具体的一段（例如“南岸街道”），或者直接在地图上点选位置。`,true);
+      return;
+    }
+    hide(mapNotice);
+
+    if(d.resolved_keyword&&d.resolved_keyword!==keyword){
+      show(mapNotice,`“${keyword}”没有直接匹配，已按“${d.resolved_keyword}”搜索。`);
+    }
+
+    d.results.forEach(r=>{
+      const el=document.createElement('div');
+      el.className='poi-item';
+      const badge=r.kind==='area'?'<span class="badge">行政区中心</span>':'';
+      el.innerHTML=`<div class="poi-name">${esc(r.name)}${badge}</div><div class="poi-addr">${esc(r.address||'')}　${Number(r.lon).toFixed(6)}, ${Number(r.lat).toFixed(6)}</div>`;
+      el.addEventListener('click',()=>pickPoi(r));
+      poiList.appendChild(el);
+    });
+    poiList.style.display='block';
+  }catch(e){show(mapNotice,e.message,true)}
+  finally{placeSearchBtn.disabled=false;placeSearchBtn.textContent='搜索地名'}
+}
+
+function pickPoi(poi){
+  poiList.style.display='none';
+  const latlng=L.latLng(Number(poi.lat),Number(poi.lon));
+  map.setView(latlng,15);
+  setProbe(latlng,'地名搜索',poi.name);
+  show(mapNotice,`已定位到：${poi.name}${poi.address?'（'+poi.address+'）':''}。可点击“按此位置搜索飞行视频”。`);
+}
+
+// 同一位置可能有多路视频（可见光 _V / 红外 _T / 长焦 _S），而 2D 与 3D 两份 GeoJSON
+// 描述的是同一段飞行，所以先按“视频流”去重，再按距离排序。
+function streamKeyOf(relativePath){
+  return String(relativePath||'').replace(/\.3d\.geojson$/i,'.geojson').toLowerCase();
+}
+
+// 3D 相关代码：暂时搁置，保留不动。列表默认不显示 .3d.geojson
+// （见文件顶部 SHOW_3D_FILES 的说明）。
+function is3dTrack(relativePath){
+  return /\.3d\.geojson$/i.test(String(relativePath||''));
+}
+
+// 同一个视频的 .geojson / .3d.geojson 只留一条：优先留普通版；
+// 万一某个视频只有 3D 版，仍然保留它，否则整条视频会从列表里消失。
+function pickOneGeoFilePerVideo(list){
+  if(SHOW_3D_FILES)return list;
+
+  const plainKeys=new Set(
+    list
+      .filter(f=>!is3dTrack(f.relative_path))
+      .map(f=>streamKeyOf(f.relative_path))
+  );
+
+  return list.filter(f=>{
+    if(!is3dTrack(f.relative_path))return true;
+    return !plainKeys.has(streamKeyOf(f.relative_path));
+  });
+}
+
+// 可见光 _V 才是巡查视频的主体，优先展示
+function isVisibleStream(relativePath){
+  return /_v\.geojson$/i.test(String(relativePath||''));
+}
+
+// M4T 的可见光两路（V=4K、S=1080p）是同一个混合变焦画面的不同分辨率版本，
+// 所以只能按分辨率区分，不能按镜头区分。
+// 视频类型标签：直接写数字分辨率（4K/1080P 这种叫法对热成像没有对应词，
+// 而且它也不是 16:9，按 p 口径容易误解）。实测分辨率（ffprobe）：
+//   _V 3840×2160（16:9）   _S 1920×1080（16:9）   _T 1280×1024（5:4）
+function streamLabelOf(relativePath){
+  const v=String(relativePath||'').toLowerCase();
+  if(/_t\./.test(v))return '热成像 1280×1024';
+  if(/_v\./.test(v))return '可见光 3840×2160';
+  if(/_s\./.test(v))return '可见光 1920×1080';
+  return '其他';
+}
+
+// 徽标悬停的补充说明：分辨率已经写在标签里了，这里只讲画幅和相机
+function streamNoteOf(relativePath){
+  const v=String(relativePath||'').toLowerCase();
+  if(/_t\./.test(v))return '5:4 画幅 · 热成像传感器 640×512，机内超分 2× 后录像';
+  if(/_v\./.test(v))return '16:9 画幅 · 可见光混合变焦录像（4K 主码流）';
+  if(/_s\./.test(v))return '16:9 画幅 · 可见光混合变焦录像（同一画面的 1080p 版本）';
+  return '';
+}
+
+// 列表排序权重：_V（可见光主码流）-> _S（可见光 1080p 版本）-> _T（热成像）-> 其他。
+// 直接看文件名后缀判断，不依赖上面的标签文字 —— 否则改一次文案就要同步改表。
+function streamRankOf(relativePath){
+  const v=String(relativePath||'').toLowerCase();
+  if(/_v\./.test(v))return 0;
+  if(/_s\./.test(v))return 1;
+  if(/_t\./.test(v))return 2;
+  return 9;
+}
+
+const GROUP_METERS=8;    // 距离相差不到这么多米，视为“同一个位置”
+const GROUP_SECONDS=20;  // 时间相差不到这么多秒，视为“同一次经过”
+
+// 每条视频流各取一个最近点
+function nearestPerStream(latlng){
+  const cosLat=Math.cos(latlng.lat*Math.PI/180);
+  const byStream={};
+
+  for(const t of loadedTracks){
+    const coords=t.coords;
+    let bestIdx=-1,bestD2=Infinity;
+
+    for(let i=0;i<coords.length;i++){
+      const c=coords[i];
+      if(!Array.isArray(c)||c.length<2)continue;
+
+      const dx=(Number(c[0])-latlng.lng)*cosLat;
+      const dy=Number(c[1])-latlng.lat;
+      const d2=dx*dx+dy*dy;
+
+      if(d2<bestD2){bestD2=d2;bestIdx=i}
+    }
+
+    if(bestIdx<0)continue;
+
+    const key=streamKeyOf(t.fileInfo.relative_path);
+    const prev=byStream[key];
+
+    // 同一视频流的 2D / 3D 两份轨迹保留非 3D 的那份，但把 3D 的高度带过来
+    if(prev&&!prev.is3d)continue;
+
+    const c=coords[bestIdx];
+    const pointLatLng=L.latLng(Number(c[1]),Number(c[0]));
+    const rawTime=Number(t.times[bestIdx]);
+    const ownHeight=t.heights.length>bestIdx?Number(t.heights[bestIdx]):null;
+
+    byStream[key]={
+      is3d:is3dTrack(t.fileInfo.relative_path),
+      track:t,
+      index:bestIdx,
+      pointLatLng,
+      time:Number.isFinite(rawTime)?rawTime:Number(t.feature.properties?.video_start||0),
+      distance:map.distance(latlng,pointLatLng),
+      height:ownHeight!=null?ownHeight:(prev&&prev.height!=null?prev.height:null)
+    };
+  }
+
+  return Object.keys(byStream).map(k=>byStream[k]).sort((a,b)=>a.distance-b.distance);
+}
+
+// 返回最近的一组：primary 是主视频（可见光优先），others 是同一位置的其他视频
+function pickNearestGroup(latlng){
+  const candidates=nearestPerStream(latlng);
+  if(!candidates.length)return null;
+
+  const best=candidates[0];
+
+  // 位置和时间都接近的，认为是“同一次经过的多路视频”
+  const group=candidates.filter(c=>
+    c.distance<=best.distance+GROUP_METERS &&
+    Math.abs(c.time-best.time)<=GROUP_SECONDS
+  );
+
+  const primary=group.find(c=>isVisibleStream(c.track.fileInfo.relative_path))||best;
+
+  return {primary,others:group.filter(c=>c!==primary)};
+}
+
+async function searchNearby(){
+  if(!probeLatLng){show(mapNotice,'请先在地图上点选位置，或先用地名搜索定位。',true);return}
+  hideNearbyResult();clearHighlight();hide(mapNotice);
+  searchNearbyBtn.disabled=true;searchNearbyBtn.textContent='检索中……';
+  try{
+    const ok=await ensureAllLoaded();
+    if(!ok)return;
+    if(!loadedTracks.length){show(mapNotice,'当前项目没有可用于检索的航迹，请先生成 GeoJSON。',true);return}
+
+    const hit=pickNearestGroup(probeLatLng);
+    if(!hit){show(mapNotice,'没有在该项目中找到任何轨迹点。',true);return}
+
+    // 高亮命中点，以及它前后各约 150 个点（约 5 秒）的一段轨迹
+    const coords=hit.primary.track.coords;
+    const from=Math.max(0,hit.primary.index-150);
+    const to=Math.min(coords.length-1,hit.primary.index+150);
+    const span=[];
+    for(let i=from;i<=to;i++){
+      const c=coords[i];
+      if(Array.isArray(c)&&c.length>=2)span.push([Number(c[1]),Number(c[0])]);
+    }
+
+    if(span.length>1){
+      highlightLayers.push(
+        L.polyline(span,{color:'#f59e0b',weight:9,opacity:.95,bubblingMouseEvents:false}).addTo(map)
+      );
+    }
+
+    highlightLayers.push(
+      L.circleMarker(hit.primary.pointLatLng,{radius:10,color:'#b45309',weight:3,fillColor:'#fbbf24',fillOpacity:.9,bubblingMouseEvents:false})
+        .addTo(map)
+        .bindTooltip(`最近轨迹点　${formatTime(hit.primary.time)}`,{direction:'top'})
+    );
+
+    map.fitBounds(L.latLngBounds([probeLatLng,hit.primary.pointLatLng]).pad(0.35),{maxZoom:TRACK_FIT_MAX_ZOOM});
+
+    renderNearbyResult(hit);
+  }catch(e){show(mapNotice,e.message,true)}
+  finally{searchNearbyBtn.disabled=false;searchNearbyBtn.textContent='按此位置搜索飞行视频'}
+}
+
+function payloadFor(item){
+  return {
+    folder_index:item.track.fileInfo.folder_index,
+    relative_path:videoPathFromGeojson(item.track.fileInfo.relative_path),
+    video_start:item.time,
+    video_end:item.track.videoEnd,
+    video:item.track.video
+  };
+}
+
+// 按时间在一维序列上线性插值。
+// 遥测每 TELEMETRY_STEP(3) 帧才采一个点，而 GeoJSON 的 point_times 是逐帧的，
+// 所以必须插值：直接取最近点的话，碰上高度台阶会差 0.77 m，插值后降到 0.42 m。
+function interpolateSeries(times,values,t){
+  const n=times?times.length:0;
+  if(!n)return null;
+
+  if(t<=times[0])return values[0];
+  if(t>=times[n-1])return values[n-1];
+
+  let lo=0;
+  let hi=n-1;
+
+  while(hi-lo>1){
+    const mid=(lo+hi)>>1;
+    if(times[mid]<=t)lo=mid;else hi=mid;
+  }
+
+  const span=times[hi]-times[lo];
+  const ratio=span>0?(t-times[lo])/span:0;
+  const a=values[lo];
+  const b=values[hi];
+
+  if(!Number.isFinite(a))return b;
+  if(!Number.isFinite(b))return a;
+
+  return a+(b-a)*ratio;
+}
+
+// 「该点相对高度」原本取自 3D GeoJSON 的 point_heights —— 只有 .3d.geojson 有
+// 这个数组，而 3D 文件现在已经不进列表了，所以改成从该视频的 SRT 遥测里取。
+// 两者同源：3D 文件里 height_type = "relative"，就是 SRT 的 rel_alt。
+//
+// 精度（实测比对 V 路 36542 个点，脚本 verify_height.py）：
+//   中位差 0.0003 m，90 分位 0.004 m，99 分位 0.12 m，最大 0.42 m；
+//   显示到 0.1 m 时 98.63% 的点与 3D 文件完全一致。
+// 残差来源：GPS 高度是台阶状的（36542 点里只有 2657 个不同取值，每次跳 0.03~0.6 m），
+// 而遥测每 3 帧才采一次，跨台阶时刻取不到原值。要完全一致就得让生成端把
+// point_heights 写进普通版 GeoJSON（需要重新生成数据）。
+async function fetchTrackHeight(track,pointTime){
+  try{
+    const path=videoPathFromGeojson(track.fileInfo.relative_path);
+
+    let data=telemetryCache[path];
+
+    if(!data||!data.times){
+      const q=new URLSearchParams({
+        name:projectSelect.value,
+        folder_index:String(track.fileInfo.folder_index),
+        path
+      });
+
+      data=await api('/api/project/telemetry?'+q.toString());
+      telemetryCache[path]=data;
+    }
+
+    if(!data||!data.times||!data.times.length)return null;
+
+    const alt=interpolateSeries(data.times,data.alt,pointTime);
+
+    return Number.isFinite(alt)?alt:null;
+  }catch(e){
+    return null;
+  }
+}
+
+function renderNearbyResult(group){
+  const hit=group.primary;
+  const props=hit.track.feature.properties||{};
+  const encoded=encodeURIComponent(JSON.stringify(payloadFor(hit)));
+  const far=hit.distance>NEARBY_WARN_METERS;
+  const distText=hit.distance>=1000?(hit.distance/1000).toFixed(2)+' km':hit.distance.toFixed(1)+' m';
+
+  let othersHtml='';
+
+  if(group.others.length){
+    const buttons=group.others.map(o=>{
+      const e=encodeURIComponent(JSON.stringify(payloadFor(o)));
+      return `<button class="secondary" onclick="openVideoFromPopup('${e}')">▶ ${esc(streamLabelOf(o.track.fileInfo.relative_path))}　${esc(o.track.video||'-')}</button>`;
+    }).join('');
+
+    othersHtml=`<div style="margin-top:6px">
+      <div class="alt-video-label">同一位置还有其他视频：</div>
+      <div class="row alt-video-row">${buttons}</div>
+    </div>`;
+  }
+
+  // 重要按钮（播放 / 定位）就在地图上面那条操作条里 —— 和选点、搜索按钮同一栏。
+  // 这里只切显示并记下要用的载荷，不再重建 DOM、不再挂一次性监听。
+  hitPayload=encoded;
+  hitFocusLatLng=hit.pointLatLng;
+  playHitBtn.style.display='';
+  resultFlyBtn.style.display='';
+
+  // 次要内容放到地图下面：其他视频、该点信息
+  altVideos.innerHTML=othersHtml;
+  altVideos.style.display=group.others.length?'block':'none';
+
+  hitDetail.innerHTML=`
+    <div class="hit-detail-title">该点轨迹信息${far?' <span class="warn">（距离较远，该位置附近可能没有飞行数据）</span>':''}</div>
+    <div class="hit-chips">
+      <span class="hit-chip"><span class="k">水平距离</span><span class="v">${distText}</span></span>
+      <span class="hit-chip"><span class="k">视频类型</span><span class="v">${esc(streamLabelOf(hit.track.fileInfo.relative_path))}</span></span>
+      <span class="hit-chip"><span class="k">轨迹段</span><span class="v">${esc(props.segment_index??'-')}</span></span>
+      <span class="hit-chip"><span class="k">该点视频时间</span><span class="v">${formatTime(hit.time)}</span></span>
+      <span class="hit-chip"><span class="k">轨迹段结束</span><span class="v">${formatTime(hit.track.videoEnd)}</span></span>
+      <span class="hit-chip"><span class="k">该点相对高度</span><span class="v" id="hitHeight">${hit.height!=null&&Number.isFinite(hit.height)?hit.height.toFixed(1)+' m':'-'}</span></span>
+      <span class="hit-chip"><span class="k">视频文件</span><span class="v">${esc(hit.track.video||'-')}</span></span>
+    </div>`;
+
+  hitDetail.style.display='block';
+
+  // 操作条和地图下面的内容都会改变地图容器的高度，Leaflet 缓存的尺寸随之失效，
+  // 飞机和选点的位置就会偏（严重时跑到可视区外），必须让它重算。
+  refreshMapSizeSoon();
+
+  // 只有 2D GeoJSON 时高度是空的（它不带 point_heights），
+  // 这时按需从 SRT 遥测补上；先让结果卡显示出来，不阻塞。
+  if(!(hit.height!=null&&Number.isFinite(hit.height))){
+    fetchTrackHeight(hit.track,hit.time).then(height=>{
+      const el=document.getElementById('hitHeight');
+      if(el&&height!=null)el.textContent=height.toFixed(1)+' m';
+    });
+  }
+}
+
+// 网址参数可指定初始跟随模式：?follow=fit | center | off
+(function initFollowMode(){
+  const v=(new URLSearchParams(location.search).get('follow')||'').toLowerCase();
+  if(v==='center')followModeSelect.value='center';
+  else if(v==='off'||v==='0'||v==='none')followModeSelect.value='off';
+  else if(v==='fit'||v==='1'||v==='on')followModeSelect.value='fit';
+})();
+
+// 启动。Leaflet 可能稍晚才到（本地 vendor 没有时会动态插入 CDN 的 script），
+// 所以轮询等最多 6 秒；等不到也照常启动非地图部分，并给出明确原因 ——
+// 而不是让整页变成几个空白框。
+const LEAFLET_WAIT_MAX=60;   // 60 × 100ms
+let leafletWaited=0;
+
+function boot(){
+  // 各功能的初始状态。放在这里而不是各自模块的顶层 ——
+  // 顶层调用时后面的 let 还在暂时性死区，一抛异常整页脚本就断了。
+  applyCrosshairVisibility();
+  applyFootprintVisibility();
+  applyMapPipVisibility();
+
+  // 项目列表不依赖地图，任何时候都要能用
+  loadProjects();
+
+  if(!leafletReady()){
+    show(
+      mapNotice,
+      '地图组件 Leaflet 未加载，地图相关功能不可用。原因通常是断网，'
+      +'且本机 vendor 目录里也没有副本。'
+      +'把 leaflet.js 和 leaflet.css 放到 <仓库根>\\vendor\\ 即可离线使用；'
+      +'有网络时会自动从 CDN 取。项目列表和文件列表不受影响，可以正常使用。',
+      true
+    );
+    return;
+  }
+
+  // 图标必须在建任何 marker 之前就绪（Leaflet 可能晚到，图标是懒创建的）
+  ensureMapIcons();
+
+  initMap();
+  initBaseMap();
+
+  // 走到这里说明初始化成功，把加载阶段的提示清掉（它不是持续性问题）
+  clearFatal();
+}
+
+(function waitLeaflet(){
+  if(leafletReady()||leafletWaited>=LEAFLET_WAIT_MAX){
+    boot();
+    return;
+  }
+
+  leafletWaited++;
+  setTimeout(waitLeaflet,100);
+})();
+</script>
+</body>
+</html>
