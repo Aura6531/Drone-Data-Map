@@ -607,7 +607,7 @@ console.log('\n=== 左栏项目流程（创建 / 追加 / 删除 / 检测 / 生�
       '按钮叫「导入数据」（原来叫「添加数据文件夹」）');
     // 用「具体元素/文案」判断，别用裸词 —— JS 注释里也会出现「追加数据」这类词
     chk(!/2 · 给当前项目追加数据/.test(html), '不再有单独的「追加数据」步骤标题');    chk(!/添加数据文件夹/.test(html), '旧的「添加数据文件夹」按钮文案已删除');
-    chk(/<h1>项目数据<\/h1>/.test(html), '标题改成「项目数据」');
+    chk(/<h2>项目数据<\/h2>/.test(html), '标题改成「项目数据」（与「轨迹文件」同为 h2，字号一致）');
     chk(!/<div class="desc">按/.test(html), '那行「按 1 → N 走一遍」的说明已删除');
   }
   // 项目名改成弹窗里输入，卡片里不再有常驻输入框
@@ -790,7 +790,7 @@ console.log('\n=== 删除项目 = 只清出项目列表，不删数据 ===');
   {
     const del = (html.match(/\.proj-del\{[^}]*\}/) || [''])[0];
     chk(/padding:0/.test(del), '× 的按钮内边距清零（全局 button 有 13px 22px，会把它挤扁）');
-    chk(/width:38px;height:38px/.test(del), '× 是 38x38 的方块，和下拉框同高');
+    chk(/width:44px;height:52px/.test(del), '× 是 44x52，和下拉框（height:52px）同高');
     chk(/align-items:center/.test(del) && /justify-content:center/.test(del), '× 居中');
   }
 }
@@ -939,7 +939,7 @@ console.log('\n=== 顶栏删除、标签名更改 ===');
   chk(!/无人机巡查数据管理/.test(html.replace(/<!--[\s\S]*?-->/g, '')),
     '顶栏文字已删除（注释里的说明另计）');
   chk(!/\.header\{/.test(html.replace(/\/\*[\s\S]*?\*\//g, '')), '.header 样式也已删除');
-  chk(/<title>轨迹视频地图<\/title>/.test(html), '浏览器标签名改成「轨迹视频地图」');
+  chk(/<title>视频地图<\/title>/.test(html), '浏览器标签名改成「视频地图」');
 
   // 顶栏原来是 76px，布局高度按它算过；删了顶栏必须改成整屏，否则底部空 76px
   const grid = (html.match(/\.layout\{([^}]*)\}/) || [])[1] || '';
@@ -1156,7 +1156,8 @@ console.log('\n=== 该点信息用哪种排布 ===');
   const chunk = body.slice(body.indexOf('hitDetail.innerHTML'), body.indexOf('hitDetail.innerHTML') + 1500);
   chk(/class="hit-chips"/.test(chunk), '用小标签排布（一行一个字段）');
   chk(!/class="result-grid"/.test(body), '旧的 7 行网格已移除');
-  for (const k of ['水平距离', '视频类型', '轨迹段', '该点视频时间', '轨迹段结束', '该点相对高度', '视频文件']) {
+  // 距离字段标签固定为「水平距离」；命中画面时在数值后加「（画面中心）」区分语义
+  for (const k of ['水平距离', '命中方式', '画面位置', '视频类型', '轨迹段', '该点视频时间', '轨迹段结束', '该点相对高度', '视频文件']) {
     chk(new RegExp('<span class="k">' + k + '</span>').test(chunk), `字段「${k}」在地图下面`);
   }
   chk(/id="hitHeight"/.test(chunk), '异步补高度用的 #hitHeight 也一起搬了（否则补不上）');

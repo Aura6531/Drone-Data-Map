@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>轨迹视频地图</title>
+<title>视频地图</title>
 <!-- Leaflet：优先用本机 vendor 目录里的副本（这样内网/断网也能用），
      本地没有时才退回 CDN。放文件的位置见页面顶部提示。 -->
 <link rel="stylesheet" href="/vendor/leaflet.css"
@@ -367,6 +367,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .flow-actions,.file-actions{gap:8px;margin:12px 0 0;width:100%;flex-wrap:nowrap}
 .card-tools.file-actions{margin-left:0}
 .flow-actions button{flex:1 1 0;min-width:0;height:34px;padding:0 8px;font-size:12px;font-weight:600;white-space:nowrap}
+/* 最长的「生成 GeoJSON」多分一点宽度；完成态在右侧留出空间给对钩，别让它溢出 */
+#makeGeoBtn{flex-grow:1.3}
+.flow-actions button.done{padding-right:15px}
 .card-tools.file-actions button{flex:1 1 0;min-width:0;height:34px;padding:0 8px;font-size:12px;font-weight:600;white-space:nowrap}
 /* 某一步做完了（或本来就没有待办）：按钮变绿，底层用底色表示状态 */
 .flow-actions button.done{background:#dcfce7;border-color:#86efac;color:#15803d}
@@ -378,7 +381,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    这里必须显式清零并自己居中，否则 × 会被挤成一个扁长方形。 */
 .proj-row{display:flex;align-items:center;gap:8px}
 .proj-row select{flex:1;min-width:0}
-.proj-del{flex:0 0 auto;width:38px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#94a3b8;font-size:19px;line-height:1;font-weight:400;cursor:pointer}
+.proj-del{flex:0 0 auto;width:44px;height:52px;padding:0;display:flex;align-items:center;justify-content:center;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#94a3b8;font-size:19px;line-height:1;font-weight:400;cursor:pointer}
 .proj-del:hover{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}
 /* 「新建项目 / 导入数据」两个动作同一排：等分宽度，和下面的输入框对齐 */
 .proj-actions{gap:8px;margin-top:14px}
@@ -419,7 +422,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       <section class="card">
         <!-- 收起按钮和标题同一行：文字在左、按钮在右，不再单独占一行 -->
         <div class="card-head">
-          <h1>项目数据</h1>
+          <h2>项目数据</h2>
           <button id="sideToggle" class="side-toggle" type="button"
                   title="收起检索栏" aria-label="收起检索栏">‹</button>
         </div>
@@ -1337,6 +1340,10 @@ function addGeo(data,index,name,fileInfo){
   });
 
   hit.addTo(layerGroup);
+
+  // 航迹加载后，把各自的遥测预取回来 —— A+B 检索要用它算画面中心与可见性
+  // （已缓存的会直接命中，不会重复请求）
+  prefetchTrackTelemetry();
 
   legend.innerHTML+=`<div class="legend-item"><span class="line" style="background:${color}"></span>${esc(name)}</div>`;
 
@@ -4063,6 +4070,171 @@ function streamRankOf(relativePath){
 const GROUP_METERS=8;    // 距离相差不到这么多米，视为“同一个位置”
 const GROUP_SECONDS=20;  // 时间相差不到这么多秒，视为“同一次经过”
 
+// ============================================================
+// A+B 检索的地基：把「每一路航迹的遥测」取回来并缓存
+// ============================================================
+// 为什么需要它：检索要遍历【所有已加载航迹】，而相机姿态（alt/yaw/pitch/focal）
+// 不在 GeoJSON 里，只在 SRT 里、由 /api/project/telemetry 按【视频】提供。
+// 页面原本只持有当前播放那一路的 telemetry，所以必须按需预取 + 缓存。
+// 三条回退：pitch>=0（打不到地面）、focal 缺失（回退广角基准 BASE_FOCAL）、
+//           遥测取不到（该航迹不参与「画面内」判定）。
+
+const telemetryByPath={};      // 视频路径 -> 遥测（或 'pending' / null）
+let projectFolderPaths=null;   // 当前项目的 folders[i].path（geojson-list 只给 folder_index）
+
+async function ensureProjectFolderPaths(){
+  if(projectFolderPaths)return projectFolderPaths;
+  const name=projectSelect.value;
+  if(!name)return null;
+  try{
+    const d=await api('/api/project/get?name='+encodeURIComponent(name));
+    projectFolderPaths=((d&&d.project&&d.project.folders)||[]).map(f=>f.path);
+  }catch(e){
+    projectFolderPaths=[];
+  }
+  return projectFolderPaths;
+}
+
+// 某条航迹对应的视频文件完整路径
+async function trackVideoPath(t){
+  const info=t&&t.fileInfo;
+  if(!info||!info.relative_path)return null;
+  const paths=await ensureProjectFolderPaths();
+  const folder=paths&&paths[info.folder_index];
+  if(!folder)return null;
+  return folder+'\\'+String(info.relative_path).replace(/\//g,'\\');
+}
+
+// 按需取某条航迹的遥测（带缓存；失败记 null，不反复重试）
+async function ensureTrackTelemetry(t){
+  const path=await trackVideoPath(t);
+  if(!path)return null;
+
+  const cached=telemetryByPath[path];
+  if(cached==='pending'){
+    // 正在取：等它落地（最多约 3 秒），避免并发重复请求
+    for(let k=0;k<30&&telemetryByPath[path]==='pending';k++){
+      await new Promise(r=>setTimeout(r,100));
+    }
+    const done=telemetryByPath[path];
+    return done==='pending'?null:(done||null);
+  }
+  if(cached!==undefined)return cached;
+
+  telemetryByPath[path]='pending';
+  try{
+    const d=await api('/api/project/telemetry?path='+encodeURIComponent(path));
+    const ok=d&&d.times&&d.times.length?d:null;
+    telemetryByPath[path]=ok;
+    // 同时挂到航迹对象上：检索是同步函数，只能这样同步取到
+    if(ok)t.telemetry=ok;
+  }catch(e){
+    telemetryByPath[path]=null;
+  }
+  return telemetryByPath[path];
+}
+
+// 同步取该航迹已缓存的遥测（没有就 null —— 检索退回坐标距离）
+function trackTelemetryCached(t){
+  return (t&&t.telemetry)||null;
+}
+
+// 后台把已加载航迹的遥测都取一遍（不阻塞界面）
+function prefetchTrackTelemetry(){
+  for(const t of loadedTracks){
+    ensureTrackTelemetry(t).catch(()=>{});
+  }
+}
+
+// —— 画面中心点对应的地面位置（A 的排序依据、B 的基准）——
+function frameCenterLatLng(t,tele,i){
+  if(!t||!tele||i==null||i<0)return null;
+
+  const coords=t.coords||[];
+  const c=coords[i];
+  if(!Array.isArray(c)||c.length<2)return null;
+
+  const drone=L.latLng(Number(c[1]),Number(c[0]));
+  const alt=Number(tele.alt?.[i]);
+  const yaw=Number(tele.yaw?.[i]);
+  const pitch=Number(tele.pitch?.[i]);
+  const focal=Number(tele.focal?.[i]);
+
+  if(!Number.isFinite(alt)||alt<=0)return null;
+  if(!Number.isFinite(yaw))return null;
+  // 平视或朝上：射线打不到地面（与视场框同一判据）
+  if(!Number.isFinite(pitch)||pitch>=0)return null;
+
+  const fov=fovOf(Number.isFinite(focal)&&focal>0?focal:BASE_FOCAL);
+
+  return groundPointForImage(drone,alt,yaw,pitch,0,0,0,fov[0],fov[1]);
+}
+
+// —— 反投影：地面上的某点落在画面的哪个位置 ——
+// 返回 {xImg,yImg,visible}；│x│≤1 且 │y│≤1 表示在画面内（右/上为正）
+// 与 groundPointForImage 互为逆运算：
+//   正向 d = f + (xImg·tanH)·r + (yImg·tanV)·u
+//   反向把目标方向 T=(east,north,-alt) 在这组正交基上分解
+function imagePointOfGround(t,tele,i,latlng){
+  if(!t||!tele||i==null||i<0||!latlng)return null;
+
+  const coords=t.coords||[];
+  const c=coords[i];
+  if(!Array.isArray(c)||c.length<2)return null;
+
+  const drone=L.latLng(Number(c[1]),Number(c[0]));
+  const alt=Number(tele.alt?.[i]);
+  const yaw=Number(tele.yaw?.[i]);
+  const pitch=Number(tele.pitch?.[i]);
+  const focal=Number(tele.focal?.[i]);
+
+  if(!Number.isFinite(alt)||alt<=0)return null;
+  if(!Number.isFinite(yaw)||!Number.isFinite(pitch))return null;
+
+  const fov=fovOf(Number.isFinite(focal)&&focal>0?focal:BASE_FOCAL);
+  const tanH=Math.tan(fov[0]*Math.PI/360);
+  const tanV=Math.tan(fov[1]*Math.PI/360);
+  if(!(tanH>0)||!(tanV>0))return null;
+
+  // 目标相对无人机的 ENU 偏移（东、北、上）
+  const latR=drone.lat*Math.PI/180;
+  const east=(latlng.lng-drone.lng)*111320*Math.cos(latR);
+  const north=(latlng.lat-drone.lat)*110540;
+  const T=[east,north,-alt];
+
+  const yawR=yaw*Math.PI/180;
+  const pitchR=pitch*Math.PI/180;
+
+  const f=[Math.cos(pitchR)*Math.sin(yawR),Math.cos(pitchR)*Math.cos(yawR),Math.sin(pitchR)];
+  const u=[-Math.sin(pitchR)*Math.sin(yawR),-Math.sin(pitchR)*Math.cos(yawR),Math.cos(pitchR)];
+  const r=[
+    f[1]*u[2]-f[2]*u[1],
+    f[2]*u[0]-f[0]*u[2],
+    f[0]*u[1]-f[1]*u[0]
+  ];
+
+  const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+
+  const tf=dot(T,f);
+  // 目标在相机背后或正好在相机平面上：不算可见
+  if(!(tf>1e-6))return null;
+
+  const xImg=dot(T,r)/tf/tanH;
+  const yImg=dot(T,u)/tf/tanV;
+
+  if(!Number.isFinite(xImg)||!Number.isFinite(yImg))return null;
+
+  return {xImg,yImg,visible:Math.abs(xImg)<=1&&Math.abs(yImg)<=1};
+}
+
+// 画面位置的文字描述（结果卡用）
+function framePositionText(xImg,yImg){
+  if(!Number.isFinite(xImg)||!Number.isFinite(yImg))return '—';
+  const h=xImg<-0.34?'左':(xImg>0.34?'右':'');
+  const v=yImg>0.34?'上':(yImg<-0.34?'下':'');
+  return (v+h)||'中心';
+}
+
 // 每条视频流各取一个最近点
 function nearestPerStream(latlng){
   const cosLat=Math.cos(latlng.lat*Math.PI/180);
@@ -4070,7 +4242,11 @@ function nearestPerStream(latlng){
 
   for(const t of loadedTracks){
     const coords=t.coords;
-    let bestIdx=-1,bestD2=Infinity;
+    // 该航迹的遥测（只从缓存里同步取；预取由 prefetchTrackTelemetry 负责）
+    const tele=trackTelemetryCached(t);
+
+    let bestIdx=-1,bestD2=Infinity;        // 兜底：无人机位置最近
+    let bestB=null,bestBd=Infinity;        // A+B：看得见 + 画面中心最近
 
     for(let i=0;i<coords.length;i++){
       const c=coords[i];
@@ -4081,9 +4257,27 @@ function nearestPerStream(latlng){
       const d2=dx*dx+dy*dy;
 
       if(d2<bestD2){bestD2=d2;bestIdx=i}
+
+      // B：这一点在不在这幅画面里；A：在其中的挑画面中心离它最近的
+      if(tele){
+        const center=frameCenterLatLng(t,tele,i);
+
+        if(center){
+          const img=imagePointOfGround(t,tele,i,latlng);
+
+          if(img&&img.visible){
+            const bd=map.distance(latlng,center.latlng);
+            if(bd<bestBd){bestBd=bd;bestB={i,img,center,centerDist:bd}}
+          }
+        }
+      }
     }
 
     if(bestIdx<0)continue;
+
+    // 优先用「画面里看得见」的那一帧；没有就退回无人机位置最近
+    const useB=!!bestB;
+    const useIdx=useB?bestB.i:bestIdx;
 
     const key=streamKeyOf(t.fileInfo.relative_path);
     const prev=byStream[key];
@@ -4091,19 +4285,25 @@ function nearestPerStream(latlng){
     // 同一视频流的 2D / 3D 两份轨迹保留非 3D 的那份，但把 3D 的高度带过来
     if(prev&&!prev.is3d)continue;
 
-    const c=coords[bestIdx];
+    const c=coords[useIdx];
     const pointLatLng=L.latLng(Number(c[1]),Number(c[0]));
-    const rawTime=Number(t.times[bestIdx]);
-    const ownHeight=t.heights.length>bestIdx?Number(t.heights[bestIdx]):null;
+    const rawTime=Number(t.times[useIdx]);
+    const ownHeight=t.heights.length>useIdx?Number(t.heights[useIdx]):null;
 
     byStream[key]={
       is3d:is3dTrack(t.fileInfo.relative_path),
       track:t,
-      index:bestIdx,
+      index:useIdx,
       pointLatLng,
       time:Number.isFinite(rawTime)?rawTime:Number(t.feature.properties?.video_start||0),
-      distance:map.distance(latlng,pointLatLng),
-      height:ownHeight!=null?ownHeight:(prev&&prev.height!=null?prev.height:null)
+      // 看得见时 distance 用「画面中心到目标」的距离（A 的排序依据）
+      distance:useB?bestB.centerDist:map.distance(latlng,pointLatLng),
+      droneDistance:map.distance(latlng,pointLatLng),
+      height:ownHeight!=null?ownHeight:(prev&&prev.height!=null?prev.height:null),
+      inFrame:useB,
+      xImg:useB?bestB.img.xImg:null,
+      yImg:useB?bestB.img.yImg:null,
+      framePos:useB?framePositionText(bestB.img.xImg,bestB.img.yImg):null
     };
   }
 
@@ -4257,7 +4457,9 @@ function renderNearbyResult(group){
   if(group.others.length){
     const buttons=group.others.map(o=>{
       const e=encodeURIComponent(JSON.stringify(payloadFor(o)));
-      return `<button class="secondary" onclick="openVideoFromPopup('${e}')">▶ ${esc(streamLabelOf(o.track.fileInfo.relative_path))}　${esc(o.track.video||'-')}</button>`;
+      // 标出这一路到底「看不看得见」目标 —— 这正是 A+B 的结论
+      const mark=o.inFrame?`（画面内${o.framePos&&o.framePos!=='中心'?'·'+o.framePos:''}）`:'（画面内不可见）';
+      return `<button class="secondary" onclick="openVideoFromPopup('${e}')">▶ ${esc(streamLabelOf(o.track.fileInfo.relative_path))}　${esc(o.track.video||'-')}${esc(mark)}</button>`;
     }).join('');
 
     othersHtml=`<div style="margin-top:6px">
@@ -4280,7 +4482,9 @@ function renderNearbyResult(group){
   hitDetail.innerHTML=`
     <div class="hit-detail-title">该点轨迹信息${far?' <span class="warn">（距离较远，该位置附近可能没有飞行数据）</span>':''}</div>
     <div class="hit-chips">
-      <span class="hit-chip"><span class="k">水平距离</span><span class="v">${distText}</span></span>
+      <span class="hit-chip"><span class="k">水平距离</span><span class="v">${distText}${hit.inFrame?'（画面中心）':''}</span></span>
+      <span class="hit-chip"><span class="k">命中方式</span><span class="v">${hit.inFrame?'画面内看得见':'无人机位置最近'}</span></span>
+      <span class="hit-chip"><span class="k">画面位置</span><span class="v">${hit.inFrame?esc(hit.framePos||'中心'):'-'}</span></span>
       <span class="hit-chip"><span class="k">视频类型</span><span class="v">${esc(streamLabelOf(hit.track.fileInfo.relative_path))}</span></span>
       <span class="hit-chip"><span class="k">轨迹段</span><span class="v">${esc(props.segment_index??'-')}</span></span>
       <span class="hit-chip"><span class="k">该点视频时间</span><span class="v">${formatTime(hit.time)}</span></span>
