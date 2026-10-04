@@ -4507,6 +4507,35 @@ function renderNearbyResult(group){
       if(el&&height!=null)el.textContent=height.toFixed(1)+' m';
     });
   }
+
+  // 这次是「退回无人机位置最近」，说明各航迹的遥测可能还没预取完。
+  // 等预取落地后自动重搜一次 —— 免得用户必须点第二下。（只重搜一次：）
+  // 重搜结果真看得见才刷新结果卡，所以不会再触发本函数，不会循环。
+  if(!hit.inFrame&&!group.retried)scheduleResearchAfterPrefetch();
+}
+
+// 等所有已加载航迹的遥测就绪，然后用「同一个点」再搜一次
+let researchTimer=null;
+
+function scheduleResearchAfterPrefetch(){
+  if(researchTimer)return;
+
+  researchTimer=setTimeout(async()=>{
+    researchTimer=null;
+
+    try{
+      const latlng=probeLatLng;
+      if(!latlng)return;
+
+      await Promise.all(loadedTracks.map(t=>ensureTrackTelemetry(t)));
+
+      const again=pickNearestGroup(latlng);
+      if(again&&again.primary&&again.primary.inFrame){
+        if(again.primary.track)again.retried=true;
+        renderNearbyResult(again);
+      }
+    }catch(e){}
+  },300);
 }
 
 // 网址参数可指定初始跟随模式：?follow=fit | center | off
