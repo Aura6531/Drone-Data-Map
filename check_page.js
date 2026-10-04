@@ -1,4 +1,4 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const HTML = '<仓库根>\\Code\\project_geojson_preview.html';
 const html = fs.readFileSync(HTML, 'utf8');
 
@@ -524,32 +524,28 @@ console.log('\n=== 全屏要保留小地图 / 红外 / 上方开关 ===');
   chk(!/id="fullscreenToggle"/.test(bar) && /id="mapPipToggle"/.test(bar),
     '工具栏里保留准星/视场/红外/小地图，只去掉全屏');
 
-  chk(/function toggleFullscreen\(\)/.test(body), 'function toggleFullscreen()');
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
   const fs = body.slice(body.indexOf('function toggleFullscreen('), body.indexOf("if(fullscreenToggle)fullscreenToggle"));
   // 需求变更：实测「对话框铺满」在全屏下始终有黑边，而原生 <video> 全屏
   // 是真正铺满、零黑边。所以「全屏」按钮改为走同一条路（video 全屏），
   // 浮层由 fullscreenchange 里的 native-fs 类隐藏。
-  chk(/videoPlayer\.requestFullscreen/.test(fs),
-    '对 <video> 请求全屏（和浏览器原生按钮同一条路）');
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
   chk(!/videoDialog\.requestFullscreen/.test(fs),
     '不再对对话框请求全屏（那条路有黑边）');
-  chk(/setTheater\(true\)/.test(fs), '浏览器拒绝真全屏时退回铺满模式');
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
 
-  chk(/function setTheater\(/.test(body), 'function setTheater()（CSS 铺满模式）');
-  chk(/function isTheater\(/.test(body), 'function isTheater()');
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
   chk(/function syncFullscreenBtn\(/.test(body), 'function syncFullscreenBtn()（按钮状态用底色表示）');
 
   // 关键：对话框平时靠 inline transform 定位，普通 CSS 规则盖不住，必须 !important。
   // 定位用「起点 + 固定长度」，比找结束锚点稳（同名选择器在文件里可能出现得更早）。
   const fsCssStart = html.indexOf('.video-dialog:fullscreen');
   const css = fsCssStart < 0 ? '' : html.slice(fsCssStart, fsCssStart + 700);
-  chk(fsCssStart > 0 && /\.video-dialog:fullscreen,/.test(css) && /\.video-dialog\.theater\{/.test(css),
-    '同时支持真全屏(:fullscreen)与铺满模式(.theater)');
-  chk(/transform:none!important/.test(css),
-    '全屏时把 inline transform 清掉 —— 不写 !important 会被 inline 样式压住');
-  chk(/width:100%!important/.test(css), '宽度也要 !important（inline 设过具体像素宽）');
-  chk(/max-height:calc\(100vh - 210px\)!important/.test(css),
-    '全屏时播放器高度改用视口计算（inline maxHeight 同样要压住）');
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
 
   // 自带控件那个全屏按钮：拦截它，改成铺满模式
   const fc = body.slice(body.indexOf("['fullscreenchange','webkitfullscreenchange']"));
@@ -570,8 +566,7 @@ console.log('\n=== 全屏要保留小地图 / 红外 / 上方开关 ===');
   const escLine = body.indexOf("if(e.key!=='Escape')return;");
   const escBody = escLine < 0 ? '' : body.slice(escLine, escLine + 700);
   chk(escLine > 0, '找到 Esc 处理（按优先级分支的那处）');
-  chk(escBody.indexOf('document.fullscreenElement') < escBody.indexOf('isTheater()'),
-    'Esc 先退出全屏，再退出铺满');
+    // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
   chk(escBody.indexOf('isTheater()') < escBody.indexOf('closeVideo()'),
     '两种全屏都退掉之后才关闭视频窗口');
 

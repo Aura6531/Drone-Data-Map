@@ -167,51 +167,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .video-dialog{position:relative;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.38);overflow:hidden}
 /* 全屏：让「整个对话框」铺满，而不是只让 <video> 全屏 ——
    小地图、红外小窗、上方开关都在 video 外面，只全屏 video 的话它们全看不见。 */
-.video-dialog:fullscreen,
-.video-dialog:-webkit-full-screen,
-.video-dialog.theater{transform:none!important;position:fixed;inset:0;width:100%!important;height:100%;max-height:100vh;margin:0;border-radius:0}
-.video-dialog:fullscreen .video-player,
-.video-dialog:-webkit-full-screen .video-player,
-.video-dialog.theater .video-player{max-height:calc(100vh - 210px)!important}
-/* —— 铺满 / 全屏（我们自己的全屏按钮）：真正做到「视频填满画面」——
-   原来画面区按 aspect-ratio:16/9 + width:100% 定高，算出来的高度小于可用高度，
-   上下就空出一大块黑边（不是真全屏）。这里改成填满剩余高度，
-   视频用 object-fit:contain 保证不变形 —— 窗口与视频同为 16:9 时就没有任何黑边。 */
-.video-dialog.theater .video-stage,
-.video-dialog:fullscreen .video-stage,
-.video-dialog:-webkit-full-screen .video-stage{
-  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
-  flex:none!important;aspect-ratio:auto!important;max-height:none!important;min-height:0!important;margin:0!important}
-/* 标题栏（含那排开关）在全屏里整体隐藏 —— 需求是「最大视频，不要其他内容」。
-   退出全屏用 Esc（浏览器也会提示），所以不留按钮。 */
-.video-dialog.theater .video-dialog-head,
-.video-dialog:fullscreen .video-dialog-head,
-.video-dialog:-webkit-full-screen .video-dialog-head{display:none!important}
-.video-dialog.theater #videoPlayer,
-.video-dialog:fullscreen #videoPlayer,
-.video-dialog:-webkit-full-screen #videoPlayer{object-fit:contain!important}
-/* 底部那行「镜头…／正在播放（原片）」：白色文字 + 透明底，叠在画面下方。
-   bottom:52px 是为了让开浏览器自带的播放控制条，不挡住进度和播放信息。 */
-.video-dialog.theater .video-foot,
-.video-dialog:fullscreen .video-foot,
-.video-dialog:-webkit-full-screen .video-foot{
-  position:absolute;left:0;right:0;bottom:52px;z-index:5;
-  background:transparent;border-top:0;padding:6px 18px;color:#fff}
-.video-dialog.theater .video-foot b,
-.video-dialog:fullscreen .video-foot b,
-.video-dialog:-webkit-full-screen .video-foot b{color:#e2e8f0}
-.video-dialog.theater .video-status,
-.video-dialog:fullscreen .video-status,
-.video-dialog:-webkit-full-screen .video-status{color:#e2e8f0}
-/* 全屏时把两个小窗的尺寸钉死：
-   它们平时按容器百分比（27% / 26%）算，而全屏反复切换后容器尺寸链会失控，
-   小窗会长到占半个画面。给死值后即使百分比算错也长不大。 */
-.video-dialog.theater .map-pip,
-.video-dialog:fullscreen .map-pip,
-.video-dialog:-webkit-full-screen .map-pip{width:220px;max-width:220px}
-.video-dialog.theater .thermal-pip,
-.video-dialog:fullscreen .thermal-pip,
-.video-dialog:-webkit-full-screen .thermal-pip{width:200px;max-width:200px}
+/* 铺满（theater）那套已整体删除：自制「全屏」按钮去掉之后，全屏统一走
+   <video> 自带控件那条路（给对话框加 native-fs 类），这些规则再也不会命中。
+   下面只保留 native-fs 这条活路径。 */
 /* 全屏（<video> 自带控件那个按钮）：只保留视频画面本身 ——
    标题栏、小地图、红外、准星、底部信息行全部隐藏。
    试过把底部信息行做成叠层，但原生全屏的元素在浏览器顶层图层，
@@ -1368,10 +1326,7 @@ const thermalPip=document.getElementById('thermalPip');
 const mapPipDiv=document.getElementById('mapPip');
 const mapPipCanvas=document.getElementById('mapPipCanvas');
 const mapPipToggle=document.getElementById('mapPipToggle');
-/* 自制的「全屏」按钮已删除（统一用 <video> 自带的那个，效果更好）。
-   这里保留常量并置为 null：Esc 链路与 fullscreenchange 仍会走到 syncFullscreenBtn()，
-   那里有 if(!fullscreenToggle) 守卫，所以不会出错。 */
-const fullscreenToggle=null;
+/* 自制「全屏」按钮与 fullscreenToggle 常量均已删除：全屏统一用 <video> 自带的控件。 */
 const sideToggle=document.getElementById('sideToggle');
 const sideRail=document.getElementById('sideRail');
 const videoThermal=document.getElementById('videoThermal');
@@ -3167,7 +3122,6 @@ document.addEventListener('keydown',e=>{
     closeVideoMarkDialog();pendingMark=null;return;
   }
   if(document.fullscreenElement){document.exitFullscreen().catch(()=>{});return}
-  if(isTheater()){setTheater(false);return}
   if(videoModal.style.display!=='none')closeVideo();
 });
 
@@ -3252,60 +3206,18 @@ window.addEventListener('keyup',e=>{
         退出原生全屏、改用同样铺满的 .theater 模式，效果一致。
    ============================================================ */
 
-function isTheater(){
-  return videoDialog.classList.contains('theater');
-}
+// isTheater / setTheater / toggleFullscreen 已随「自制全屏按钮」一并删除。
+// 全屏现在只有一条路：<video> 自带控件那个按钮 —— fullscreenchange 里给对话框
+// 加 native-fs 类把浮层藏掉。下面只留一个空的 syncFullscreenBtn 供其调用。
 
 function syncFullscreenBtn(){
-  // 自制的「全屏」按钮已删除（统一用浏览器自带控件那个），所以这里直接返回。
-  // 函数保留是因为 Esc 链路和 fullscreenchange 仍会调用它，删掉会引出更多改动。
-  if(!fullscreenToggle)return;
-  setToggleState(fullscreenToggle,!!document.fullscreenElement||isTheater());
+  // 自制的「全屏」按钮已删除，全屏统一走 <video> 自带控件那个，
+  // 所以这里什么都不用同步了。保留空壳是因为 fullscreenchange 仍会调用它。
 }
 
-function setTheater(on){
-  videoDialog.classList.toggle('theater',on);
+// （setTheater / toggleFullscreen 的占位空函数已清掉）
 
-  // 面板位置由 CSS 决定：退出铺满就是回到右栏的普通位置，不需要重新算偏移。
-  // 地图小窗的尺寸变化是异步的（铺满切换要等下一帧甚至更久才生效），
-  // 所以这里用 refitMapPipSoon() 分几次重算，而不是只算这一次。
-  refitMapPipSoon();
-
-  syncFullscreenBtn();
-}
-
-function toggleFullscreen(){
-  if(!clip||!videoDialog)return;
-
-  if(document.fullscreenElement){
-    document.exitFullscreen().catch(()=>{});
-    return;
-  }
-
-  if(isTheater()){
-    setTheater(false);
-    return;
-  }
-
-  // 走和浏览器自带控件那条完全一样的路：把 <video> 本身全屏。
-  // 实测原生按钮的效果是正常的（视频真正铺满、零黑边），而「对话框铺满」
-  // 那套 theater 布局在全屏下始终有黑边，所以直接复用已验证可行的方案；
-  // fullscreenchange 里会给对话框加 native-fs，把浮层藏掉。
-  const request=videoPlayer.requestFullscreen
-    ||videoPlayer.webkitRequestFullscreen
-    ||videoPlayer.msRequestFullscreen;
-
-  if(!request){setTheater(true);return}
-
-  try{
-    const result=request.call(videoDialog);
-    if(result&&typeof result.catch==='function')result.catch(()=>setTheater(true));
-  }catch(e){
-    setTheater(true);
-  }
-}
-
-if(fullscreenToggle)fullscreenToggle.addEventListener('click',toggleFullscreen);
+// （自制「全屏」按钮与其 toggleFullscreen 已删除，这里不再挂任何监听）
 
 // 自带控件的全屏按钮 -> 退出原生全屏，改用铺满模式，浮层就都还在
 ['fullscreenchange','webkitfullscreenchange'].forEach(ev=>{
