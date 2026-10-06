@@ -3377,6 +3377,30 @@ def get_tianditu_key():
     return TIANDITU_KEY
 
 
+def enable_dpi_awareness():
+    """声明本进程 DPI 感知。
+
+    否则 125%/150% 缩放的高分屏上，Windows 会把 tkinter 对话框（选文件夹、选文件）
+    整体位图拉伸，字发虚。必须在创建任何窗口之前调用；失败也不影响功能。
+    """
+
+    import ctypes
+
+    for label, call in (
+        ("PerMonitorV2", lambda: ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))),
+        ("PerMonitor", lambda: ctypes.windll.shcore.SetProcessDpiAwareness(2) == 0),
+        ("System", lambda: ctypes.windll.user32.SetProcessDPIAware()),
+    ):
+        try:
+            if call():
+                return label
+
+        except Exception:
+            continue
+
+    return ""
+
+
 def migrate_legacy_key_file():
     """把老位置的天地图 key 搬到数据目录（只搬一次）。
 
@@ -7288,6 +7312,7 @@ def main():
 
     print()
     print(f"数据目录： {DATA_DIR}")
+    print(f"DPI 感知： {enable_dpi_awareness() or '（未能声明，界面可能发虚）'}")
 
     if migrate_legacy_key_file():
         print(f"天地图 key：已从老位置（{CODE_DIR.name}\\tianditu_key.txt）搬到数据目录")

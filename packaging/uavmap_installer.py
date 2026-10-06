@@ -315,16 +315,21 @@ def run_wizard():
 
     root = tk.Tk()
     root.title(f"{APP_NAME} 安装程序")
-    root.geometry("560x420")
+
+    # DPI：先让 tk 按屏幕比例换算字号，再把窗口与固定像素值一起放大
+    scale = apply_dpi_scaling(root)
+    px = lambda value: int(round(value * scale))          # noqa: E731
+
+    root.geometry(f"{px(560)}x{px(430)}")
     root.resizable(False, False)
 
     header = tk.Label(root, text=APP_NAME, font=("Microsoft YaHei UI", 16, "bold"))
-    header.pack(pady=(18, 2))
+    header.pack(pady=(px(18), px(2)))
 
-    sub = tk.Label(root, text="把无人机巡查数据地图装到这台电脑上（约 150MB）", fg="#555")
+    sub = tk.Label(root, text=f"把无人机巡查数据地图装到这台电脑上（约 150MB）", fg="#555")
     sub.pack()
 
-    body = tk.Frame(root, padx=24, pady=16)
+    body = tk.Frame(root, padx=px(24), pady=px(16))
     body.pack(fill="both", expand=True)
 
     # ---- 第 1 步：安装位置 ----
@@ -346,8 +351,8 @@ def run_wizard():
     tk.Label(
         step1,
         text="提示：不要装到 Program Files —— 程序会把导入的视频与标记点存在安装目录里。",
-        fg="#a15c00", justify="left", wraplength=480
-    ).pack(fill="x", pady=(8, 0))
+        fg="#a15c00", justify="left", wraplength=px(480)
+    ).pack(fill="x", pady=(px(8), 0))
 
     # ---- 第 2 步：天地图 key ----
     step2 = tk.Frame(body)
@@ -359,8 +364,8 @@ def run_wizard():
         text=("底图与地名搜索由天地图提供，需要一串属于你自己的 key（免费，约 2 分钟申请）：\n"
               "① 打开下面的网址并注册/登录　② 创建应用，类型选「浏览器端」　③ 把生成的 32 位 tk 粘到下面\n"
               "没填也能用：底图会退回 OpenStreetMap，只是地名搜索不可用。"),
-        justify="left", wraplength=490, fg="#444"
-    ).pack(fill="x", pady=(6, 8))
+        justify="left", wraplength=px(490), fg="#444"
+    ).pack(fill="x", pady=(px(6), px(8)))
 
     key_var = tk.StringVar()
     tk.Label(step2, text="天地图 key（tk，32 位）：", anchor="w").pack(fill="x")
@@ -393,8 +398,8 @@ def run_wizard():
     # ---- 安装中 ----
     step4 = tk.Frame(body)
     tk.Label(step4, text="正在安装……", anchor="w").pack(fill="x")
-    bar = ttk.Progressbar(step4, length=480, maximum=100)
-    bar.pack(fill="x", pady=10)
+    bar = ttk.Progressbar(step4, length=px(480), maximum=100)
+    bar.pack(fill="x", pady=px(10))
 
     steps = [step1, step2, step3, step4]
     position = {"index": 0}
@@ -473,7 +478,7 @@ def run_wizard():
 
         root.destroy()
 
-    footer = tk.Frame(root, padx=24, pady=14)
+    footer = tk.Frame(root, padx=px(24), pady=px(14))
     footer.pack(fill="x", side="bottom")
     back_btn = tk.Button(footer, text="上一步", width=10, command=lambda: show(position["index"] - 1))
     back_btn.pack(side="left")
@@ -486,6 +491,8 @@ def run_wizard():
 
 
 def main():
+    awareness = enable_dpi_awareness()
+
     parser = argparse.ArgumentParser(description=f"{APP_NAME} 安装程序")
     parser.add_argument("--silent", action="store_true", help="不显示界面（配合 --dir 使用）")
     parser.add_argument("--dir", help="安装目录")
@@ -499,12 +506,84 @@ def main():
         return 0
 
     if args.silent or args.dir:
+        log(f"DPI 感知：{awareness or '（未能声明，界面可能发虚）'}")
         install(args.dir or default_dir(), args.key, not args.no_desktop_icon)
         return 0
 
     run_wizard()
 
     return 0
+
+
+def enable_dpi_awareness():
+    """声明本进程 DPI 感知 —— 否则高分屏上 Windows 会把窗口整体位图拉伸，字发虚。
+
+    必须在**创建任何窗口之前**调用。三种 API 依次尝试（新系统到老系统），
+    全都失败也不影响功能（只是界面可能糊）。
+    """
+
+    import ctypes
+
+    # 1) Per-Monitor v2（Win10 1703+）
+    try:
+        if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return "PerMonitorV2"
+
+    except Exception:
+        pass
+
+    # 2) Per-Monitor（Win8.1+）
+    try:
+        if ctypes.windll.shcore.SetProcessDpiAwareness(2) == 0:
+            return "PerMonitor"
+
+    except Exception:
+        pass
+
+    # 3) 系统级（Vista+）
+    try:
+        if ctypes.windll.user32.SetProcessDPIAware():
+            return "System"
+
+    except Exception:
+        pass
+
+    return ""
+
+
+def dpi_scale():
+    """当前系统 DPI 相对 96 的比例（100% -> 1.0、150% -> 1.5）。"""
+
+    import ctypes
+
+    try:
+        dpi = ctypes.windll.user32.GetDpiForSystem()
+
+    except Exception:
+        try:
+            hdc = ctypes.windll.user32.GetDC(0)
+            dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)      # LOGPIXELSX
+            ctypes.windll.user32.ReleaseDC(0, hdc)
+
+        except Exception:
+            return 1.0
+
+    return max(1.0, round((dpi or 96) / 96.0, 4))
+
+
+def apply_dpi_scaling(root):
+    """把 tk 的字号换算基准和窗口尺寸按 DPI 放大，返回比例。"""
+
+    scale = dpi_scale()
+
+    try:
+        # tk 的 scaling = 每「点」多少像素：96dpi 时 96/72=1.333
+        root.tk.call("tk", "scaling", scale * 96.0 / 72.0)
+
+    except Exception:
+        pass
+
+    return scale
 
 
 def prepare_streams():
