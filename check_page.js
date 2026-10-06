@@ -810,6 +810,24 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/importScannedFolder\(scanned\.folder,paths\.length>1\)/.test(fn),
     '多选时走「安静模式」，不逐个弹提示');
   chk(/已导入 \$\{done\} 个文件夹/.test(fn), '多选时给一条汇总提示');
+
+  // 地图跟随：用户手动动过地图后要宽限 5 秒，不能立刻把视野抢回去
+  chk(/const FOLLOW_USER_GRACE=5000;/.test(body), '定义「用户操作后宽限 5 秒」常量');
+  chk(/let lastUserMapAction=0;/.test(body), '记录用户最后一次操作地图的时间');
+  chk(/watchUserMapActions/.test(body) && /container\.addEventListener\(ev,mark/.test(body),
+    '监听用户对地图的直接操作（拖动 / 滚轮 / 缩放按钮 / 双击 / 触摸）');
+  chk(/map\.on\('dragstart',mark\)/.test(body), '拖动同样计入用户操作');
+  chk(!/zoomstart/.test(body.slice(body.indexOf('watchUserMapActions'),
+                                   body.indexOf('watchUserMapActions') + 900)),
+    '不用 zoomstart 判断用户操作（程序化 fitBounds 也会触发它，会把自动跟随误判成用户操作）');
+  {
+    const followBody = body.slice(body.indexOf('function followViewport('));
+    const graceAt = followBody.indexOf('lastUserMapAction<FOLLOW_USER_GRACE');
+    chk(graceAt > -1
+       && graceAt < followBody.indexOf('map.panTo(drone')
+       && graceAt < followBody.indexOf('map.fitBounds(target'),
+      '宽限期判断排在「居中平移」与「重设视野」之前（center 与 fit 两种模式都受保护）');
+  }
   chk(/async function pickFolder\(quiet\)/.test(fn), 'pickFolder 支持 quiet（自动弹出时取消不报错）');
   chk(/if\(pickFolderBtn\)pickFolderBtn\.addEventListener\('click',\(\)=>pickFolder\(\)\)/.test(body),
     '手动点「选文件夹」用箭头函数包一层（否则事件对象会被当成 quiet，提示被吃掉）');

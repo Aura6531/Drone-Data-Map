@@ -1051,6 +1051,28 @@ function initMap(){
   // 「机头 -> 准星」那条指示线的起点是按像素算的，缩放后要重算一次
   // （视频在播时每帧都会重算；暂停时靠这里补上）
   map.on('zoomend',()=>{if(mapCrosshair)syncCrosshair()});
+
+// 用户对地图的任何直接操作都记一笔：拖动、滚轮缩放、点缩放按钮、双击、触摸。
+// 不能用 Leaflet 的 zoomstart —— 我们自己的 fitBounds 也会触发它，
+// 那会把自动跟随误判成「用户在操作」，跟随就再也回不来了。
+// 整个注册过程包在 try 里：这是页面初始化的路径，绝不能因为某个
+// Leaflet 版本没有 getContainer 而把整页脚本搞崩（test_boot.js 就抓到过这个）。
+(function watchUserMapActions(){
+  try{
+    if(!map)return;
+
+    const mark=()=>{lastUserMapAction=Date.now()};
+    const container=(typeof map.getContainer==='function')?map.getContainer():null;
+
+    if(container&&typeof container.addEventListener==='function'){
+      ['mousedown','wheel','dblclick','touchstart','keydown']
+        .forEach(ev=>container.addEventListener(ev,mark,{passive:true}));
+    }
+
+    if(typeof map.on==='function')map.on('dragstart',mark);   // dragstart 只有用户拖动才会触发
+
+  }catch(e){}
+})();
 }
 
 /* ============================================================
@@ -1818,6 +1840,10 @@ const FOLLOW_HEADROOM=0.30;      // 调整时再多留的余量，减少后续�
 const FOLLOW_PADDING=[70,70];
 const FOLLOW_MARGIN=0.10;        // 安全区：视野四边内缩比例
 const FOLLOW_MIN_INTERVAL=1500;  // 两次自动调整的最小间隔（毫秒）
+const FOLLOW_USER_GRACE=5000;    // 用户手动拖动/缩放后，暂停自动跟随这么久（毫秒）
+
+// 用户最后一次直接操作地图的时间（跟随逻辑据此先把控制权还给用户）
+let lastUserMapAction=0;
 
 // 取一段航迹上的点，抽稀到 maxSamples 个以内
 function trackLatLngs(track,fromIndex,toIndex,maxSamples){
@@ -1855,6 +1881,9 @@ function followViewport(){
 
   const drone=clip.droneLatLng;
   if(!drone)return;
+
+  // 用户刚动过地图：5 秒内不抢。他停手满 5 秒后，自动跟随再恢复。
+  if(Date.now()-lastUserMapAction<FOLLOW_USER_GRACE)return;
 
   // 飞机固定在中心：只在地图中心偏得较多时平移，缩放不动
   if(mode==='center'){
