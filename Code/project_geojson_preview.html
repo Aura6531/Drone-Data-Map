@@ -2519,13 +2519,13 @@ const markerCopyBtn=document.getElementById('markerCopyBtn');
 let markerChecked=new Set();   // 勾选中的标记点 id（重绘不丢）
 let activeMarkerId='';         // 最后跳转到的那个，列表里高亮
 
-// 按创建时间排序（报告、导出、列表都用这个顺序）
+// 按创建时间排序 —— 新的在上面（列表 / 导出 / 报告同一个顺序）
 function sortedMarkers(){
   return projectMarkers.slice().sort((a,b)=>{
     const ta=Date.parse(a.created)||0;
     const tb=Date.parse(b.created)||0;
-    if(ta!==tb)return ta-tb;
-    return String(a.id||'').localeCompare(String(b.id||''));
+    if(ta!==tb)return tb-ta;
+    return String(b.id||'').localeCompare(String(a.id||''));
   });
 }
 
@@ -2601,8 +2601,8 @@ function renderMarkerList(){
     del.type='button';
     del.className='marker-del';
     del.textContent='×';
-    del.title='删除这个标记点';
-    del.addEventListener('click',e=>{e.stopPropagation();deleteMarkers([m.id],false)});
+    del.title='删除这个标记点（要确认）';
+    del.addEventListener('click',e=>{e.stopPropagation();deleteMarkers([m.id],true)});
 
     row.appendChild(cb);
     row.appendChild(name);
@@ -2749,10 +2749,19 @@ async function copyMarkersTsv(list){
 function pickedForExport(){
   const list=selectedMarkers();
   if(!list.length){
-    alert('请先勾选要处理的标记点（可以点表头的「全选」）。');
+    alert('请先选择要导出的标记点（可以点表头的「全选」）。');
     return null;
   }
   return list;
+}
+
+// 导出文件名：标记点_<项目名>_<日期>.kml
+function markerKmlFileName(){
+  const d=new Date();
+  const p=n=>String(n).padStart(2,'0');
+  const stamp=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  const proj=String(projectSelect.value||'标记点').replace(/[\\/:*?"<>|]/g,'_');
+  return `标记点_${proj}_${stamp}.kml`;
 }
 
 if(markerSelectAll)markerSelectAll.addEventListener('change',()=>{
@@ -2773,7 +2782,7 @@ if(markerKmlBtn)markerKmlBtn.addEventListener('click',()=>{
   const list=pickedForExport();
   if(!list)return;
 
-  const name=(projectSelect.value||'标记点')+'-标记点.kml';
+  const name=markerKmlFileName();
   downloadBlob(name,new Blob([buildMarkersKml(list)],
     {type:'application/vnd.google-earth.kml+xml;charset=utf-8'}));
 

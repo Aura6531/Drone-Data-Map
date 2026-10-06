@@ -65,6 +65,7 @@ ${extractFn('selectedMarkers')}
 ${extractFn('updateMarkerBar')}
 ${extractFn('renderMarkerList')}
 ${extractFn('pickedForExport')}
+${extractFn('markerKmlFileName')}
 ${extractFn('kmlEscape')}
 ${extractFn('buildMarkersKml')}
 ${extractFn('markersTsv')}
@@ -72,7 +73,7 @@ async ${extractFn('deleteMarkers')}
 ${extractFn('jumpToMarker')}
 return {
   sortedMarkers, selectedMarkers, updateMarkerBar, renderMarkerList, pickedForExport,
-  buildMarkersKml, markersTsv, kmlEscape, deleteMarkers, jumpToMarker,
+  markerKmlFileName, buildMarkersKml, markersTsv, kmlEscape, deleteMarkers, jumpToMarker,
   getMarkers: () => projectMarkers,
   getChecked: () => markerChecked,
   getActive: () => activeMarkerId
@@ -130,11 +131,11 @@ const geoFiles = [
   { relative_path: 'DJI_x_0001_T.geojson', folder_index: 1 },
 ];
 
-console.log('=== 1) 按创建时间排序（列表 / 导出 / 报告共用这个顺序）===');
+console.log('=== 1) 按创建时间排序：新的在上面 ===');
 {
   const r = fresh([A, B, C]);
   const order = r.api.sortedMarkers().map(m => m.id);
-  chk(order.join(',') === 'c,a,b', '乱序进、按 created 升序出', order.join(','));
+  chk(order.join(',') === 'b,a,c', '乱序进、按 created 降序出（新 -> 旧）', order.join(','));
   chk(r.api.sortedMarkers() !== r.markers(), '排序返回副本，不改动原数组');
 }
 
@@ -170,8 +171,8 @@ console.log('\n=== 3) 列表渲染 ===');
   chk(rows[0].children.length === 5, '每行 5 个元素：[✓] 名称 纬度 经度 [×]', String(rows[0].children.length));
   chk(rows[0].children[0].type === 'checkbox', '第 1 格是复选框');
   chk(rows[0].children[4].textContent === '×', '最后一格是单个删除的 ×');
-  chk(rows[0].children[1].textContent === C.name, '第 2 格是名称（顺序按创建时间）', rows[0].children[1].textContent);
-  chk(rows[0].children[2].textContent === '23.050000' && rows[0].children[3].textContent === '112.480000',
+  chk(rows[0].children[1].textContent === B.name, '第 2 格是名称（最新的排最前）', rows[0].children[1].textContent);
+  chk(rows[0].children[2].textContent === '23.040001' && rows[0].children[3].textContent === '112.470002',
     '纬度 / 经度各占一格，6 位小数', rows[0].children[2].textContent + ',' + rows[0].children[3].textContent);
   chk(el.markerDeleteBtn.disabled === false, '有标记点时批量按钮可用');
 
@@ -189,11 +190,17 @@ console.log('\n=== 4) 单个删除 / 批量删除 ===');
   // 所以直接同步断言；写回用的是一个 async 桩，调用发生在同步段里。
   const r = fresh([A, B, C]);
   r.api.renderMarkerList();
-  r.api.deleteMarkers(['b'], false);
+  calls.confirmAnswer = true;
+  r.api.deleteMarkers(['b'], true);
   chk(r.markers().length === 2 && !r.markers().some(m => m.id === 'b'),
-    '单个 × 删除：立刻少一个（不弹确认）', r.markers().map(m => m.id).join(','));
+    '单个 × 删除：确认后少一个', r.markers().map(m => m.id).join(','));
   chk(calls.saved === 1, '删除后写回项目（saveProjectMarkers 被调用）');
   chk(calls.drew === 1, '删除后重画地图上的点');
+
+  const r0 = fresh([A, B, C]);
+  calls.confirmAnswer = false;
+  r0.api.deleteMarkers(['b'], true);
+  chk(r0.markers().length === 3, '单个 × 删除点「取消」：不删（和批量一样要二次确认）');
 
   const r2 = fresh([A, B, C]);
   calls.confirmAnswer = false;
@@ -217,7 +224,7 @@ console.log('\n=== 5) 复制「名称 + 纬度 + 经度」表格 ===');
   const lines = tsv.split('\r\n');
   chk(lines.length === 4, '表头 + 3 行', String(lines.length));
   chk(lines[0] === '名称\t纬度\t经度', '第一行是表头（制表符分隔，粘 Excel 正好三列）', lines[0]);
-  chk(lines[1] === '3 号取水口\t23.050000\t112.480000', '数据行按创建时间排', lines[1]);
+  chk(lines[1] === '2 号 <桥下> & "涵洞"\t23.040001\t112.470002', '数据行按创建时间倒序（最新在前）', lines[1]);
   chk(lines[1].split('\t').length === 3, '每行三列');
 }
 
@@ -233,6 +240,9 @@ console.log('\n=== 6) 导出 KML ===');
     '名称里的 < > & " 都转义了（否则 KML 直接是坏 XML）');
   chk (/<name>东莞2<\/name>/.test(kml), 'Document 名字用当前项目名');
   chk(kml.indexOf('<?xml') === 0, '带 XML 声明');
+
+  const fname = r.api.markerKmlFileName();
+  chk(/^标记点_东莞2_\d{4}-\d{2}-\d{2}\.kml$/.test(fname), '文件名是 标记点_<项目名>_<日期>.kml', fname);
 }
 
 console.log('\n=== 7) 点一行：地图跳 16 级 + 视频跳到那一帧 ===');
@@ -268,7 +278,7 @@ console.log('\n=== 8) 一个都没勾就点导出：页面提示 ===');
   const r = fresh([A, B, C]);
   calls.alerts.length = 0;
   chk(r.api.pickedForExport() === null, '返回 null（调用方不再往下走）');
-  chk(calls.alerts.length === 1 && /请先勾选/.test(calls.alerts[0]), '弹出「请先勾选」的提示', calls.alerts[0]);
+  chk(calls.alerts.length === 1 && /请先选择要导出的标记点/.test(calls.alerts[0]), '弹出「请先选择要导出的标记点」的提示', calls.alerts[0]);
 
   r.checked().add('a');
   const picked = r.api.pickedForExport();
