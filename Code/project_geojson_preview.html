@@ -3125,7 +3125,8 @@ async function reportVideoImageOf(m,mode){
 
 const REPORT_MAP_WIDTH=1600;
 const REPORT_MAP_HEIGHT=640;
-const REPORT_MAP_MAX_ZOOM=18;
+// 17 级：18 级虽然字更大，但视野太窄、周边参照物太少，反而不利于判断位置
+const REPORT_MAP_MAX_ZOOM=17;
 const REPORT_MAP_MARGIN=1.3;        // 两点之外再留 30% 余量，免得贴边
 
 const reportTrackCache={};
@@ -3256,10 +3257,12 @@ async function reportMapImageOf(m,basemap){
 
     const d=await jsonPost('/api/mapsnapshot',body);
 
-    return String((d&&d.file)||'');
+    // 把实际用的级别一起返回 —— 报告图注里的「缩放 N 级」要用它，
+    // 不能写死（曾经写死 16，地图却是 18，图注与图对不上）
+    return {file:String((d&&d.file)||''),zoom};
 
   }catch(e){
-    return '';
+    return {file:'',zoom:REPORT_MAP_MAX_ZOOM};
   }
 }
 
@@ -3282,6 +3285,8 @@ async function runWordReport(list,mode){
     for(const m of list){
       setReportStatus(`正在生成 ${done+1}/${list.length}：${m.name}…`);
 
+      const mapShot=await reportMapImageOf(m,basemap);
+
       points.push({
         name:m.name,
         lat:m.lat,
@@ -3290,9 +3295,10 @@ async function runWordReport(list,mode){
         video:m.video,
         time:m.time,
         video_image:await reportVideoImageOf(m,mode),
-        map_image:await reportMapImageOf(m,basemap),
+        map_image:mapShot.file,
         basemap_name:basemapDisplayName(basemap),
-        zoom:TRACK_FOCUS_ZOOM
+        // 图注里的「缩放 N 级」用实际用的那个（默认 17，为放进飞机会降级）
+        zoom:mapShot.zoom
       });
 
       done++;

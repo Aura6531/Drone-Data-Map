@@ -545,7 +545,7 @@ console.log('\n=== 13) 报告地图取景：目标点居中 + 18 级，飞机快
   const maxZoom = Number((html.match(/REPORT_MAP_MAX_ZOOM=(\d+)/) || [])[1]);
   const margin = Number((html.match(/REPORT_MAP_MARGIN=([\d.]+)/) || [])[1]);
 
-  chk(maxZoom === 18, '默认取景 18 级（字看得清）', String(maxZoom));
+  chk(maxZoom === 17, '默认取景 17 级（18 级视野太窄，参照物不够）', String(maxZoom));
   chk(width > 0 && height > 0 && margin > 1, '从页面里读到画面尺寸与余量',
     `${width}×${height}px，余量 ×${margin}`);
 
@@ -567,14 +567,14 @@ return {reportMetersOffset, reportMapZoomForOffset};`
   chk(east.east > 90 && east.east < 111 && Math.abs(east.north) < 1e-6,
     '正东偏移按纬度收窄（23° 处 ≈ 102m）', JSON.stringify(east));
 
-  chk(zoomFor(23.05, 0, 0) === 18, '飞机就在目标点：18 级', String(zoomFor(23.05, 0, 0)));
-  chk(zoomFor(23.05, 100, 0) === 18, '飞机正北 100m：仍是 18 级（半高约 176m）',
+  chk(zoomFor(23.05, 0, 0) === 17, '飞机就在目标点：17 级', String(zoomFor(23.05, 0, 0)));
+  chk(zoomFor(23.05, 100, 0) === 17, '飞机正北 100m：仍是 17 级（半高约 352m）',
     String(zoomFor(23.05, 100, 0)));
-  chk(zoomFor(23.05, 0, 300) === 18, '飞机正东 300m：仍是 18 级（半宽约 440m）',
+  chk(zoomFor(23.05, 0, 300) === 17, '飞机正东 300m：仍是 17 级（半宽约 880m）',
     String(zoomFor(23.05, 0, 300)));
-  chk(zoomFor(23.05, 0, 400) === 17, '飞机正东 400m 超出半宽（440m）：降一级',
-    String(zoomFor(23.05, 0, 400)));
-  chk(zoomFor(23.05, -400, 0) === 16, '飞机正南 400m 超出半高（176m）：按需降到 16 级',
+  chk(zoomFor(23.05, 0, 800) === 16, '飞机正东 800m 超出半宽（880m）：降一级',
+    String(zoomFor(23.05, 0, 800)));
+  chk(zoomFor(23.05, -400, 0) === 16, '飞机正南 400m 超出半高（352m）：按需降到 16 级',
     String(zoomFor(23.05, -400, 0)));
   chk(zoomFor(23.05, 100000, 100000) === 10, '极远：退到下限 10 级就停',
     String(zoomFor(23.05, 100000, 100000)));

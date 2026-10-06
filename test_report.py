@@ -419,6 +419,16 @@ else:
         f"{len(document.tables[0].columns)} 列 {len(document.tables[0].rows)} 行")
     chk(document.tables[0].rows[1].cells[4].text == "广东省肇庆市高要区南岸街道",
         "汇总表里带所在位置")
+    chk("缩放 16 级" in xml,
+        "图注里的「缩放 N 级」跟着传进来的级别走（这一份是 16 级）")
+
+    zoomed_payload = dict(payload)
+    zoomed_payload["points"] = [dict(payload["points"][0], zoom=17)]
+    zoomed = pm.build_docx_report(zoomed_payload)
+    with zipfile.ZipFile(ROOT / "report_cache" / zoomed["file"]) as package:
+        zoomed_xml = package.read("word/document.xml").decode("utf-8")
+    chk("缩放 17 级" in zoomed_xml and "缩放 16 级" not in zoomed_xml,
+        "换个级别，图注跟着变（不是写死的）")
     chk(document.tables[0].rows[2].cells[4].text == "未解析",
         "解析不到就写「未解析」，不编造")
     chk(document.tables[0].rows[1].cells[6].text == "00:10:08",

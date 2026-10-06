@@ -1802,8 +1802,16 @@ console.log('\n=== 报告里的地图截图：16:9 + 飞机与注视虚线 ===')
   chk(/const gj=await fetchGeo\(f\)/.test(body),
     '航迹没加载就现取这条视频的 GeoJSON（不再依赖「已加载航迹」）');
   chk(/reportTrackCache\[want\]/.test(body), '取回来的航迹按视频路径缓存，一个点只取一次');
+  chk(/const REPORT_MAP_MAX_ZOOM=17/.test(body),
+    '报告地图默认 17 级（18 级视野太窄、参照物不够）');
   chk(/let zoom=REPORT_MAP_MAX_ZOOM;\s*\n\s*\n\s*if\(drone\)/.test(body),
-    '默认就是 18 级，只有飞机快出画才动缩放');
+    '默认就是 17 级，只有飞机快出画才动缩放');
+  chk(/return \{file:String\(\(d&&d\.file\)\|\|''\),zoom\}/.test(body),
+    'reportMapImageOf 把实际用的缩放级一起返回');
+  chk(/zoom:mapShot\.zoom/.test(body),
+    '图注里的「缩放 N 级」用实际值');
+  chk(!/zoom:TRACK_FOCUS_ZOOM/.test(body),
+    '没有再写死 16 级（曾经图注写 16、地图却是 18）');
   chk(/zoom=reportMapZoomForOffset\(m\.lat,offset\.north,offset\.east\)/.test(body),
     '按飞机相对目标点的偏移选级');
   chk(/lat:m\.lat,\s*\n\s*lng:m\.lng,/.test(body),
