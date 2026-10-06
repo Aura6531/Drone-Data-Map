@@ -3769,14 +3769,21 @@ function photoMatchesFor(group){
 
     const votes=inFrameVotes(track,m.index,track.telemetry,target);
 
+    // 播放要的是**视频**相对路径：fileInfo.relative_path 是 .geojson，
+    // 直接拿它去请求 /api/project/video 会被拒成「指定文件不是 MP4/MOV 视频」
+    // （界面上就是红色那条「视频加载失败」，路径尾巴还挂着 .geojson）。
+    // track.video 来自 GeoJSON 的 properties.video（如 DJI_..._T.MP4），
+    // 取不到时才退回按航迹路径换算。
+    const videoRel=track.video||videoPathFromGeojson(clip.info.relative_path);
+
     // 遥测缺失时 votes 是 null：这时不把「画面内」当硬条件，
     // 否则会凭空丢掉本来对得上的候选。
     out.push({
-      video:track.video||clip.info.relative_path,
-      relativePath:String(clip.info.relative_path),
+      video:videoRel,
+      relativePath:videoRel,
       folderIndex:clip.info.folder_index,
       folder:photoVideoFolderPath(group,clip.info.folder_index),
-      stream:streamLabelOf(clip.info.relative_path),
+      stream:streamLabelOf(videoRel),
       index:m.index,
       time:m.time,
       gapSeconds:m.gapSeconds,

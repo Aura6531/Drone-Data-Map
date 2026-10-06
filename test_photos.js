@@ -56,7 +56,10 @@ const PURE = [
   // 匹配与展示
   'photoFrameMatch', 'photoMatchRank', 'photoGalleryHtml', 'photoJumpHtml',
   'photoCardChips', 'photoTooltip', 'telemetryIndexOf', 'telemetryQuery',
-  'videoPathFromGeojson'
+  'videoPathFromGeojson',
+  // 候选构造（要验它给出的路径是 .mp4 而不是 .geojson —— 这条错过一次：
+  // 界面上「点一下跳到视频」的按钮能点，一按就报「指定文件不是 MP4/MOV 视频」）
+  'photoClipOf', 'photoMatchesFor'
 ];
 
 // imagePointOfGround 是页面里「按位置检索」用的同一个反投影函数，这里连它的
@@ -94,8 +97,7 @@ const src = [
   + `const h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;`
   + `return 2*R*Math.asin(Math.sqrt(h));}};`,
   `let projectFolderPaths=null;`,
-  `let loadedTracks=[];`,
-  // 真实数据那一层用：第 i 帧「画面中心对应的地面点」。
+  `let loadedTracks=[];`,  // 真实数据那一层用：第 i 帧「画面中心对应的地面点」。
   // 这正是照片解算在做的事（ground_target 与 centerGroundLatLng 是同一套公式），
   // 所以拿它当目标点回投影，理应落在画面中心。
   `function centerGroundPointForTest(track,tele,i){`
@@ -107,7 +109,8 @@ const src = [
   + `if(!Number.isFinite(alt)||alt<=0)return null;`
   + `if(!Number.isFinite(yaw)||!Number.isFinite(pitch)||pitch>=0)return null;`
   + `return centerGroundLatLng(L.latLng(Number(c[1]),Number(c[0])),yaw,pitch,alt);}`,
-  `return {${[...PURE, ...GEO].join(',')},centerGroundPointForTest,setFolders:v=>{projectFolderPaths=v},getFolders:()=>projectFolderPaths};`
+  `return {${[...PURE, ...GEO].join(',')},centerGroundPointForTest,loadedTracks,`
+  + `setFolders:v=>{projectFolderPaths=v},getFolders:()=>projectFolderPaths};`
 ].join('\n');
 
 const page = new Function(src)();
@@ -497,6 +500,34 @@ console.log('\n=== 7) 真实数据：照片时刻真的能落到视频的那一�
 
       const m = page.photoFrameMatch(clip, group);
 
+      // ---- 候选里的相对路径必须是 .mp4 ----
+      // 踩过：候选带的是 fileInfo.relative_path（.geojson），于是「点一下跳到视频」
+      // 按钮能点，一按就报「指定文件不是 MP4/MOV 视频」，播放器一片黑。
+      // 这里用真实航迹 + 刚算出来的这一帧，把整条候选构造真的跑一遍。
+      page.loadedTracks.length = 0;
+      page.loadedTracks.push(track);
+      const ms = page.photoMatchesFor(group);
+
+      chk(ms.length > 0, 'photoMatchesFor 能给出候选（真实航迹）', ms.length + ' 个');
+
+      if (ms.length) {
+        const c0 = ms[0];
+        chk(/\.mp4$/i.test(c0.relativePath), '候选的 relativePath 是 .mp4', c0.relativePath);
+        chk(!/\.geojson$/i.test(c0.relativePath), '候选的 relativePath 不是 .geojson');
+        chk(c0.video === c0.relativePath, 'video 与 relativePath 一致（按钮标签与实际播放同一个文件）',
+          `${c0.video} / ${c0.relativePath}`);
+        chk(!/^[A-Za-z]:/.test(c0.relativePath), 'relativePath 是相对路径（接口要相对路径）');
+        chk(Number.isFinite(c0.startSeconds) && c0.startSeconds >= 0,
+          '给了可直接用的起播秒数', c0 && String(c0.startSeconds.toFixed(2)));
+        // 这条最要紧：起播秒数要与「照片时刻 - 视频首帧时刻」一致
+        const want = (t - clip.ms0) / 1000;
+        chk(Math.abs(c0.startSeconds - want) <= 1,
+          '起播秒数 = 照片时刻 - 视频首帧时刻',
+          `${c0.startSeconds.toFixed(2)} vs ${want.toFixed(2)}`);
+
+        page.loadedTracks.length = 0;
+      }
+
       chk(!!m, '匹配函数返回了一帧');
       chk(m && Math.abs(m.gapSeconds) <= 1, '找到的帧与照片时刻相差不到 1 秒（SRT 30fps，理应如此）',
         m ? m.gapSeconds.toFixed(3) + ' 秒' : '-');
@@ -620,6 +651,15 @@ console.log('\n=== 9) 遥测请求必须带对参数（这条错了，画面内�
   const tv = extractFn('trackVideoPath');
   chk(/videoPathFromGeojson\(info\.relative_path\)/.test(tv),
     'trackVideoPath 也把 .geojson 换成 .mp4（/api/project/video 同样只收 MP4）');
+
+  // 候选构造必须把 .geojson 换成 .mp4 —— 这条错过一次：按钮能点，
+  // 一按就是红字「指定文件不是 MP4/MOV 视频」，播放器全黑。
+  const pmf = extractFn('photoMatchesFor');
+  chk(/const videoRel=track\.video\|\|videoPathFromGeojson\(clip\.info\.relative_path\)/.test(pmf),
+    '候选的路径是视频路径（.mp4），不是航迹的 .geojson');
+  chk(/relativePath:videoRel/.test(pmf), 'relativePath 用的是换算后的视频路径');
+  chk(!/relativePath:String\(clip\.info\.relative_path\)/.test(pmf),
+    '没有把 clip.info.relative_path（.geojson）直接当 relativePath');
 
   // 真实数据那一层现在能拿到遥测了，就该有「画面内」命中；
   // 这条断言把「遥测取不到 -> 全都不是画面内」这种退化情形也挡住。
