@@ -5455,34 +5455,6 @@ class ProjectManagerHandler(
         # 本地第三方资源（Leaflet 等），让页面不依赖外网 CDN
         # ----------------------------------------------------
 
-        # 「申请指南」PDF：补填 key 的弹窗里点它打开。
-        # 教程随包分发，所以这里按「打包后在包内 docs/」「开发时仓库 docs/」
-        # 「直接放在包根」三种位置依次找。
-        if path == "/key-guide.pdf":
-
-            for candidate in (
-                CODE_DIR / "docs" / "天地图key申请教程.pdf",
-                BASE_DIR / "docs" / "天地图key申请教程.pdf",
-                CODE_DIR / "天地图key申请教程.pdf",
-            ):
-                if not candidate.is_file():
-                    continue
-
-                payload = candidate.read_bytes()
-
-                self.send_response(200)
-                self.send_header("Content-Type", "application/pdf")
-                self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Content-Disposition", 'inline; filename="tianditu-key-guide.pdf"')
-                self.send_header("Cache-Control", "no-store")
-                self.end_headers()
-                self.wfile.write(payload)
-
-                return
-
-            self.send_error(404, "key guide not found")
-            return
-
         if path.startswith("/vendor/"):
 
             name = path[len("/vendor/"):]

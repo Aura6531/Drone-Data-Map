@@ -281,10 +281,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .key-btn:hover{border-color:#2563eb;color:#2563eb}
 .key-btn.ok{border-color:#16a34a;color:#15803d;background:#f0fdf4}
 .key-btn.ok::after{content:" ✓"}
-/* 补填 key 弹窗：输入框下方的申请指南链接 */
-.key-guide-row{margin-top:9px;font-size:12px;color:#64748b;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
-.key-guide-row a{color:#2563eb;font-weight:700;text-decoration:none;white-space:nowrap}
-.key-guide-row a:hover{text-decoration:underline}
+/* 补填 key 弹窗：输入框下方的申请地址链接 */
+.key-link-row{margin-top:9px;font-size:12px;color:#64748b;display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}
+.key-link-row a{color:#2563eb;text-decoration:none;word-break:break-all}
+.key-link-row a:hover{text-decoration:underline}
 /* 「搜索地名」按钮与输入框等高 36px（原来是一整行时的 50px） */
 .search-bar button{height:36px;padding:0 16px;font-size:13px;flex:0 0 auto;white-space:nowrap}
 .search-bar input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
@@ -684,9 +684,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       申请好后把 <b>32 位 tk</b> 粘到下面，点保存<strong>即刻生效</strong> —— 不用重启，也不用重装程序。
     </div>
     <input id="keyInput" type="text" placeholder="粘贴 32 位天地图 key（tk）" spellcheck="false" autocomplete="off">
-    <div class="key-guide-row">
-      <a href="/key-guide.pdf" target="_blank" rel="noreferrer">【申请指南】</a>
-      <span>图文教程（PDF）：申请流程、key 放哪里、常见问题</span>
+    <!-- 申请地址直接给官网那一页，不再另做指南 -->
+    <div class="key-link-row">
+      <span>申请地址：</span>
+      <a href="https://lbs.tianditu.gov.cn/authorization/authorization.html"
+         target="_blank" rel="noreferrer">lbs.tianditu.gov.cn/authorization/authorization.html</a>
     </div>
     <div id="keyModalError" class="mini-modal-error" style="display:none"></div>
     <div id="keyModalState" class="mini-modal-hint" style="margin:9px 0 0"></div>

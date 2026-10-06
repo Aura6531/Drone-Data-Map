@@ -67,6 +67,3 @@ packaging/_accept/
 # —— ⑦ 运行期缓存（数据目录里会生成，根目录也有） ——
 geocode_cache/
 packaging/*.zip.partial
-
-# —— ⑧ 教程 PDF 的排版自查图（可再生） ——
-docs/_tutorial_preview/

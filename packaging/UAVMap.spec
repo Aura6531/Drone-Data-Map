@@ -46,8 +46,6 @@ datas = [(str(ROOT / "Code" / page), ".") for page in PAGES]
 datas += [
     (str(SPEC_DIR / "UAVMap.ico"), "."),
     (str(ROOT / "docs" / "使用说明.md"), "."),
-    # 「申请指南」PDF：网页上补填天地图 key 的弹窗里点它打开（路由 /key-guide.pdf）
-    (str(ROOT / "docs" / "天地图key申请教程.pdf"), "docs"),
     (str(DOCX_TEMPLATE), "docx/templates"),
 ]
 
