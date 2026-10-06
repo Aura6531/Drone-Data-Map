@@ -6296,7 +6296,14 @@ if __name__ == "__main__":
     )
 
     HOST = "127.0.0.1"
-    PORT = 8000
+
+    # 端口默认 8000；想跑在别的端口（例如已经有旧服务占着 8000、想先另起一个）
+    # 就设环境变量 UAV_MAP_PORT。页面里所有请求都是相对路径，换端口不用改前端。
+    try:
+        PORT = int(os.environ.get("UAV_MAP_PORT") or 8000)
+
+    except ValueError:
+        PORT = 8000
 
     # 绑端口之前先看有没有旧服务占着（绑上之后再问就问不出来了，两个都能绑成功）
     port_hint = existing_server_hint(HOST, PORT)
@@ -6315,35 +6322,15 @@ if __name__ == "__main__":
     print("=" * 60)
     print()
 
-    print(
-        "项目管理："
-        " http://127.0.0.1:8000/project_manager.html"
-    )
-
-    print(
-        "项目数据导入："
-        " http://127.0.0.1:8000/project_import.html"
-    )
-
-    print(
-        "项目媒体识别："
-        " http://127.0.0.1:8000/project_media.html"
-    )
-
-    print(
-        "视频结构检测："
-        " http://127.0.0.1:8000/project_video_inspector.html"
-    )
-
-    print(
-        "GeoJSON 轨迹预览："
-        " http://127.0.0.1:8000/project_geojson_preview.html"
-    )
-
-    print(
-        "3D 轨迹预览："
-        " http://127.0.0.1:8000/project_geo3d_preview.html"
-    )
+    for page_label, page_name in (
+        ("项目管理", "project_manager.html"),
+        ("项目数据导入", "project_import.html"),
+        ("项目媒体识别", "project_media.html"),
+        ("视频结构检测", "project_video_inspector.html"),
+        ("GeoJSON 轨迹预览", "project_geojson_preview.html"),
+        ("3D 轨迹预览", "project_geo3d_preview.html"),
+    ):
+        print(f"{page_label}： http://{HOST}:{PORT}/{page_name}")
 
     print()
     print("按 Ctrl+C 停止服务器")
