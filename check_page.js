@@ -863,6 +863,15 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/addEventListener\('loadedmetadata',applyPlaybackRate\)/.test(body),
     '切换视频后自动重新应用倍速');
   chk(/setToggleState\(speedToggle,fastSpeedOn\)/.test(body), '按钮按下状态跟着走');
+
+  // 播放时的地图刷新率：timeupdate 只有约 4Hz，改用 rAF 驱动
+  chk(/function tickPlaybackSync\(\)/.test(body), '播放期间用 requestAnimationFrame 驱动地图同步');
+  chk(/MIN_SYNC_INTERVAL=33/.test(body) && /now-lastSync>=MIN_SYNC_INTERVAL/.test(body),
+    '限到约 30fps，不是无脑每帧全量同步');
+  chk(/!videoPlayer\.paused&&!videoPlayer\.ended/.test(body), '只在播放中同步（暂停时不空转）');
+  chk(/!document\.hidden/.test(body), '页面不可见时跳过，后台标签页不浪费 CPU');
+  chk(/typeof requestAnimationFrame!=='function'\)return;/.test(body),
+    '没有 rAF 的环境直接不启用（否则桩环境/老 webview 初始化就崩）');
   chk(/if\(restoring\|\|offX>0\.25/.test(body) && !/fitBounds/.test(
       body.slice(body.indexOf("if(mode==='center')"), body.indexOf('// fit 模式'))),
     '「居中」模式只平移不改缩放 —— 这正是「跟随当前缩放等级」');

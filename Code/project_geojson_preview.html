@@ -4323,6 +4323,39 @@ videoPlayer.addEventListener('seeked',()=>syncDroneMarker());
 videoPlayer.addEventListener('play',()=>syncDroneMarker());
 videoPlayer.addEventListener('pause',()=>syncDroneMarker());
 
+/* ============================================================
+   播放期间用 requestAnimationFrame 驱动地图同步
+   timeupdate 按 HTML 规范只有约 4Hz —— 播放时地图上的飞机箭头、准星、视场
+   看起来就是每秒跳 2~4 次。播放时改成每帧同步一次（限到约 30fps，与视频帧率相当），
+   暂停时完全不动。
+   跟随视野不受影响：followViewport 有自己的间隔与宽限判断，不会被拉高，地图不会因此抖动。
+   ============================================================ */
+
+(function tickPlaybackSync(){
+  // 非浏览器 / 极老 webview 里可能没有 rAF：那就不用这条高频通道，
+  // 退回原来的 timeupdate（约 4Hz）同步即可 —— 关键是别在这里抛异常把整页初始化带崩
+  // （test_boot.js 用桩环境跑顶层脚本，正是这样抓到过一次崩溃）。
+  if(typeof requestAnimationFrame!=='function')return;
+
+  const MIN_SYNC_INTERVAL=33;   // 毫秒，约 30fps
+  let lastSync=0;
+
+  function frame(now){
+    try{
+      if(clip&&videoPlayer&&!videoPlayer.paused&&!videoPlayer.ended
+         &&!document.hidden&&now-lastSync>=MIN_SYNC_INTERVAL){
+        lastSync=now;
+        syncDroneMarker();
+      }
+
+    }catch(e){}
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+
 // 元数据到了、画幅确定后，控件是否需要换行可能变了，顺带更新一次。
 // （面板位置由 CSS 决定，不再需要重新停靠。）
 videoPlayer.addEventListener('loadedmetadata',()=>{
