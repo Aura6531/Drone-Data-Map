@@ -882,6 +882,12 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/try\{refreshKeyState\(\)\}catch\(e\)\{\}/.test(body), '启动时同步按钮状态，且不拖垮初始化');
   chk(/\.key-btn\.ok/.test(html), '已配置时按钮变绿');
   chk(/\.search-bar\{[^}]*flex:0 1 280px/.test(html), '搜索栏进一步缩短，给按钮腾位置');
+  // 输入框下方的【申请指南】：指向随包分发的 PDF 教程
+  chk(/id="keyInput"[\s\S]{0,300}?<div class="key-guide-row">[\s\S]{0,200}?【申请指南】/.test(html),
+    '【申请指南】链接就在输入框下方');
+  chk(/class="key-guide-row"[\s\S]{0,160}?href="\/key-guide\.pdf"/.test(html),
+    '链接指向 /key-guide.pdf（服务端按包内/仓库两个位置找这份 PDF）');
+  chk(/\.key-guide-row\{/.test(html), '申请指南那一行有样式');
   chk(/if\(restoring\|\|offX>0\.25/.test(body) && !/fitBounds/.test(
       body.slice(body.indexOf("if(mode==='center')"), body.indexOf('// fit 模式'))),
     '「居中」模式只平移不改缩放 —— 这正是「跟随当前缩放等级」');
