@@ -652,11 +652,20 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '已从地图卡片里挪走（不再位于 altVideos 之前）');
   chk(/\.col-right:has\(\.photo-card\[style\*="display: block"\]\) \.marker-card/.test(html),
     '右栏里两者按 :has() 分高度（照片区 : 标记点 = 3 : 2）');
-  chk(/\.photo-card\{display:none;flex:4 2 0;min-height:280px/.test(html),
-    '展示区自己 flex:4 2 0（比标记点拿得多，够放大图 + 小图 + 跳视频按钮）');
-  chk(/--marker-flex:0 0 130px/.test(html),
-    '标记点卡片固定让出 130px，其余高度归展示区（照片在右栏里更值钱）');
+  chk(/\.photo-card\{display:none;flex:1 1 auto;min-height:300px/.test(html),
+    '展示区 flex:1 1 auto（右栏剩余高度基本都给它，按内容长）');
+  chk(/--marker-flex:0 1 130px/.test(html),
+    '标记点卡片让到 130px（用户说「不一定用得到标记点和导出」）');
   chk(/\.col-right:has\(\.photo-card/.test(html), '用 :has() 判断展示区是否开着');
+  // 画廊必须是「左右分栏」：不换行 + 两边按比例伸缩
+  const gal = (html.match(/\.photo-gallery\{[^}]*\}/) || [''])[0];
+  chk(/flex-wrap:nowrap/.test(gal), '画廊不换行（换行就会变成上下分栏）');
+  chk(!/flex-wrap:wrap/.test(gal), '画廊没有 wrap');
+  chk(/\.photo-lead\{flex:2\.6 1 0/.test(html), '大图在左：flex:2.6 1 0');
+  chk(/\.photo-thumbs\{flex:1 1 0;display:flex;flex-direction:column/.test(html),
+    '小图在右：flex:1 1 0，竖着排');
+  chk(/\.photo-shot img\{display:block;max-width:100%;height:auto/.test(html),
+    '图片只给 max-width + height:auto（不定宽、不定高，避免黑框也不溢出）');
   chk(/id="photoCard"/.test(html), '有地图下方的展示区容器');
   chk(/id="photoGallery"/.test(html), '展示区里有图片区');
   chk(/id="photoJump"/.test(html), '展示区里有「跳视频」那块');

@@ -505,7 +505,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    位置：右栏「视频」与「标记点」之间，占标记点上方那半截（用户 2026-10-07 要求）。
    右栏是纵向 flex，所以这里用 flex:1 1 0 和标记点卡片分高度：
    两者各占「视频面板之外的剩余高度」的一半，内部各自滚动。 */
-.photo-card{display:none;flex:4 2 0;min-height:280px;
+/* 展示区：右栏剩余高度基本都给它（flex:1 1 auto，按内容长）。
+   用户 2026-10-07：「很多时候只需要看照片、看视频，不一定用得到标记点和导出」——
+   所以标记点卡片只留一小份，照片这边要够高。 */
+.photo-card{display:none;flex:1 1 auto;min-height:300px;
             padding:13px 15px;border-radius:12px;
             background:#fff;border:1px solid #cbd5e1;
             box-shadow:0 5px 18px rgba(20,30,50,.07);
@@ -513,12 +516,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 显示出来时是纵向 flex（display:none 时 flex 不生效，所以两个属性分开写） */
 .photo-card[style*="display: block"],.photo-card[style*="display:block"]{display:flex!important}
 
-/* 标记点卡片：右栏里有照片展示区时，它拿到固定的一小份（flex:0 0 130px），
-   剩下的全给照片展示区 —— 照片那边要放大图 + 小图 + 跳视频按钮。
-   实测：130px 时画廊可视 177px（大图 231px，只差一点要滚）；150px 时只有 149px。 */
+/* 标记点卡片：展示区开着时只留一小份（flex:0 1 130px）——
+   用户说「不一定用得到标记点和导出」，要把它让给照片 / 视频。
+   不用 flex:0 0 130px（完全不可压缩）：万一右栏更矮，硬留 130 会把
+   照片区压到放不下大图；0 1 允许它先让，但正常高度下就是 130。 */
 .col-right .marker-card{--marker-flex:1 1 auto;--marker-min-h:190px}
 .col-right:has(.photo-card[style*="display: block"]) .marker-card,
-.col-right:has(.photo-card[style*="display:block"]) .marker-card{--marker-flex:0 0 130px;--marker-min-h:130px}
+.col-right:has(.photo-card[style*="display:block"]) .marker-card{--marker-flex:0 1 130px;--marker-min-h:96px}
 
 /* 头部压成一行：标题 + 副标题 + 右侧两个按钮。
    实测行宽 673px，标题「照片 10:23:25  变焦 + 热成像」+ 副标题约 407px、
@@ -536,27 +540,25 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .photo-chip .k{color:#64748b;margin-right:5px}
 .photo-chip .v{font-weight:700;color:#0f172a}
 
-/* 大图 + 小图并排。右栏本来就窄（约 570px），所以比例上给大图更多：
-   宽的时候大图占 3 份、小图 1 份；再窄就整体换行。
-   flex-basis 必须是 0（flex:1 1 0）：写 auto 时画廊会去抢「内容高度」，
-   而卡片是固定高度、内容放不下 —— 结果它宁可溢出 13px 也不把多出来的空间
-   给自己（实测：卡片 clientH 418 / scrollH 431，画廊却一直卡在 130 的下限）。
-   min-height 用于兜底；两块子项都要 min-height，因为图片固有高度是 0
-   （宽度交给 flex 定），只写 0 会把画廊压成 0 高、一张图都看不见。
+/* 大图在左、小图在右，**一行并排、不换行**（用户 2026-10-07 要求：
+   「左右分栏，不是上下分栏，宽度可以灵活调整」）。
+   之前写 flex-wrap:wrap + 大图 flex-basis 260px，右栏一窄大图就被压到
+   260px 以下，于是小图整块换到第二行 —— 看着就成了上下分栏。
+   现在：nowrap + 两边 min-width:0，宽度按 flex 比例各自伸缩，永远并排。
+   flex-basis 用 0：写 auto 会让画廊按内容抢高度（卡片固定高度时会溢出）。
    整块由 .photo-gallery 自己滚动。 */
-.photo-gallery{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;
+.photo-gallery{display:flex;flex-wrap:nowrap;gap:10px;align-items:flex-start;
                flex:1 1 0;min-height:130px;overflow:auto}
-/* 大图 : 小图 ≈ 2 : 1（450 : 213）。想给大图更多就把 260 调大、
-   代价是小图更窄。大图窄一点反而更好：它的高度由宽度决定，
-   窄 → 矮 → 整组更容易落进画廊的可视高度里（不用滚）。 */
-.photo-lead{flex:3 2 260px;min-width:0;min-height:70px}
-.photo-thumbs{flex:1 1 200px;display:flex;flex-wrap:wrap;gap:8px;min-width:0;min-height:70px}
+/* 大图 : 小图 = 2.6 : 1（约 470 : 180）。小图的 flex-basis 0 让它只吃剩余宽度，
+   不会把大图挤扁；想给小图更多就把 2.6 调小。 */
+.photo-lead{flex:2.6 1 0;min-width:0;min-height:70px}
+.photo-thumbs{flex:1 1 0;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:70px}
 
 .photo-shot{margin:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#0f172a}
-/* 不要给 img 定高 + object-fit:contain —— 右栏里容器定宽 448px，一旦把高度也钉成
-   200px，16:9 的图只能缩到 356px 宽，两侧就留出黑边（黑底一露出来就是「黑框」）。
-   这里让宽度决定高度：图填满容器，比例自然，也不会有黑边。 */
-.photo-shot img{display:block;width:100%;height:auto}
+/* 图片按容器宽度自适应：只给 max-width 与 height:auto，不给固定宽度，
+   也不定高 + object-fit:contain（那样 16:9 的图缩窄后两侧会露黑底 = 黑框）。
+   max-height 兜底：万一遇到竖幅照片，不至于把画廊撑爆。 */
+.photo-shot img{display:block;max-width:100%;height:auto;max-height:420px}
 .photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
 .photo-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
            background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
