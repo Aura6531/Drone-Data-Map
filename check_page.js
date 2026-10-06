@@ -1663,6 +1663,33 @@ console.log('\n=== 按钮尺寸一致性 ===');
   }
 }
 
+console.log('\n=== 标记点报告（Word）===');
+{
+  chk(/<button id="markerReportBtn"/.test(html), '标记点卡片里有「生成 Word 报告」按钮');
+  chk(/<div id="reportModal" class="mini-modal"/.test(html), '有报告生成前的弹窗');
+  chk((html.match(/<input type="radio" name="reportImageMode"/g) || []).length === 2,
+    '弹窗里两个截图尺寸选项（原分辨率 / 压缩至 320ppi）');
+  chk(/name="reportImageMode" value="full" checked/.test(html), '默认选「原分辨率」');
+  chk(/name="reportImageMode" value="a4"/.test(html), '另一个是「压缩至 320ppi」');
+
+  chk(/jsonPost\('\/api\/report\/docx'/.test(body), '前端把这一批点提交给 /api/report/docx');
+  chk(/jsonPost\('\/api\/snapshot'/.test(body), '每个点先取视频截图（/api/snapshot）');
+  chk(/jsonPost\('\/api\/mapsnapshot'/.test(body), '每个点再取地图截图（/api/mapsnapshot）');
+  chk(/api\('\/api\/reverse-geocode\?lat='/.test(body), '所在位置走 /api/reverse-geocode');
+
+  const report = body.slice(body.indexOf('async function runWordReport('),
+    body.indexOf('function startWordReport('));
+  chk(report.length > 0, '找到 runWordReport()');
+  chk(/const basemap=currentBaseMapKind\|\|'street'/.test(body),
+    '地图截图的底图跟随当前选择，不是写死街道图');
+  chk(/return '未解析'/.test(body), '逆地理编码失败就标「未解析」（不编造位置）');
+  chk(/link\.download=result\.download_name/.test(report),
+    '下载用服务端给的中文文件名（download 属性）');
+  chk(/reportBusy/.test(report) && /finally\{/.test(report),
+    '生成中防重入，且无论成败都会解锁');
+  chk(!/fldSimple|TOC \\o/.test(html), '页面里没有域代码目录那套东西（目录由服务端书签实现）');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));

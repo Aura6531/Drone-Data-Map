@@ -1,5 +1,7 @@
 import json
 import hashlib
+import io
+import math
 import os
 import threading
 import ctypes
@@ -104,6 +106,31 @@ GEOCODE_CACHE_DIR = CODE_DIR / "geocode_cache"
 GEOCODE_CACHE_SECONDS = 30 * 24 * 60 * 60
 GEOCODE_MEMORY = {}
 GEOCODE_MEMORY_LOCK = threading.Lock()
+
+# ------------------------------------------------------------
+# 标记点报告（Word）
+#
+# 抽帧 / 地图截图 / docx 都落在 report_cache/（不进仓库），
+# 前端通过 /report/<文件名> 取回。
+# ------------------------------------------------------------
+
+REPORT_DIR = TEST_DIR / "report_cache"
+
+TIANDITU_GEOCODER_URL = "https://api.tianditu.gov.cn/geocoder"
+REVERSE_GEOCODE_MEMORY = {}
+REVERSE_GEOCODE_LOCK = threading.Lock()
+
+# 报告里地图截图的底图：必须跟随用户当前选的那一种
+MAP_SNAPSHOT_LAYERS = {
+    "street": [("tdt_vec", False), ("tdt_cva", True)],
+    "satellite": [("tdt_img", False), ("tdt_cia", True)],
+    "osm": [("osm", False)],
+}
+MAP_SNAPSHOT_MAX_TILES = 80        # 一张截图最多拼多少块瓦片（防手滑传个巨大尺寸）
+MAP_TILE_PIXELS = 256
+
+# 「压缩」档：A4 正文宽约 19.7cm，按 320 ppi 折算 ≈ 2480 px 宽
+REPORT_IMAGE_WIDTH_A4 = 2480
 
 # ------------------------------------------------------------
 # 本地第三方资源目录
@@ -3581,6 +3608,898 @@ def proxy_map_tile(handler, source, z, x, y):
 
 
 # ============================================================
+# 标记点报告（Word）：逆地理编码 / 视频抽帧 / 地图截图 / docx
+#
+# python-docx 与 Pillow 都是【延迟导入】：缺库时后端照常启动，
+# 只有报告相关接口报错，并在 /api/config 里如实告诉前端。
+# ============================================================
+
+
+def report_capabilities():
+    """报告要用的三方库 / 程序在不在，如实报给前端。"""
+
+    def importable(module_name):
+
+        try:
+            __import__(module_name)
+            return True
+
+        except Exception:
+            return False
+
+    return {
+        "docx": importable("docx"),
+        "pillow": importable("PIL"),
+        "ffmpeg": bool(find_ffmpeg()),
+    }
+
+
+def new_report_name(prefix, suffix):
+    """report_cache/ 下的新文件名：纯 ASCII，省得 URL 编码出问题。"""
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+
+    digest = hashlib.sha1(os.urandom(16)).hexdigest()[:6]
+
+    return f"{prefix}_{stamp}_{digest}{suffix}"
+
+
+def report_file(name):
+    """把 /report/<名字> 映射成磁盘路径：只允许单层文件名。"""
+
+    if not name or "/" in name or "\\" in name or ".." in name:
+        raise ValueError("文件名不合法。")
+
+    return REPORT_DIR / name
+
+
+def resolve_report_image(name):
+    """报告里的图片名 -> 磁盘路径；不存在就返回 None（不往 docx 里塞坏图）。"""
+
+    if not name:
+        return None
+
+    try:
+        path = report_file(str(name))
+
+    except ValueError:
+        return None
+
+    return path if path.is_file() else None
+
+
+def safe_file_stem(text, fallback="未命名"):
+    """把项目名之类的东西收拾成能进文件名的样子。"""
+
+    cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", str(text or "")).strip(" ._")
+
+    return cleaned or fallback
+
+
+def format_seconds_text(seconds):
+    """秒 -> 00:00:00（报告里显示视频时间用）。"""
+
+    try:
+        total = max(0, int(float(seconds)))
+
+    except (TypeError, ValueError):
+        return "-"
+
+    return f"{total // 3600:02d}:{(total % 3600) // 60:02d}:{total % 60:02d}"
+
+
+def reverse_geocode_place(lat, lng):
+    """经纬度 -> 「广东省肇庆市高要区南岸街道」（天地图逆地理编码）。
+
+    取不到就抛错，由调用方写「未解析」—— 绝不编造位置。
+    """
+
+    tianditu_key = get_tianditu_key()
+
+    if not tianditu_key:
+        raise ValueError("尚未配置天地图 key，无法解析所在位置。")
+
+    try:
+        lat_value = float(lat)
+        lng_value = float(lng)
+
+    except (TypeError, ValueError):
+        raise ValueError("经纬度无效。")
+
+    if not (-90.0 <= lat_value <= 90.0 and -180.0 <= lng_value <= 180.0):
+        raise ValueError("经纬度超出范围。")
+
+    cache_key = f"{lat_value:.6f},{lng_value:.6f}"
+
+    with REVERSE_GEOCODE_LOCK:
+        cached = REVERSE_GEOCODE_MEMORY.get(cache_key)
+
+    if cached is not None:
+        return cached
+
+    post_str = json.dumps(
+        {"lon": lng_value, "lat": lat_value, "ver": 1},
+        ensure_ascii=False
+    )
+
+    url = (
+        TIANDITU_GEOCODER_URL
+        + "?"
+        + urlencode(
+            {
+                "postStr": post_str,
+                "type": "geocode",
+                "tk": tianditu_key,
+            }
+        )
+    )
+
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent":
+                "LianheZhihui-UAV-Inspection-Map/1.0",
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            payload = json.loads(
+                response.read().decode("utf-8", errors="replace")
+            )
+
+    except urllib.error.HTTPError as e:
+        raise ValueError(f"天地图逆地理编码失败：HTTP {e.code}")
+
+    except urllib.error.URLError as e:
+        raise ValueError(f"天地图逆地理编码失败：{e.reason}")
+
+    except json.JSONDecodeError:
+        raise ValueError("天地图逆地理编码返回的不是 JSON。")
+
+    if str(payload.get("status")) != "0":
+        raise ValueError(
+            "天地图逆地理编码失败："
+            + str(payload.get("msg") or payload.get("status") or "未知原因")
+        )
+
+    result = payload.get("result") or {}
+    component = result.get("addressComponent") or {}
+
+    parts = []
+
+    for field in ("province", "city", "county", "town", "village"):
+        value = str(component.get(field) or "").strip()
+        if value and value not in parts:
+            parts.append(value)
+
+    answer = {
+        "place": "".join(parts) or str(result.get("formatted_address") or "").strip(),
+        "detail": str(result.get("formatted_address") or "").strip(),
+    }
+
+    with REVERSE_GEOCODE_LOCK:
+        REVERSE_GEOCODE_MEMORY[cache_key] = answer
+
+    return answer
+
+
+def cached_map_tile_bytes(source, z, x, y):
+    """取一块底图瓦片：命中磁盘缓存就直接用，否则下载并写回缓存。
+
+    和 proxy_map_tile 共用同一份缓存目录 —— 报告里的地图截图能直接吃到
+    屏幕上已经看过的瓦片，不会把整片区域重新下一遍。
+    """
+
+    cache_path = (
+        MAP_TILE_CACHE_DIR
+        / source
+        / str(z)
+        / str(x)
+        / f"{y}.tile"
+    )
+
+    if cache_path.exists():
+
+        try:
+            if time.time() - cache_path.stat().st_mtime < MAP_TILE_CACHE_SECONDS:
+                data = cache_path.read_bytes()
+                if data:
+                    return data
+
+        except OSError:
+            pass
+
+    request = urllib.request.Request(
+        tile_source_url(source, z, x, y),
+        headers={
+            "User-Agent":
+                "LianheZhihui-UAV-Inspection-Map/1.0",
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = response.read()
+
+    except urllib.error.HTTPError as e:
+        raise ValueError(f"底图瓦片取不到（{source} {z}/{x}/{y}）：HTTP {e.code}")
+
+    except urllib.error.URLError as e:
+        raise ValueError(f"底图瓦片取不到（{source} {z}/{x}/{y}）：{e.reason}")
+
+    if not data:
+        raise ValueError(f"底图瓦片是空的（{source} {z}/{x}/{y}）。")
+
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(data)
+
+    except OSError:
+        pass
+
+    return data
+
+
+def compose_map_snapshot(lat, lng, zoom, kind, width, height):
+    """按指定底图拼一张地图截图，并在正中标出目标点。
+
+    不用前端 canvas 截图：瓦片跨域会污染画布，拿不到图。
+    """
+
+    from PIL import Image, ImageDraw
+
+    layers = MAP_SNAPSHOT_LAYERS.get(kind) or MAP_SNAPSHOT_LAYERS["street"]
+
+    tiles_across = 1 << zoom
+
+    # 目标点在「整幅世界地图」上的像素坐标（Web 墨卡托 + XYZ 瓦片）
+    lat_rad = math.radians(max(-85.05112878, min(85.05112878, lat)))
+
+    world_x = (lng + 180.0) / 360.0 * tiles_across * MAP_TILE_PIXELS
+
+    world_y = (
+        1.0
+        - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi
+    ) / 2.0 * tiles_across * MAP_TILE_PIXELS
+
+    left = world_x - width / 2.0
+    top = world_y - height / 2.0
+
+    first_x = int(math.floor(left / MAP_TILE_PIXELS))
+    first_y = int(math.floor(top / MAP_TILE_PIXELS))
+    last_x = int(math.floor((left + width - 1) / MAP_TILE_PIXELS))
+    last_y = int(math.floor((top + height - 1) / MAP_TILE_PIXELS))
+
+    if (last_x - first_x + 1) * (last_y - first_y + 1) > MAP_SNAPSHOT_MAX_TILES:
+        raise ValueError("地图截图范围太大：请减小尺寸或降低缩放级别。")
+
+    canvas = Image.new(
+        "RGBA",
+        (
+            (last_x - first_x + 1) * MAP_TILE_PIXELS,
+            (last_y - first_y + 1) * MAP_TILE_PIXELS,
+        ),
+        (255, 255, 255, 255)
+    )
+
+    for source, is_overlay in layers:
+
+        for tile_x in range(first_x, last_x + 1):
+            for tile_y in range(first_y, last_y + 1):
+
+                if not (0 <= tile_x < tiles_across and 0 <= tile_y < tiles_across):
+                    continue
+
+                data = cached_map_tile_bytes(source, zoom, tile_x, tile_y)
+
+                tile = Image.open(io.BytesIO(data)).convert("RGBA")
+
+                if tile.size != (MAP_TILE_PIXELS, MAP_TILE_PIXELS):
+                    tile = tile.resize((MAP_TILE_PIXELS, MAP_TILE_PIXELS))
+
+                position = (
+                    (tile_x - first_x) * MAP_TILE_PIXELS,
+                    (tile_y - first_y) * MAP_TILE_PIXELS,
+                )
+
+                if is_overlay:
+                    canvas.alpha_composite(tile, position)
+                else:
+                    canvas.paste(tile, position)
+
+    offset_x = int(round(left - first_x * MAP_TILE_PIXELS))
+    offset_y = int(round(top - first_y * MAP_TILE_PIXELS))
+
+    image = canvas.crop(
+        (offset_x, offset_y, offset_x + width, offset_y + height)
+    ).convert("RGB")
+
+    # 正中标出目标点：白圈打底 + 红十字，深浅底图上都看得见
+    draw = ImageDraw.Draw(image)
+
+    center_x = width // 2
+    center_y = height // 2
+    radius = 16
+
+    draw.ellipse(
+        (center_x - radius, center_y - radius, center_x + radius, center_y + radius),
+        outline=(255, 255, 255),
+        width=5
+    )
+    draw.ellipse(
+        (center_x - radius, center_y - radius, center_x + radius, center_y + radius),
+        outline=(220, 38, 38),
+        width=3
+    )
+
+    for color, line_width in (((255, 255, 255), 5), ((220, 38, 38), 3)):
+        draw.line(
+            (center_x - radius - 10, center_y, center_x + radius + 10, center_y),
+            fill=color,
+            width=line_width
+        )
+        draw.line(
+            (center_x, center_y - radius - 10, center_x, center_y + radius + 10),
+            fill=color,
+            width=line_width
+        )
+
+    return image
+
+
+def make_video_snapshot(payload):
+    """视频抽帧：从【原片】抽，所以是原始分辨率。"""
+
+    project_name = str(payload.get("project_name") or "")
+    relative_path = str(payload.get("path") or "")
+
+    if not project_name:
+        raise ValueError("缺少项目名称。")
+
+    if not relative_path:
+        raise ValueError("缺少视频相对路径。")
+
+    try:
+        time_seconds = max(0.0, float(payload.get("time") or 0))
+
+    except (TypeError, ValueError):
+        raise ValueError("时间无效。")
+
+    mode = str(payload.get("mode") or "full")
+
+    if mode not in ("full", "a4"):
+        mode = "full"
+
+    video_path = resolve_project_video(
+        project_name,
+        payload.get("folder_index"),
+        relative_path
+    )
+
+    ffmpeg = find_ffmpeg()
+
+    if not ffmpeg:
+        raise ValueError("未找到 ffmpeg，无法抽帧。请安装 ffmpeg 后重启服务。")
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 中间出 PNG，再交给 Pillow 转 JPEG。原因是 ffmpeg 写的 JPEG 头是
+    # SOI + COM("Lavc…")，python-docx 的嗅探只认 JFIF/Exif，会直接抛
+    # UnrecognizedImageError（而且它的消息是空的，很难查）。Pillow 存的
+    # JPEG 带 JFIF 头，docx 认。
+    temp_path = REPORT_DIR / new_report_name("frame", ".png")
+    name = new_report_name("shot", ".jpg")
+    output_path = REPORT_DIR / name
+
+    command = [
+        ffmpeg,
+        "-ss", f"{time_seconds:.3f}",
+        "-i", str(video_path),
+        "-frames:v", "1",
+        "-y", str(temp_path),
+    ]
+
+    try:
+        completed = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=180,
+        )
+
+    except subprocess.TimeoutExpired:
+        raise ValueError("抽帧超时。")
+
+    except OSError as e:
+        raise ValueError(f"无法启动 ffmpeg：{e}")
+
+    if (
+        completed.returncode != 0
+        or not temp_path.exists()
+        or temp_path.stat().st_size == 0
+    ):
+        try:
+            temp_path.unlink()
+
+        except OSError:
+            pass
+
+        lines = (completed.stderr or b"").decode(
+            "utf-8", "replace"
+        ).strip().splitlines()
+
+        raise ValueError(
+            "抽帧失败："
+            + (lines[-1] if lines else f"ffmpeg 退出码 {completed.returncode}")
+        )
+
+    try:
+        from PIL import Image
+
+        with Image.open(temp_path) as frame:
+
+            image = frame.convert("RGB")
+
+            if mode == "a4" and image.width > REPORT_IMAGE_WIDTH_A4:
+                ratio = REPORT_IMAGE_WIDTH_A4 / image.width
+                image = image.resize(
+                    (
+                        REPORT_IMAGE_WIDTH_A4,
+                        max(2, round(image.height * ratio))
+                    )
+                )
+
+            width, height = image.size
+
+            image.save(output_path, "JPEG", quality=92, optimize=True)
+
+    except Exception as e:
+        raise ValueError(
+            "抽帧后的图片转换失败（需要 Pillow）："
+            + (str(e) or type(e).__name__)
+        )
+
+    finally:
+        try:
+            temp_path.unlink()
+
+        except OSError:
+            pass
+
+    return {
+        "file": name,
+        "url": "/report/" + name,
+        "time": round(time_seconds, 3),
+        "mode": mode,
+        "width": width,
+        "height": height,
+    }
+
+
+def make_map_snapshot(payload):
+    """拼一张地图截图；底图类型由前端传（跟随用户当前选的那一种）。"""
+
+    try:
+        lat = float(payload.get("lat"))
+        lng = float(payload.get("lng"))
+
+    except (TypeError, ValueError):
+        raise ValueError("经纬度无效。")
+
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
+        raise ValueError("经纬度超出范围。")
+
+    try:
+        zoom = int(payload.get("zoom") or 16)
+
+    except (TypeError, ValueError):
+        zoom = 16
+
+    if not (1 <= zoom <= 19):
+        raise ValueError("缩放级别要在 1~19 之间。")
+
+    kind = str(payload.get("basemap") or "street")
+
+    if kind not in MAP_SNAPSHOT_LAYERS:
+        kind = "street"
+
+    try:
+        width = int(payload.get("width") or 1280)
+        height = int(payload.get("height") or 960)
+
+    except (TypeError, ValueError):
+        width, height = 1280, 960
+
+    width = max(320, min(width, 2560))
+    height = max(240, min(height, 1920))
+
+    image = compose_map_snapshot(lat, lng, zoom, kind, width, height)
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    name = new_report_name("map", ".jpg")
+
+    image.save(REPORT_DIR / name, "JPEG", quality=88)
+
+    return {
+        "file": name,
+        "url": "/report/" + name,
+        "basemap": kind,
+        "zoom": zoom,
+        "width": image.width,
+        "height": image.height,
+    }
+
+
+# ------------------------------------------------------------
+# docx：书签 + 超链接目录（不是要按 F9 刷新的域）
+# ------------------------------------------------------------
+
+CHINESE_DIGITS = "零一二三四五六七八九"
+
+
+def chinese_index(number):
+    """1 -> 一、11 -> 十一、21 -> 二十一（章节序号）。"""
+
+    if number <= 0:
+        return str(number)
+
+    if number < 10:
+        return CHINESE_DIGITS[number]
+
+    if number < 20:
+        return "十" + (CHINESE_DIGITS[number % 10] if number % 10 else "")
+
+    if number < 100:
+        return (
+            CHINESE_DIGITS[number // 10]
+            + "十"
+            + (CHINESE_DIGITS[number % 10] if number % 10 else "")
+        )
+
+    return str(number)
+
+
+def add_docx_bookmark(paragraph, name, bookmark_id):
+    """给段落挂一个书签（目录的超链接指到它）。"""
+
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    start = OxmlElement("w:bookmarkStart")
+    start.set(qn("w:id"), str(bookmark_id))
+    start.set(qn("w:name"), name)
+
+    end = OxmlElement("w:bookmarkEnd")
+    end.set(qn("w:id"), str(bookmark_id))
+
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+
+def add_docx_internal_link(paragraph, anchor, text):
+    """加一个「点了直接跳转」的超链接（w:hyperlink + w:anchor）。"""
+
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("w:anchor"), anchor)
+
+    run = OxmlElement("w:r")
+
+    properties = OxmlElement("w:rPr")
+
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "0563C1")
+    properties.append(color)
+
+    underline = OxmlElement("w:u")
+    underline.set(qn("w:val"), "single")
+    properties.append(underline)
+
+    run.append(properties)
+
+    text_element = OxmlElement("w:t")
+    text_element.text = text
+    run.append(text_element)
+
+    link.append(run)
+    paragraph._p.append(link)
+
+
+def docx_point_field_table(document, point):
+    """每个点那一节里的「字段 / 值」小表。"""
+
+    from docx.shared import Cm, Pt
+
+    rows = [
+        ("名称", point.get("name") or "标记点"),
+        ("纬度", point.get("lat_text") or ""),
+        ("经度", point.get("lng_text") or ""),
+        ("所在位置", point.get("place") or "未解析"),
+        ("视频文件", point.get("video") or "-"),
+        ("视频时间", point.get("time_text") or "-"),
+    ]
+
+    table = document.add_table(rows=0, cols=2)
+    table.style = "Table Grid"
+    table.autofit = False
+
+    widths = (Cm(2.6), Cm(13.4))
+
+    for label, value in rows:
+        cells = table.add_row().cells
+        cells[0].text = label
+        cells[1].text = str(value)
+
+        for cell, width in zip(cells, widths):
+            cell.width = width
+
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(10)
+
+    set_docx_table_width(table, widths)
+
+    return table
+
+
+def breakable_text(text, every=12):
+    """每 N 个字符插一个零宽空格，给 Word 制造换行机会。
+
+    视频文件名（DJI_20260924101516_0001_V.MP4）里的下划线 Word 不当断点，
+    放在表格里会把整张表撑出页面 —— 加了零宽空格就能断，而且看不见。
+    """
+
+    raw = str(text or "")
+
+    if len(raw) <= every:
+        return raw
+
+    return "\u200b".join(raw[i:i + every] for i in range(0, len(raw), every))
+
+
+def set_docx_cell(cell, text, size_pt=8.5, bold=False):
+    """写单元格并把字号压下来（汇总表 7 列，默认字号会撑爆）。"""
+
+    from docx.shared import Pt
+
+    cell.text = str(text)
+
+    for paragraph in cell.paragraphs:
+        for run in paragraph.runs:
+            run.font.size = Pt(size_pt)
+            run.font.bold = bold
+
+
+def set_docx_table_width(table, column_widths):
+    """把表格总宽写死。
+
+    python-docx 建的表格 `tblW` 是 `auto/0`：只设网格列宽时，
+    有的渲染器（LibreOffice）会按内容重算列宽并把表撑出正文区。
+    显式写死总宽（= 各列宽之和）最省心，Word / LibreOffice 都照它排。
+    """
+
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    total_emu = sum(int(width) for width in column_widths)
+    total_twips = max(1, int(total_emu / 635))      # 1 twip = 635 EMU
+
+    tblPr = table._tbl.tblPr
+
+    tblW = tblPr.find(qn("w:tblW"))
+
+    if tblW is None:
+        tblW = OxmlElement("w:tblW")
+        tblPr.append(tblW)
+
+    tblW.set(qn("w:type"), "dxa")
+    tblW.set(qn("w:w"), str(total_twips))
+
+    return table
+
+
+def normalize_report_points(points):
+    """把前端传来的点收拾干净：格式化一律在服务端做，不信前端。"""
+
+    normalized = []
+
+    for index, raw in enumerate(points, start=1):
+
+        if not isinstance(raw, dict):
+            continue
+
+        try:
+            lat = float(raw.get("lat"))
+            lng = float(raw.get("lng"))
+
+        except (TypeError, ValueError):
+            continue
+
+        normalized.append({
+            "name": str(raw.get("name") or f"标记点 {index}"),
+            "lat": lat,
+            "lng": lng,
+            "lat_text": f"{lat:.6f}",
+            "lng_text": f"{lng:.6f}",
+            "place": str(raw.get("place") or "未解析"),
+            "video": str(raw.get("video") or ""),
+            "time": raw.get("time") or 0,
+            "time_text": format_seconds_text(raw.get("time")),
+            "video_image": str(raw.get("video_image") or ""),
+            "map_image": str(raw.get("map_image") or ""),
+            "basemap_name": str(raw.get("basemap_name") or ""),
+            "zoom": raw.get("zoom") or 16,
+        })
+
+    return normalized
+
+
+def build_docx_report(payload):
+    """生成标记点报告 docx，返回文件信息。
+
+    结构：标题 -> 目录（可点）-> 汇总表 -> 每点一节（字段 + 两张图）。
+    """
+
+    from docx import Document
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt
+
+    project_name = str(payload.get("project_name") or "")
+
+    points = normalize_report_points(payload.get("points") or [])
+
+    if not points:
+        raise ValueError("没有有效的标记点可写进报告。")
+
+    image_mode = str(payload.get("image_mode") or "full")
+
+    mode_text = (
+        "压缩至 320ppi（约 2480px 宽）" if image_mode == "a4" else "原分辨率"
+    )
+
+    document = Document()
+
+    # 页面：A4 + 2.5cm 页边距（python-docx 默认模板是 Letter，中文报告要 A4）
+    section = document.sections[0]
+    section.page_width = Cm(21.0)
+    section.page_height = Cm(29.7)
+    section.left_margin = Cm(2.5)
+    section.right_margin = Cm(2.5)
+    section.top_margin = Cm(2.5)
+    section.bottom_margin = Cm(2.5)
+
+    # 中文字体：不指定的话中文会退化成宋体
+    normal = document.styles["Normal"]
+    normal.font.name = "微软雅黑"
+    normal.font.size = Pt(10.5)
+    normal.element.rPr.rFonts.set(qn("w:eastAsia"), "微软雅黑")
+
+    # 标题：默认 Title 样式 28pt，长项目名会顶出页面
+    title_style = document.styles["Title"]
+    title_style.font.name = "微软雅黑"
+    title_style.font.size = Pt(19)
+    title_style.element.rPr.rFonts.set(qn("w:eastAsia"), "微软雅黑")
+
+    document.add_heading(
+        f"标记点报告 —— 项目「{project_name or '未命名'}」",
+        level=0
+    )
+
+    meta = document.add_paragraph(
+        f"生成时间：{time.strftime('%Y-%m-%d %H:%M')}　　"
+        f"标记点：{len(points)} 个　　视频截图：{mode_text}"
+    )
+    meta.runs[0].font.size = Pt(9)
+
+    document.add_heading("目录", level=1)
+    hint = document.add_paragraph("点击下面任意一项，可直接跳到对应章节。")
+    hint.runs[0].font.size = Pt(9)
+
+    for index, point in enumerate(points, start=1):
+        paragraph = document.add_paragraph(style="List Number")
+        add_docx_internal_link(paragraph, f"mark{index}", point["name"])
+
+    document.add_heading("汇总表", level=1)
+
+    columns = ["序号", "名称", "纬度", "经度", "所在位置", "视频文件", "视频时间"]
+
+    # 列宽写死 + 关掉自动伸缩：长文件名（下划线处 Word 不断行）容易把表撑出正文区
+    column_widths = (
+        Cm(1.1), Cm(2.6), Cm(2.0), Cm(2.3), Cm(3.4), Cm(3.1), Cm(1.5)
+    )
+
+    summary = document.add_table(rows=1, cols=len(columns))
+    summary.style = "Table Grid"
+    summary.autofit = False
+
+    for cell, title in zip(summary.rows[0].cells, columns):
+        set_docx_cell(cell, title, size_pt=8.5, bold=True)
+
+    for index, point in enumerate(points, start=1):
+        cells = summary.add_row().cells
+
+        values = [
+            str(index),
+            point["name"],
+            point["lat_text"],
+            point["lng_text"],
+            point["place"],
+            breakable_text(point["video"] or "-"),
+            point["time_text"],
+        ]
+
+        for cell, value in zip(cells, values):
+            set_docx_cell(cell, value, size_pt=8.5)
+
+    for row in summary.rows:
+        for cell, width in zip(row.cells, column_widths):
+            cell.width = width
+
+    for column, width in zip(summary.columns, column_widths):
+        column.width = width
+
+    set_docx_table_width(summary, column_widths)
+
+    for index, point in enumerate(points, start=1):
+
+        document.add_page_break()
+
+        heading = document.add_heading(
+            f"{chinese_index(index)}、{point['name']}",
+            level=1
+        )
+        add_docx_bookmark(heading, f"mark{index}", 1000 + index)
+
+        docx_point_field_table(document, point)
+
+        video_image = resolve_report_image(point["video_image"])
+        map_image = resolve_report_image(point["map_image"])
+
+        if video_image:
+            document.add_paragraph()
+            document.add_picture(str(video_image), width=Cm(15.9))
+
+            caption = document.add_paragraph(
+                f"图 1　目标点视频截图（{point['video'] or '-'}　"
+                f"{point['time_text']}）"
+            )
+            caption.runs[0].font.size = Pt(9)
+
+        if map_image:
+            document.add_paragraph()
+            document.add_picture(str(map_image), width=Cm(15.9))
+
+            caption = document.add_paragraph(
+                f"图 2　目标点地图截图（底图："
+                f"{point['basemap_name'] or '当前底图'}　"
+                f"缩放 {point['zoom']} 级）"
+            )
+            caption.runs[0].font.size = Pt(9)
+
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+    name = new_report_name("report", ".docx")
+
+    document.save(str(REPORT_DIR / name))
+
+    return {
+        "file": name,
+        "url": "/report/" + name,
+        "download_name":
+            f"标记点报告_{safe_file_stem(project_name)}_"
+            f"{time.strftime('%Y-%m-%d')}.docx",
+        "points": len(points),
+        "image_mode": image_mode,
+    }
+
+
+# ============================================================
 # HTTP Handler
 # ============================================================
 
@@ -3736,7 +4655,48 @@ class ProjectManagerHandler(
             return
 
         # ----------------------------------------------------
-        # 前端启动配置（有没有天地图 key 等）
+        # 标记点报告的截图与 docx（report_cache/ 下，只允许单层文件名）
+        # ----------------------------------------------------
+
+        if path.startswith("/report/"):
+
+            try:
+                target = report_file(path[len("/report/"):])
+
+            except ValueError:
+                self.send_error(404, "Not found")
+                return
+
+            if not target.is_file():
+                self.send_error(404, "Not found")
+                return
+
+            try:
+                data = target.read_bytes()
+
+            except OSError:
+                self.send_error(500, "Read failed")
+                return
+
+            content_type = {
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".png": "image/png",
+                ".docx":
+                    "application/vnd.openxmlformats-officedocument"
+                    ".wordprocessingml.document",
+            }.get(target.suffix.lower(), "application/octet-stream")
+
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        # ----------------------------------------------------
+        # 前端启动配置（有没有天地图 key、报告依赖齐不齐）
         # ----------------------------------------------------
 
         if path == "/api/config":
@@ -3745,6 +4705,7 @@ class ProjectManagerHandler(
                 self,
                 {
                     "tianditu": bool(get_tianditu_key()),
+                    "report": report_capabilities(),
                 }
             )
 
@@ -3802,6 +4763,34 @@ class ProjectManagerHandler(
                 json_response(
                     self,
                     geocode_place(keyword)
+                )
+
+            except Exception as e:
+
+                json_response(
+                    self,
+                    {"error": str(e)},
+                    400
+                )
+
+            return
+
+        # ----------------------------------------------------
+        # 逆地理编码：经纬度 -> 镇村级位置（报告里的「所在位置」）
+        # ----------------------------------------------------
+
+        if path == "/api/reverse-geocode":
+
+            try:
+
+                params = parse_qs(parsed.query)
+
+                json_response(
+                    self,
+                    reverse_geocode_place(
+                        params.get("lat", [""])[0],
+                        params.get("lng", [""])[0]
+                    )
                 )
 
             except Exception as e:
@@ -4507,6 +5496,36 @@ class ProjectManagerHandler(
         if (
             path
             ==
+            "/api/snapshot"
+        ):
+
+            # 报告用：从原片抽一帧
+            self.make_snapshot()
+            return
+
+        if (
+            path
+            ==
+            "/api/mapsnapshot"
+        ):
+
+            # 报告用：拼一张当前底图的地图截图
+            self.make_map_snapshot()
+            return
+
+        if (
+            path
+            ==
+            "/api/report/docx"
+        ):
+
+            # 报告用：生成 docx
+            self.make_report_docx()
+            return
+
+        if (
+            path
+            ==
             "/api/project/delete-geojson"
         ):
 
@@ -5062,6 +6081,60 @@ class ProjectManagerHandler(
                 {
                     "error": str(e)
                 },
+                400
+            )
+
+    def make_snapshot(self):
+        """报告用：从原片抽一帧（原始分辨率）。"""
+
+        try:
+
+            json_response(
+                self,
+                make_video_snapshot(self.read_json())
+            )
+
+        except Exception as e:
+
+            json_response(
+                self,
+                {"error": str(e)},
+                400
+            )
+
+    def make_map_snapshot(self):
+        """报告用：拼一张地图截图（底图跟随前端传来的类型）。"""
+
+        try:
+
+            json_response(
+                self,
+                make_map_snapshot(self.read_json())
+            )
+
+        except Exception as e:
+
+            json_response(
+                self,
+                {"error": str(e)},
+                400
+            )
+
+    def make_report_docx(self):
+        """报告用：生成标记点报告 docx。"""
+
+        try:
+
+            json_response(
+                self,
+                build_docx_report(self.read_json())
+            )
+
+        except Exception as e:
+
+            json_response(
+                self,
+                {"error": str(e)},
                 400
             )
 

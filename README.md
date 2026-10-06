@@ -80,6 +80,8 @@ http://127.0.0.1:8000/project_geojson_preview.html
 - 每行 `[✓] 名称 纬度 经度 [×]`，表头「全选」带半选态，标题旁写着「已选 n / 共 m」
 - 点一行 → 地图定位到该点（16 级）+ 视频跳到那一帧
 - 勾选后批量：**删除** / **导出 KML** / **复制经纬度**（制表符表格，直接粘进 Excel）
+  / **生成 Word 报告**（先选截图尺寸，报告含可点击目录、汇总表，每点一张视频截图 + 一张地图截图，
+  地图截图的底图跟随你当前选的底图）
 - 一个都没勾就点批量按钮 → 页面上直接提示先勾选
 
 ---
@@ -108,9 +110,10 @@ node test_ab.js         # A+B 检索的数学基础（正/反投影互逆）
 node test_markers.js    # 标记点列表（排序/勾选/删除/KML/复制/跳转）
 python -B check_py.py   # 后端静态断言
 python -B test_geocode.py
+python -B test_report.py # 报告后端（逆地理编码/地图截图/抽帧/docx 结构）
 ```
 
-共 13 套（另有 1 套需联网的 `test_tdt_tiles.py`，用 `node run_tests.js --with-net` 跑）。
+共 14 套（另有 1 套需联网的 `test_tdt_tiles.py`，用 `node run_tests.js --with-net` 跑）。
 测试路径按脚本所在目录推导，换机器不用改；
 **注意 `node a.js b.js` 里 b.js 会被静默忽略**（只有第一个会执行），别那么写。
 

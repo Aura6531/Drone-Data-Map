@@ -387,6 +387,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             background:#f1f5f9;color:#64748b;font-size:13px}
 .marker-del:hover{background:#fee2e2;color:#b91c1c}
 .marker-empty{font-size:13px;color:#94a3b8;line-height:1.7;padding:6px 2px}
+.marker-hint{font-size:12px;color:#64748b;line-height:1.6}
+/* 报告弹窗里的两个尺寸选项 */
+.report-opt{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;
+            font-size:13px;font-weight:400;line-height:1.6;color:#334155;cursor:pointer}
+.report-opt input{width:15px;height:15px;margin:3px 0 0;flex:0 0 auto}
 </style>
 </head>
 <body>
@@ -607,6 +612,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                   title="把勾选的标记点导出成 KML（可在 Google Earth / 奥维等里打开）">导出 KML</button>
           <button id="markerCopyBtn" class="secondary" type="button"
                   title="把勾选点的「名称 / 纬度 / 经度」以制表符表格复制到剪贴板，可直接粘进 Excel">复制经纬度</button>
+          <button id="markerReportBtn" type="button"
+                  title="把勾选的点生成一份 Word 报告（目录可点 + 总表 + 每点一张视频截图和一张地图截图）">生成 Word 报告</button>
         </div>
       </div>
       <div class="marker-head">
@@ -614,6 +621,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <span class="marker-cols">名称 · 纬度 · 经度（按创建时间）</span>
       </div>
       <div id="markerList" class="marker-list"></div>
+      <div id="reportStatus" class="marker-hint" style="display:none"></div>
     </section>
   </section>
 
@@ -632,6 +640,29 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     <div class="row mini-modal-actions">
       <button id="videoMarkCancel" class="secondary">取消</button>
       <button id="videoMarkOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 生成 Word 报告：先选视频截图的尺寸。
+     地图截图不用选 —— 它跟随当前底图（选街道就街道、选卫星就卫星）。 -->
+<div id="reportModal" class="mini-modal" style="display:none">
+  <div class="mini-modal-box">
+    <div class="mini-modal-title">生成 Word 报告</div>
+    <div id="reportModalHint" class="mini-modal-hint">
+      只包含勾选的点。报告里有可点击跳转的目录、汇总表，每个点一节（含视频截图和地图截图）。
+    </div>
+    <label class="report-opt">
+      <input type="radio" name="reportImageMode" value="full" checked>
+      <span><b>原分辨率</b>　4K 一帧原样嵌入 —— 最清晰，报告体积大</span>
+    </label>
+    <label class="report-opt">
+      <input type="radio" name="reportImageMode" value="a4">
+      <span><b>压缩至 320ppi</b>　约 2480px 宽 —— 打印清晰、体积友好</span>
+    </label>
+    <div class="row mini-modal-actions">
+      <button id="reportCancel" class="secondary">取消</button>
+      <button id="reportOk">开始生成</button>
     </div>
   </div>
 </div>
@@ -1067,6 +1098,7 @@ async function initBaseMap(){
   try{
     const d=await api('/api/config');
     hasTianditu=!!d.tianditu;
+    applyReportCapabilities(d.report);
   }catch(e){}
 
   if(!hasTianditu){
@@ -1080,6 +1112,25 @@ async function initBaseMap(){
   }
 
   setBaseMap(baseMapSelect.value);
+}
+
+// 报告依赖（服务端有没有 python-docx / Pillow / ffmpeg）。
+// 缺哪个就把「生成 Word 报告」按停，并在悬停里写清缺什么 —— 总比点了才报错好。
+function applyReportCapabilities(caps){
+  if(!markerReportBtn||!caps)return;   // 老后端不带这段信息：保持可用
+
+  const missing=[];
+  if(!caps.docx)missing.push('python-docx');
+  if(!caps.pillow)missing.push('Pillow');
+  if(!caps.ffmpeg)missing.push('ffmpeg');
+
+  reportAvailable=missing.length===0;
+
+  if(!reportAvailable){
+    markerReportBtn.title='生成报告需要：'+missing.join(' / ')+'（装好后重启服务）';
+  }
+
+  updateMarkerBar();
 }
 
 async function api(url,options={}){const r=await fetch(url,options);const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||`请求失败：${r.status}`);return d}
@@ -2515,9 +2566,17 @@ const markerSelectAll=document.getElementById('markerSelectAll');
 const markerDeleteBtn=document.getElementById('markerDeleteBtn');
 const markerKmlBtn=document.getElementById('markerKmlBtn');
 const markerCopyBtn=document.getElementById('markerCopyBtn');
+const markerReportBtn=document.getElementById('markerReportBtn');
+const reportStatus=document.getElementById('reportStatus');
+const reportModal=document.getElementById('reportModal');
+const reportModalHint=document.getElementById('reportModalHint');
+const reportOkBtn=document.getElementById('reportOk');
+const reportCancel=document.getElementById('reportCancel');
 
 let markerChecked=new Set();   // 勾选中的标记点 id（重绘不丢）
 let activeMarkerId='';         // 最后跳转到的那个，列表里高亮
+let reportAvailable=true;      // 服务端报告依赖是否齐（/api/config 里报）
+let reportBusy=false;          // 生成中：同一次只跑一个
 
 // 按创建时间排序 —— 新的在上面（列表 / 导出 / 报告同一个顺序）
 function sortedMarkers(){
@@ -2542,6 +2601,8 @@ function updateMarkerBar(){
   // 按钮不因为「没勾选」而禁用 —— 按要求：一个都没选就点，直接在页面上提示需要选择
   const usable=total>0;
   for(const b of [markerDeleteBtn,markerKmlBtn,markerCopyBtn])if(b)b.disabled=!usable;
+  // 报告按钮多一条：服务端缺 python-docx / Pillow / ffmpeg 时停用
+  if(markerReportBtn)markerReportBtn.disabled=!usable||!reportAvailable;
 
   if(markerSelectAll){
     markerSelectAll.checked=total>0&&picked===total;
@@ -2792,6 +2853,204 @@ if(markerKmlBtn)markerKmlBtn.addEventListener('click',()=>{
 if(markerCopyBtn)markerCopyBtn.addEventListener('click',()=>{
   const list=pickedForExport();
   if(list)copyMarkersTsv(list);
+});
+
+/* ============================================================
+   生成 Word 报告
+   ------------------------------------------------------------
+   逐个点：逆地理编码（所在位置）-> 原片抽帧（视频截图）-> 拼瓦片（地图截图），
+   最后把这一批交给服务端拼 docx。全部只作用于勾选的点。
+   ============================================================ */
+
+function setReportStatus(text){
+  if(!reportStatus)return;
+
+  if(!text){
+    reportStatus.style.display='none';
+    reportStatus.textContent='';
+    return;
+  }
+
+  reportStatus.style.display='';
+  reportStatus.textContent=text;
+}
+
+function closeReportModal(){
+  if(reportModal)reportModal.style.display='none';
+}
+
+function reportImageMode(){
+  const checked=document.querySelector('input[name="reportImageMode"]:checked');
+  return checked?checked.value:'full';
+}
+
+function basemapDisplayName(kind){
+  const def=BASEMAP_DEFS[kind];
+  return def?def.name:(kind||'当前底图');
+}
+
+// 所在位置：解析不到就写「未解析」，绝不编造
+async function reportPlaceOf(m){
+  try{
+    const d=await api('/api/reverse-geocode?lat='+encodeURIComponent(m.lat)
+      +'&lng='+encodeURIComponent(m.lng));
+
+    return String((d&&d.place)||'').trim()||'未解析';
+
+  }catch(e){
+    return '未解析';
+  }
+}
+
+// 视频截图：从原片抽这一帧；抽不到就让这一节少一张图，不整份失败
+async function reportVideoImageOf(m,mode){
+  if(!m.video)return '';
+
+  const want=String(m.video).toLowerCase();
+  const f=geoFiles.find(x=>videoPathFromGeojson(x.relative_path).toLowerCase()===want);
+
+  if(!f)return '';
+
+  try{
+    const d=await jsonPost('/api/snapshot',{
+      project_name:projectSelect.value,
+      folder_index:f.folder_index,
+      path:m.video,
+      time:m.time,
+      mode
+    });
+
+    return String((d&&d.file)||'');
+
+  }catch(e){
+    return '';
+  }
+}
+
+// 地图截图：底图跟随当前选择
+async function reportMapImageOf(m,basemap){
+  try{
+    const d=await jsonPost('/api/mapsnapshot',{
+      lat:m.lat,
+      lng:m.lng,
+      zoom:TRACK_FOCUS_ZOOM,
+      basemap,
+      width:1280,
+      height:960
+    });
+
+    return String((d&&d.file)||'');
+
+  }catch(e){
+    return '';
+  }
+}
+
+async function runWordReport(list,mode){
+  if(reportBusy)return;
+
+  if(!list.length){
+    alert('请先选择要导出的标记点（可以点表头的「全选」）。');
+    return;
+  }
+
+  reportBusy=true;
+  if(reportOkBtn)reportOkBtn.disabled=true;
+
+  const basemap=currentBaseMapKind||'street';
+  const points=[];
+  let done=0;
+
+  try{
+    for(const m of list){
+      setReportStatus(`正在生成 ${done+1}/${list.length}：${m.name}…`);
+
+      points.push({
+        name:m.name,
+        lat:m.lat,
+        lng:m.lng,
+        place:await reportPlaceOf(m),
+        video:m.video,
+        time:m.time,
+        video_image:await reportVideoImageOf(m,mode),
+        map_image:await reportMapImageOf(m,basemap),
+        basemap_name:basemapDisplayName(basemap),
+        zoom:TRACK_FOCUS_ZOOM
+      });
+
+      done++;
+
+      setReportStatus(`已处理 ${done}/${list.length}…`);
+    }
+
+    setReportStatus(`正在拼 Word 文档（${points.length} 个点）…`);
+
+    const result=await jsonPost('/api/report/docx',{
+      project_name:projectSelect.value,
+      points,
+      image_mode:mode
+    });
+
+    // 同源链接 + download 属性：文件名用服务端给的中文名
+    const link=document.createElement('a');
+    link.href=result.url;
+    link.download=result.download_name||'标记点报告.docx';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setReportStatus(`已生成 ${result.download_name||result.file}`
+      +`（${points.length} 个点，${mode==='a4'?'压缩至 320ppi':'原分辨率'}）`);
+
+  }catch(e){
+    setReportStatus('');
+    alert('生成 Word 报告失败：'+e.message);
+
+  }finally{
+    reportBusy=false;
+    if(reportOkBtn)reportOkBtn.disabled=false;
+  }
+}
+
+function startWordReport(list){
+  if(reportBusy){
+    alert('正在生成报告，请稍等…');
+    return;
+  }
+
+  if(!list.length){
+    alert('请先选择要导出的标记点（可以点表头的「全选」）。');
+    return;
+  }
+
+  if(!reportModal){
+    runWordReport(list,'full');
+    return;
+  }
+
+  if(reportModalHint){
+    reportModalHint.textContent=`只包含勾选的 ${list.length} 个点。`
+      +`地图截图用当前底图（${basemapDisplayName(currentBaseMapKind||'street')}）。`;
+  }
+
+  reportModal.style.display='flex';
+}
+
+if(markerReportBtn)markerReportBtn.addEventListener('click',()=>{
+  const list=pickedForExport();
+  if(list)startWordReport(list);
+});
+
+if(reportOkBtn)reportOkBtn.addEventListener('click',()=>{
+  const mode=reportImageMode();
+  closeReportModal();
+  runWordReport(selectedMarkers(),mode);
+});
+
+if(reportCancel)reportCancel.addEventListener('click',closeReportModal);
+
+if(reportModal)reportModal.addEventListener('click',e=>{
+  if(e.target===reportModal)closeReportModal();
 });
 
 // 右键：屏蔽浏览器菜单，算落点，弹命名框
@@ -3536,6 +3795,7 @@ document.addEventListener('keydown',e=>{
   if(videoMarkModal&&videoMarkModal.style.display!=='none'){
     closeVideoMarkDialog();pendingMark=null;return;
   }
+  if(reportModal&&reportModal.style.display!=='none'){closeReportModal();return}
   if(document.fullscreenElement){document.exitFullscreen().catch(()=>{});return}
   if(videoModal.style.display!=='none')closeVideo();
 });

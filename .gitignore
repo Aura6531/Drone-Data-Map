@@ -32,6 +32,7 @@ Project/
 # —— ③ 运行产物：缓存与迁移记录 ——
 Code/geocode_cache/
 _migration/
+report_cache/
 
 # —— ④ 旧版本快照：历史归档，不属于当前代码 ——
 Code/Backup Version/

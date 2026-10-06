@@ -1,0 +1,371 @@
+# 标记点报告（Word）后端：逆地理编码 / 地图截图 / 视频抽帧 / docx 结构
+#
+# 这四块都容易「看起来对但结果是坏的」，所以尽量跑真东西：
+#   - 逆地理编码：替掉 urlopen 喂真实返回结构（不发真请求，结果确定）
+#   - 地图截图：替掉瓦片获取，喂真 PNG 瓦片，检查尺寸 / 底图跟随 / 标点
+#   - 视频抽帧：真跑 ffmpeg 抽真原片（Data 下没有 MP4 就跳过这一段）
+#   - docx：真生成再读回来，检查书签、超链接目录、表格、图片
+import io
+import json
+import pathlib
+import sys
+import urllib.request
+
+sys.stdout.reconfigure(encoding="utf-8")
+
+ROOT = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "Code"))
+
+import project_manager as pm  # noqa: E402
+
+ok = True
+
+
+def chk(cond, label, extra=""):
+    global ok
+    ok &= bool(cond)
+    print(f"  {'[OK]' if cond else '[FAIL]'} {label}{(' -> ' + str(extra)) if extra else ''}")
+
+
+def raises(callable_obj, *args, **kwargs):
+    """调用应当抛异常；返回异常消息（没抛就返回 None）。"""
+    try:
+        callable_obj(*args, **kwargs)
+        return None
+    except Exception as e:
+        return str(e) or type(e).__name__
+
+
+# ---------------------------------------------------------------
+# 1) 逆地理编码
+# ---------------------------------------------------------------
+
+print("=== 1) 逆地理编码：地址拼装 ===")
+
+
+class FakeResponse:
+    def __init__(self, body):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+real_urlopen = urllib.request.urlopen
+sent_urls = []
+
+
+def install_fake_response(payload):
+    def fake_urlopen(request, timeout=None):
+        sent_urls.append(getattr(request, "full_url", str(request)))
+        return FakeResponse(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+
+    urllib.request.urlopen = fake_urlopen
+
+
+try:
+    pm.TIANDITU_KEY = "f" * 32
+    pm.TIANDITU_KEY_FILE = ROOT / "__no_such_key_file__.txt"
+    pm.REVERSE_GEOCODE_MEMORY.clear()
+
+    install_fake_response({
+        "status": "0",
+        "msg": "ok",
+        "result": {
+            "formatted_address": "广东省肇庆市高要区南岸街道新江村附近",
+            "addressComponent": {
+                "province": "广东省", "city": "肇庆市",
+                "county": "高要区", "town": "南岸街道", "village": "新江村",
+            },
+        },
+    })
+
+    first = pm.reverse_geocode_place(23.03441, 112.466997)
+    chk(first["place"] == "广东省肇庆市高要区南岸街道新江村",
+        "拼成 省+市+区+镇+村", first["place"])
+    chk(first["detail"] == "广东省肇庆市高要区南岸街道新江村附近",
+        "detail 原样带回 formatted_address", first["detail"])
+    chk(len(sent_urls) == 1 and "type=geocode" in sent_urls[0] and "postStr" in sent_urls[0],
+        "请求里带 type=geocode 与 postStr")
+
+    pm.reverse_geocode_place(23.03441, 112.466997)
+    chk(len(sent_urls) == 1, "同一个点第二次调用命中缓存，不再发请求")
+
+    install_fake_response({
+        "status": "0",
+        "result": {
+            "formatted_address": "广东省肇庆市高要区南岸街道公厕西北约178米",
+            "addressComponent": {
+                "province": "广东省", "city": "肇庆市",
+                "county": "高要区", "town": "南岸街道",
+            },
+        },
+    })
+    no_village = pm.reverse_geocode_place(23.035, 112.468)
+    chk(no_village["place"] == "广东省肇庆市高要区南岸街道",
+        "没有 village 字段时就到街道级，不编造", no_village["place"])
+
+    install_fake_response({
+        "status": "0",
+        "result": {"formatted_address": "某某坐标附近", "addressComponent": {}},
+    })
+    fallback = pm.reverse_geocode_place(23.036, 112.469)
+    chk(fallback["place"] == "某某坐标附近", "字段全空时退回 formatted_address", fallback["place"])
+
+    install_fake_response({"status": "1", "msg": "无效的 tk 参数"})
+    message = raises(pm.reverse_geocode_place, 23.04, 112.47)
+    chk(message is not None and "无效的 tk 参数" in message, "天地图报错时把原因透传", message)
+
+    chk(raises(pm.reverse_geocode_place, 12345, 112.4) is not None, "纬度超范围要报错")
+    chk(raises(pm.reverse_geocode_place, "abc", 112.4) is not None, "经纬度不是数字要报错")
+
+    pm.TIANDITU_KEY = ""
+    import os
+    os.environ.pop("TIANDITU_KEY", None)
+    message = raises(pm.reverse_geocode_place, 23.04, 112.47)
+    chk(message is not None and "key" in message, "没有 tk 时明确报「未配置天地图 key」", message)
+
+finally:
+    urllib.request.urlopen = real_urlopen
+    pm.TIANDITU_KEY = "f" * 32
+
+
+# ---------------------------------------------------------------
+# 2) 地图截图
+# ---------------------------------------------------------------
+
+print("\n=== 2) 地图截图：底图跟随 + 标点 ===")
+
+from PIL import Image  # noqa: E402
+
+TILE_COLORS = {
+    "tdt_img": (12, 40, 80, 255),
+    "tdt_cia": (255, 255, 255, 210),
+    "tdt_vec": (238, 232, 214, 255),
+    "tdt_cva": (0, 0, 0, 255),
+    "osm": (205, 225, 205, 255),
+}
+tile_requests = []
+
+
+def fake_tile_bytes(source, z, x, y):
+    tile_requests.append((source, z, x, y))
+    buffer = io.BytesIO()
+    Image.new("RGBA", (256, 256), TILE_COLORS[source]).save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+real_tile_bytes = pm.cached_map_tile_bytes
+pm.cached_map_tile_bytes = fake_tile_bytes
+
+try:
+    osm = pm.compose_map_snapshot(23.03441, 112.466997, 16, "osm", 640, 480)
+    chk(osm.size == (640, 480), "尺寸按请求来", f"{osm.size[0]}x{osm.size[1]}")
+    chk(osm.getpixel((2, 2)) == TILE_COLORS["osm"][:3],
+        "角落是底图本身的颜色", str(osm.getpixel((2, 2))))
+    chk(osm.getpixel((320, 240)) == (220, 38, 38),
+        "正中间画了红十字（目标点）", str(osm.getpixel((320, 240))))
+
+    satellite = pm.compose_map_snapshot(23.03441, 112.466997, 16, "satellite", 640, 480)
+    chk(satellite.getpixel((2, 2)) != TILE_COLORS["osm"][:3],
+        "换底图（卫星）后同一位置像素不同 —— 底图确实跟参数走")
+
+    sources = {item[0] for item in tile_requests}
+    chk("tdt_img" in sources and "tdt_cia" in sources,
+        "卫星底图取的是 影像 + 影像注记 两层", str(sorted(sources)))
+
+    message = raises(pm.compose_map_snapshot, 23.03441, 112.466997, 19, "osm", 2560, 1920)
+    chk(message is not None and "范围太大" in message, "瓦片数超上限时拒绝（不把缓存打爆）", message)
+
+    snap = pm.make_map_snapshot({
+        "lat": 23.03441, "lng": 112.466997, "zoom": 16,
+        "basemap": "street", "width": 800, "height": 600,
+    })
+    saved = ROOT / "report_cache" / snap["file"]
+    chk(saved.is_file() and saved.stat().st_size > 2000, "截图落盘且不是空文件",
+        f"{saved.stat().st_size} 字节")
+    chk((saved.read_bytes()[:2] == b"\xff\xd8"), "存的是 JPEG")
+    chk(snap["basemap"] == "street" and snap["zoom"] == 16,
+        "返回里带上用了哪种底图、多少级")
+    chk(pm.make_map_snapshot({"lat": 23.0344, "lng": 112.467, "basemap": "不存在"})["basemap"] == "street",
+        "底图类型不认识时退回街道图，不报错")
+
+finally:
+    pm.cached_map_tile_bytes = real_tile_bytes
+
+
+# ---------------------------------------------------------------
+# 3) 视频抽帧（真跑 ffmpeg）
+# ---------------------------------------------------------------
+
+print("\n=== 3) 视频抽帧：原分辨率 / 压缩 ===")
+
+videos = sorted((ROOT / "Data").glob("**/*.MP4")) + sorted((ROOT / "Data").glob("**/*.mp4"))
+
+if not videos:
+    print("  （跳过：Data/ 下没有 MP4 可抽）")
+else:
+    video = videos[0]
+    real_resolve = pm.resolve_project_video
+    pm.resolve_project_video = lambda *args, **kwargs: video
+
+    try:
+        full = pm.make_video_snapshot({
+            "project_name": "测试", "folder_index": 0,
+            "path": video.name, "time": 60, "mode": "full",
+        })
+        full_path = ROOT / "report_cache" / full["file"]
+        chk(full_path.is_file() and full_path.stat().st_size > 10000,
+            "抽到一帧真图", f"{full_path.stat().st_size} 字节")
+        chk(full["width"] >= 1920 and full["height"] >= 1080,
+            "原分辨率档不缩小", f"{full['width']}x{full['height']}")
+
+        head = full_path.read_bytes()[:4]
+        chk(head[:3] == b"\xff\xd8\xff" and head[3] == 0xE0,
+            "JPEG 必须是 JFIF 头（SOI+APP0）—— ffmpeg 直接写的 COM 头 docx 不认",
+            head.hex())
+
+        from docx.image.image import Image as DocxImage
+        message = raises(DocxImage.from_file, str(full_path))
+        chk(message is None, "python-docx 认这张图（否则报告生成时才炸，报错还是空的）",
+            message or "ok")
+
+        small = pm.make_video_snapshot({
+            "project_name": "测试", "folder_index": 0,
+            "path": video.name, "time": 60, "mode": "a4",
+        })
+        chk(small["width"] == pm.REPORT_IMAGE_WIDTH_A4,
+            f"压缩档宽度是 {pm.REPORT_IMAGE_WIDTH_A4}px（A4 正文宽 @320ppi）",
+            f"{small['width']}x{small['height']}")
+        chk(small["height"] < full["height"], "压缩档等比缩了高度")
+
+        leftovers = list((ROOT / "report_cache").glob("frame_*.png"))
+        chk(not leftovers, "中间的 PNG 没有留在 report_cache 里", str([p.name for p in leftovers]))
+
+        chk(raises(pm.make_video_snapshot, {"project_name": "", "path": "x.MP4"}) is not None,
+            "缺项目名要报错")
+
+    finally:
+        pm.resolve_project_video = real_resolve
+
+    # 上面把解析函数替换成了「永远返回这个视频」，所以这条要在还原之后再断言
+    message = raises(pm.make_video_snapshot, {
+        "project_name": "这个项目不存在", "folder_index": 0, "path": video.name, "time": 1,
+    })
+    chk(message is not None, "项目/视频解析不到时如实报错", message)
+
+
+# ---------------------------------------------------------------
+# 4) docx 结构
+# ---------------------------------------------------------------
+
+print("\n=== 4) docx：目录可点 / 总表 / 章节 / 图片 ===")
+
+shots = sorted((ROOT / "report_cache").glob("shot_*.jpg"))
+maps = sorted((ROOT / "report_cache").glob("map_*.jpg"))
+
+if not (shots and maps):
+    print("  （跳过：没有可用的截图，先跑上面第 2/3 段）")
+else:
+    from docx import Document  # noqa: E402
+
+    payload = {
+        "project_name": "东莞2",
+        "image_mode": "a4",
+        "points": [
+            {
+                "name": "1 号排水口", "lat": 23.03441, "lng": 112.466997,
+                "place": "广东省肇庆市高要区南岸街道",
+                "video": "DJI_20260924101516_0001_V.MP4", "time": 608.274,
+                "video_image": shots[-1].name, "map_image": maps[-1].name,
+                "basemap_name": "卫星图（天地图影像）", "zoom": 16,
+            },
+            {
+                "name": '2 号 <桥下> & "涵洞"', "lat": 23.0346, "lng": 112.4671,
+                "place": "未解析",
+                "video": "DJI_20260924101516_0001_V.MP4", "time": 90,
+                "video_image": "不存在的图.jpg", "map_image": maps[-1].name,
+                "basemap_name": "街道图（天地图）", "zoom": 16,
+            },
+        ],
+    }
+
+    result = pm.build_docx_report(payload)
+    docx_path = ROOT / "report_cache" / result["file"]
+    chk(docx_path.is_file() and docx_path.stat().st_size > 20000,
+        "docx 落盘", f"{docx_path.stat().st_size} 字节")
+
+    document = Document(str(docx_path))
+    xml = document.element.xml
+
+    chk(xml.count("bookmarkStart") == 2, "两个点各有一个书签", str(xml.count("bookmarkStart")))
+    chk(xml.count("<w:hyperlink ") == 2, "目录里两条可点链接",
+        str(xml.count("<w:hyperlink ")))
+    chk('w:anchor="mark1"' in xml and 'w:anchor="mark2"' in xml,
+        "超链接锚点指到对应章节书签")
+    chk("fldSimple" not in xml and "TOC \\o" not in xml,
+        "没用需要按 F9 刷新的域代码目录")
+
+    chk(len(document.tables) == 3,
+        "一张汇总表 + 每个点一张字段表", str(len(document.tables)))
+    chk(len(document.tables[0].columns) == 7 and len(document.tables[0].rows) == 3,
+        "汇总表 7 列（序号/名称/纬度/经度/位置/视频/时间）+ 表头 + 2 行",
+        f"{len(document.tables[0].columns)} 列 {len(document.tables[0].rows)} 行")
+    chk(document.tables[0].rows[1].cells[4].text == "广东省肇庆市高要区南岸街道",
+        "汇总表里带所在位置")
+    chk(document.tables[0].rows[2].cells[4].text == "未解析",
+        "解析不到就写「未解析」，不编造")
+    chk(document.tables[0].rows[1].cells[6].text == "00:10:08",
+        "视频时间格式化成 时:分:秒", document.tables[0].rows[1].cells[6].text)
+
+    chk(len(document.inline_shapes) == 3,
+        "图片 3 张（第 1 点两张 + 第 2 点缺图只贴一张）", str(len(document.inline_shapes)))
+
+    headings = [p.text for p in document.paragraphs if p.style.name.startswith("Heading 1")]
+    chk("一、1 号排水口" in headings and "二、2 号 <桥下> & \"涵洞\"" in headings,
+        "章节标题用中文序号", str(headings)[:80])
+
+    chk("东莞2" in result["download_name"] and result["download_name"].endswith(".docx"),
+        "下载文件名带项目名与日期", result["download_name"])
+
+    chk(raises(pm.build_docx_report, {"project_name": "x", "points": []}) is not None,
+        "一个点都没有时要报错（不生成空报告）")
+    chk(raises(pm.build_docx_report, {"project_name": "x", "points": [{"name": "没有经纬度"}]}) is not None,
+        "经纬度缺失的点会被剔除，全无效就报错")
+
+
+# ---------------------------------------------------------------
+# 5) 小工具与安全
+# ---------------------------------------------------------------
+
+print("\n=== 5) 小工具 / 路径穿越防护 ===")
+
+chk(pm.format_seconds_text(608.274) == "00:10:08", "秒 -> 00:10:08", pm.format_seconds_text(608.274))
+chk(pm.format_seconds_text("abc") == "-", "坏值给 '-'，不抛异常")
+chk(pm.chinese_index(1) == "一" and pm.chinese_index(11) == "十一" and pm.chinese_index(21) == "二十一",
+    "中文序号 1/11/21", f"{pm.chinese_index(1)}/{pm.chinese_index(11)}/{pm.chinese_index(21)}")
+chk(pm.safe_file_stem('东莞2/非法:*名') == "东莞2_非法_名",
+    "文件名里的非法字符被替换（连续的合成一个 _）", pm.safe_file_stem('东莞2/非法:*名'))
+
+chk(pm.report_file("a.jpg") == pm.REPORT_DIR / "a.jpg", "普通文件名可用")
+chk(raises(pm.report_file, "../secret.txt") is not None, "挡掉 ../")
+chk(raises(pm.report_file, "sub/a.jpg") is not None, "挡掉子目录")
+chk(raises(pm.report_file, "a\\b.jpg") is not None, "挡掉反斜杠")
+chk(pm.resolve_report_image("../x.jpg") is None, "报告里的图名也走同一道校验")
+chk(pm.resolve_report_image("不存在.jpg") is None, "图不存在就返回 None")
+
+caps = pm.report_capabilities()
+chk(set(caps) == {"docx", "pillow", "ffmpeg"}, "/api/config 里如实报告依赖", str(caps))
+
+print()
+if ok:
+    print("结果: 全部通过")
+else:
+    print("结果: 有失败")
+sys.exit(0 if ok else 1)

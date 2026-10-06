@@ -56,6 +56,7 @@ const el = {
   markerDeleteBtn: makeEl('button'),
   markerKmlBtn: makeEl('button'),
   markerCopyBtn: makeEl('button'),
+  markerReportBtn: makeEl('button'),
 };
 
 const code = `
@@ -86,6 +87,7 @@ const build = new Function(
   'projectMarkers', 'markerChecked', 'activeMarkerId',
   'markerList', 'markerCount', 'markerSelectAll',
   'markerDeleteBtn', 'markerKmlBtn', 'markerCopyBtn',
+  'markerReportBtn', 'reportAvailable',
   'videoStatus', 'drawProjectMarkers', 'saveProjectMarkers',
   'map', 'geoFiles', 'videoPathFromGeojson', 'openVideoFromPopup',
   'shortFileName', 'formatTime', 'projectSelect', 'TRACK_FOCUS_ZOOM',
@@ -93,7 +95,7 @@ const build = new Function(
   code
 );
 
-function fresh(markers) {
+function fresh(markers, reportAvailable = true) {
   const state = {
     projectMarkers: markers,
     markerChecked: new Set(),
@@ -103,6 +105,7 @@ function fresh(markers) {
     state.projectMarkers, state.markerChecked, state.activeMarkerId,
     markerList, el.markerCount, el.markerSelectAll,
     el.markerDeleteBtn, el.markerKmlBtn, el.markerCopyBtn,
+    el.markerReportBtn, reportAvailable,
     { textContent: '' },
     () => { calls.drew++; },
     async () => { calls.saved++; },
@@ -175,6 +178,14 @@ console.log('\n=== 3) 列表渲染 ===');
   chk(rows[0].children[2].textContent === '23.040001' && rows[0].children[3].textContent === '112.470002',
     '纬度 / 经度各占一格，6 位小数', rows[0].children[2].textContent + ',' + rows[0].children[3].textContent);
   chk(el.markerDeleteBtn.disabled === false, '有标记点时批量按钮可用');
+
+  const noDeps = fresh([A], false);
+  noDeps.api.renderMarkerList();
+  chk(el.markerReportBtn.disabled === true,
+    '服务端缺 python-docx/Pillow/ffmpeg 时「生成 Word 报告」停用（其余三个照常可用）');
+  chk(el.markerDeleteBtn.disabled === false, '缺报告依赖不影响删除/导出/复制');
+  fresh([A]).api.renderMarkerList();
+  chk(el.markerReportBtn.disabled === false, '依赖齐全时报告按钮可用');
 
   const empty = fresh([]);
   el.markerList.children = [];

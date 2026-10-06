@@ -38,6 +38,7 @@ const NODE_SUITES = [
 const PY_SUITES = [
   'check_py.py',        // 后端静态断言
   'test_geocode.py',    // 地理编码 / key 优先级
+  'test_report.py',     // 报告后端：逆地理编码 / 地图截图 / 抽帧 / docx
 ];
 const NET_SUITES = [
   'test_tdt_tiles.py',  // 天地图瓦片连通性（需要联网 + 有效 tk）
