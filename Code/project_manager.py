@@ -3377,6 +3377,29 @@ def get_tianditu_key():
     return TIANDITU_KEY
 
 
+def migrate_legacy_key_file():
+    """把老位置的天地图 key 搬到数据目录（只搬一次）。
+
+    历史：早期版本把 key 放在**代码目录**（`Code/tianditu_key.txt`）；为了打包，
+    key 改由数据目录（安装目录/exe 同级）承载。如果只改读取位置而不搬文件，
+    升级后就会出现「刷新一下 key 像是丢了」——本函数就是补这一步。
+    """
+
+    legacy = CODE_DIR / "tianditu_key.txt"
+
+    if FROZEN or not legacy.is_file() or TIANDITU_KEY_FILE.exists():
+        return False
+
+    try:
+        # 目标父目录可能还不存在（copyfile 不会建目录）
+        TIANDITU_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(legacy, TIANDITU_KEY_FILE)
+        return True
+
+    except OSError:
+        return False
+
+
 def parse_lonlat(value):
     """天地图不同版本用逗号或空格分隔经纬度，这里统一解析。"""
 
@@ -7265,6 +7288,11 @@ def main():
 
     print()
     print(f"数据目录： {DATA_DIR}")
+
+    if migrate_legacy_key_file():
+        print(f"天地图 key：已从老位置（{CODE_DIR.name}\\tianditu_key.txt）搬到数据目录")
+
+    print(f"天地图 key： {TIANDITU_KEY_FILE if get_tianditu_key() else '未配置（底图退回 OSM，地名搜索不可用）'}")
     print(f"ffmpeg ： {find_ffmpeg() or '（没找到：抽帧与 4K 转码会失败）'}")
     print()
 

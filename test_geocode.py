@@ -222,5 +222,29 @@ except ValueError as e:
 
 if TMP_KEY.exists(): TMP_KEY.unlink()
 if EMPTY_KEY.exists(): EMPTY_KEY.unlink()
+print("\n=== 2c) 老位置的 key 会自动迁移到数据目录 ===")
+
+# 用工作区里的目录做沙箱：沙箱环境里 %TEMP% 不一定可写
+MIGRATE_SANDBOX = ROOT / "_test_geocode_cache" / "migrate"
+shutil.rmtree(MIGRATE_SANDBOX, ignore_errors=True)
+LEGACY_DIR = MIGRATE_SANDBOX / "Code"
+LEGACY_DIR.mkdir(parents=True)
+(LEGACY_DIR / "tianditu_key.txt").write_text("f" * 32 + "\n", encoding="utf-8")
+MIGRATE_TARGET = MIGRATE_SANDBOX / "data" / "tianditu_key.txt"
+
+_real_code_dir, _real_key_file = pm.CODE_DIR, pm.TIANDITU_KEY_FILE
+pm.CODE_DIR, pm.TIANDITU_KEY_FILE = LEGACY_DIR, MIGRATE_TARGET
+
+try:
+    chk(pm.migrate_legacy_key_file() is True, "老位置有 key -> 搬一份到数据目录")
+    chk(MIGRATE_TARGET.is_file()
+        and MIGRATE_TARGET.read_text(encoding="utf-8").strip() == "f" * 32,
+        "搬过去的内容与原来一致")
+    chk(pm.migrate_legacy_key_file() is False, "已经搬过就不再重复搬（不覆盖新位置）")
+
+finally:
+    pm.CODE_DIR, pm.TIANDITU_KEY_FILE = _real_code_dir, _real_key_file
+    shutil.rmtree(MIGRATE_SANDBOX, ignore_errors=True)
+
 print("\n结果:", "全部通过" if ok else "有失败项")
 sys.exit(0 if ok else 1)
