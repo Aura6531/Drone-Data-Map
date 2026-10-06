@@ -28,8 +28,10 @@ Code/
   project_manager.py             后端（HTTP 服务 + 遥测解析 + ffmpeg 调用）
   project_manager.html           早期版本页面（保留，不再是主入口）
 tests（仓库根目录）
-  test_*.js / check_page.js      Node 测试（8 个）
-  check_py.py / test_geocode.py  Python 测试（2 个）
+  test_*.js / check_page.js      Node 测试（11 个）
+  check_py.py / test_geocode.py / test_report.py   Python 测试（3 个）
+packaging/                        打包脚本（PyInstaller + 自带向导的安装程序）
+AGENTS.md                         项目约定 —— 装了 DSH 的人在此目录开会话会自动读到
 Data/                            原始视频与派生的 SRT / GeoJSON（不进仓库）
 Project/                         项目定义 project.json（本地状态，不进仓库）
 ```
@@ -89,7 +91,7 @@ http://127.0.0.1:8000/project_geojson_preview.html
 ## 测试
 
 ```bash
-node run_tests.js              # 一次跑完 13 套，任何一套失败就非零退出
+node run_tests.js              # 一次跑完 14 套，任何一套失败就非零退出
 node run_tests.js --with-net   # 额外跑需要联网的天地图瓦片检查
 node run_tests.js --list       # 只列清单
 ```
@@ -116,6 +118,33 @@ python -B test_report.py # 报告后端（逆地理编码/地图截图/抽帧/do
 共 14 套（另有 1 套需联网的 `test_tdt_tiles.py`，用 `node run_tests.js --with-net` 跑）。
 测试路径按脚本所在目录推导，换机器不用改；
 **注意 `node a.js b.js` 里 b.js 会被静默忽略**（只有第一个会执行），别那么写。
+
+---
+
+## 开发与交接
+
+**换个人（或换台机器）继续做，需要的东西在这里：**
+
+| 要什么 | 在哪 |
+|---|---|
+| 项目约定（DSH 会话会自动读取） | **`AGENTS.md`** |
+| 实现细节、踩过的坑、验证记录 | `docs/交接说明.md`（最全的一份） |
+| 只想知道怎么用 | 本文档 + `docs/使用说明.md` |
+| 打安装包 | `packaging\build_installer.ps1`（首次先跑 `fetch_build_libs.py` / `fetch_deps.py`） |
+
+**关于 DSH**：装了 DeepSeek Harness 的人，只要在这个目录里开一个会话，
+DSH 就会自动加载 `AGENTS.md`（它加载「用户全局 `~/.dsh/AGENTS.md`」+「从项目根到工作目录
+这一路上的 `AGENTS.md`」）。所以约定要写在文件里，而不是只留在某次对话里。
+注意它只在**会话第一次请求**时加载 —— 把仓库给对方之后，让他**新开一个会话**。
+
+**不进仓库的东西**（接手的人要自己准备）：
+
+- `Code/tianditu_key.txt` —— 天地图密钥，申请办法见 `docs/天地图key申请说明.md`；
+  不填也能用，底图会退回 OpenStreetMap。
+- `Data/`（原始视频）、`Project/`（项目状态）、`packaging/` 下的打包产物。
+- **ffmpeg** 需要另备：装到 PATH，或跑 `python packaging/fetch_deps.py` 下到 `packaging/payload/ffmpeg/`。
+- 跑测试需要 Node；没装可以用 DSH 自带的：
+  `%USERPROFILE%\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`
 
 ---
 
