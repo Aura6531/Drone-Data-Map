@@ -385,6 +385,7 @@ console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ==
 
   const videoStatus = { textContent: '' };
   const videoInfo = { textContent: '' };
+  const countdownCalls = [];
   let currentTime = -1;
 
   const player = {
@@ -405,6 +406,9 @@ console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ==
     'clip', 'clipTimer', 'videoStopAt', 'proxyBucketOf', 'PROXY_SECONDS',
     'videoInfo', 'videoStatus', 'videoPlayer', 'syncDroneMarker', 'projectSelect',
     'videoStage', 'formatTime', 'fallbackToProxy', 'setTimeout', 'clearTimeout',
+    // 点照片跳视频那套「倒退 3 秒 + 倒计时」：startClip 里会调它，
+    // 标记点这条路（autoPlay=false）用不到，给个空桩即可
+    'setPhotoCountdownTarget',
     `${extractFn('startClip')}\nreturn {startClip};`
   );
 
@@ -427,7 +431,9 @@ console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ==
       videoInfo, videoStatus, player,
       (t) => syncCalls.push(t), { value: '东莞2' }, null,
       (t) => Number(t).toFixed(3), () => {},
-      setTimeout, clearTimeout
+      setTimeout, clearTimeout,
+      // 标记点这条路不带 photo_pause_at，桩里只记录调用
+      (photoAtAbs, bucket) => { countdownCalls.push([photoAtAbs, bucket]) }
     );
 
     api.startClip();
@@ -437,6 +443,9 @@ console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ==
   runStart(false);
   chk(played.filter(x => x === 'play').length === 0, '标记点入口：play() 一次都没被调用',
     played.join(',') || '（空）');
+  chk(countdownCalls.length === 1 && countdownCalls[0][0] === 0,
+    '标记点入口不带 photo_pause_at -> 不倒计时（照片那条路才倒计时）',
+    JSON.stringify(countdownCalls));
   chk(currentTime === 90, '但确实定位到了该标记点的时间', String(currentTime));
   chk(/未自动播放/.test(videoStatus.textContent), '状态栏写明未自动播放', videoStatus.textContent);
   chk(/已定位到/.test(videoInfo.textContent), '信息栏也写成「已定位到」，不写「开始播放」',

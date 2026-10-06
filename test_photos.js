@@ -83,6 +83,8 @@ const consts = {
   PHOTO_DRONE_NEAR_M: extractConst('PHOTO_DRONE_NEAR_M'),
   PHOTO_MATCH_LIMIT: extractConst('PHOTO_MATCH_LIMIT'),
   PHOTO_CAM_NAMES: extractConst('PHOTO_CAM_NAMES'),
+  // 点照片跳视频时往前倒退多久起播（用户 2026-10-07：先用 3 秒试）
+  PHOTO_PREROLL_SECONDS: extractConst('PHOTO_PREROLL_SECONDS'),
 };
 
 const src = [
@@ -100,6 +102,20 @@ const src = [
   + `return 2*R*Math.asin(Math.sqrt(h));}};`,
   `let projectFolderPaths=null;`,
   `let loadedTracks=[];`,  // 真实数据那一层用：第 i 帧「画面中心对应的地面点」。
+  // ---- 点照片跳视频的「倒计时 + 到点自动暂停」用的桩 ----
+  // 这几个名字在页面里是模块级变量，抽出来一起放进同一个函数体就能共享作用域。
+  `let photoPauseAt=null;`,
+  `let photoPauseByUs=false;`,
+  `let clip={};`,
+  `const videoStatus={textContent:''};`,
+  `const videoCountdown={hidden:true,textContent:''};`,
+  `const videoPlayer={currentTime:0,paused:false,ended:false,_paused:0,`
+  + `play(){this.paused=false;return Promise.resolve()},`
+  + `pause(){this.paused=true;this._paused++}};`,
+  extractFn('setPhotoCountdownTarget'),
+  extractFn('stopPhotoCountdown'),
+  extractFn('updatePhotoCountdown'),
+  extractFn('tickPhotoPause'),
   // 这正是照片解算在做的事（ground_target 与 centerGroundLatLng 是同一套公式），
   // 所以拿它当目标点回投影，理应落在画面中心。
   `function centerGroundPointForTest(track,tele,i){`
@@ -112,7 +128,12 @@ const src = [
   + `if(!Number.isFinite(yaw)||!Number.isFinite(pitch)||pitch>=0)return null;`
   + `return centerGroundLatLng(L.latLng(Number(c[1]),Number(c[0])),yaw,pitch,alt);}`,
   `return {${[...PURE, ...GEO].join(',')},centerGroundPointForTest,loadedTracks,`
-  + `setFolders:v=>{projectFolderPaths=v},getFolders:()=>projectFolderPaths};`
+  + `setFolders:v=>{projectFolderPaths=v},getFolders:()=>projectFolderPaths,`
+  // 倒计时那几个：连同它们用到的桩状态一起暴露出来，好逐档断言
+  + `cd:{setTarget:setPhotoCountdownTarget,stop:stopPhotoCountdown,`
+  + `update:updatePhotoCountdown,tick:tickPhotoPause,`
+  + `getTarget:()=>photoPauseAt,setTargetRaw:v=>{photoPauseAt=v},`
+  + `player:videoPlayer,countdown:videoCountdown,status:videoStatus}};`
 ].join('\n');
 
 const page = new Function(src)();
@@ -768,7 +789,82 @@ console.log('\n=== 9) 点某张照片该播哪一路（这条错过一次：点 
   chk(/pickMatchForPhoto\(fresh,target\)/.test(fn), '「还没匹配」那条兜底路径也用它（不再直接跳 fresh[0]）');
 }
 
-console.log('\n=== 10) 遥测请求必须带对参数（这条错了，画面内判定会 147/147 全空）===');(async () => {
+console.log('\n=== 10) 点照片跳视频：倒退 3 秒起播 + 3-2-1 倒计时 + 到照片时刻自动暂停 ===');
+{
+  const { cd } = page;
+  const P = Number(consts.PHOTO_PREROLL_SECONDS);
+  chk(P === 3, '倒退秒数是 3（用户先让用 3 秒试）', String(P));
+
+  // 起播位置：照片时刻往前 3 秒
+  chk(/const photoAt=Math\.max\(0,Number\(m\.startSeconds\)\|\|0\)/.test(extractFn('jumpToPhotoVideo')),
+    'jumpToPhotoVideo 先算出照片时刻');
+  const jump = extractFn('jumpToPhotoVideo');
+  chk(/const from=Math\.max\(0,photoAt-PHOTO_PREROLL_SECONDS\)/.test(jump),
+    '起播位置 = 照片时刻 - PHOTO_PREROLL_SECONDS（不早于 0）');
+  chk(/video_start:from/.test(jump), '发出去的是倒退后的时间（video_start）');
+  chk(/photo_pause_at:from<photoAt\?photoAt:0/.test(jump),
+    '并把「照片那一刻」一起发出去（photo_pause_at；开头没有余量时发 0 = 不倒计时）');
+
+  // 目标时刻：走转码片段时 <video> 的时间轴从片段头算起，必须减掉 bucket
+  cd.setTarget(489, 0);
+  chk(cd.getTarget() === 489, '原片：目标时刻就是照片时刻', String(cd.getTarget()));
+  cd.setTarget(489, 480);
+  chk(cd.getTarget() === 9, '转码片段：目标时刻要减掉片段起点（489 - 480 = 9）',
+    String(cd.getTarget()));
+  cd.setTarget(0, 0);
+  chk(cd.getTarget() === null, '照片就在视频开头（没有可倒退的余量）时不倒计时');
+
+  // 倒计时数字 = 还剩多少视频时间（上限就是倒退的秒数）
+  cd.setTarget(489, 480);          // 目标 9
+  cd.player.paused = false;
+  const at = (t) => { cd.player.currentTime = t; cd.update(); return cd.countdown; };
+  chk(at(6.9).hidden === false && at(6.9).textContent === '3', '还剩 2.1 秒时显示 3');
+  chk(at(7.5).textContent === '2', '还剩 1.5 秒时显示 2');
+  chk(at(8.2).textContent === '1', '还剩 0.8 秒时显示 1（不出现 0）');
+  chk(at(5.0).textContent === '3', '再往前也不超过 3（倒退只有 3 秒）');
+  chk(at(9).hidden === true, '到了目标时刻就不再显示数字');
+  cd.player.paused = true;
+  chk(at(7.0).hidden === true, '暂停时不显示倒计时');
+
+  // 到点自动暂停：时间要卡准（timeupdate 只有 ~4Hz，必须靠每帧查）
+  cd.setTarget(489, 480);
+  cd.player.paused = false;
+  cd.player.currentTime = 9.4;     // 已经冲过目标
+  const pausedBefore = cd.player._paused;
+  cd.tick();
+  chk(cd.player._paused === pausedBefore + 1, '冲过目标时调用 pause()');
+  chk(cd.player.currentTime === 9, '并把画面精确停在照片那一帧上（不冲过去）',
+    String(cd.player.currentTime));
+  chk(cd.getTarget() === null, '暂停后清掉待办（不会反复暂停）');
+  chk(cd.countdown.hidden === true, '暂停后倒计时收起来');
+  chk(/自动暂停/.test(cd.status.textContent), '状态栏说明「已到照片拍摄时刻，自动暂停」',
+    cd.status.textContent);
+
+  // 还没到点时不能动
+  cd.setTarget(489, 480);
+  cd.player.paused = false;
+  cd.player.currentTime = 8.0;
+  const before2 = cd.player._paused;
+  cd.tick();
+  chk(cd.player._paused === before2, '没到点时不暂停');
+  chk(cd.getTarget() === 9, '待办还在');
+
+  // 关掉视频 / 用户自己暂停时要撤掉待办
+  cd.stop();
+  chk(cd.getTarget() === null && cd.countdown.hidden === true, 'stop() 清干净待办与倒计时');
+  const pauseHandler = html.slice(html.indexOf("videoPlayer.addEventListener('pause'"),
+                                      html.indexOf("videoPlayer.addEventListener('pause'") + 320);
+  chk(/!photoPauseByUs\)stopPhotoCountdown\(\)/.test(pauseHandler),
+    '用户自己按暂停时撤掉待办（免得他再点播放又被停住）');
+  // 每帧查一次：不能只挂 timeupdate
+  chk(/tickPhotoPause\(\);/.test(html.slice(html.indexOf('function frame(now)'),
+                                          html.indexOf('function frame(now)') + 700)),
+    'rAF 每帧都查一次（timeupdate 只有约 4Hz，靠它会冲过目标）');
+  chk(!/id="videoCountdown"[^>]*class="[^"]*video-status/.test(html),
+    '倒计时是独立浮层（不是复用状态文字）');
+}
+
+console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内判定会 147/147 全空）===');(async () => {
   // 真实的挫败场景：/api/project/telemetry 要 name + folder_index + path（相对路径、.mp4）。
   // 早先 ensureTrackTelemetry 只传 path，而且传的是航迹自己的 .geojson 相对路径 ——
   // 后端先回「缺少项目名称」，补上 name 后又回「指定文件不是 MP4/MOV 视频」。
