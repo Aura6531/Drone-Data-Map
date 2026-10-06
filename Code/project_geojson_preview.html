@@ -105,7 +105,7 @@ body.side-collapsed .col-left .side-rail:hover .side-rail-icon{color:#2563eb;bor
    浏览器会把这个「可压缩」的占位块先压小 —— 实测展示区一打开，
    它就从 379px 掉到 180px，视频画面被裁掉一截。
    给一个下限，空间不够时让 .col 出滚动条，而不是把画面切掉。 */
-.video-slot{flex:1 1 auto;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;border:2px dashed #dbe3ee;border-radius:14px;background:#fff;text-align:center}
+.video-slot{flex:1 1 auto;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;border:2px dashed #dbe3ee;border-radius:14px;background:#fff;text-align:center}
 .video-slot-title{font-size:20px;font-weight:700;color:#94a3b8}
 .video-slot-hint{font-size:14px;color:#a8b3c2;line-height:1.7;max-width:340px}
 
@@ -505,7 +505,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    位置：右栏「视频」与「标记点」之间，占标记点上方那半截（用户 2026-10-07 要求）。
    右栏是纵向 flex，所以这里用 flex:1 1 0 和标记点卡片分高度：
    两者各占「视频面板之外的剩余高度」的一半，内部各自滚动。 */
-.photo-card{display:none;flex:3 2 0;min-height:220px;
+.photo-card{display:none;flex:4 2 0;min-height:280px;
             padding:13px 15px;border-radius:12px;
             background:#fff;border:1px solid #cbd5e1;
             box-shadow:0 5px 18px rgba(20,30,50,.07);
@@ -513,41 +513,51 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 显示出来时是纵向 flex（display:none 时 flex 不生效，所以两个属性分开写） */
 .photo-card[style*="display: block"],.photo-card[style*="display:block"]{display:flex!important}
 
-/* 标记点卡片：右栏里有照片展示区时，两者分剩下的高度。
-   比例是 flex:3(照片) 对 2(标记点) —— 照片那边要放大图 + 小图 + 跳视频按钮，
-   给太少就只能看见图片的一条（实测 1:1 时画廊只有 110px）。 */
+/* 标记点卡片：右栏里有照片展示区时，它拿到固定的一小份（flex:0 0 130px），
+   剩下的全给照片展示区 —— 照片那边要放大图 + 小图 + 跳视频按钮。
+   实测：130px 时画廊可视 177px（大图 231px，只差一点要滚）；150px 时只有 149px。 */
 .col-right .marker-card{--marker-flex:1 1 auto;--marker-min-h:190px}
 .col-right:has(.photo-card[style*="display: block"]) .marker-card,
-.col-right:has(.photo-card[style*="display:block"]) .marker-card{--marker-flex:2 2 0;--marker-min-h:150px}
+.col-right:has(.photo-card[style*="display:block"]) .marker-card{--marker-flex:0 0 130px;--marker-min-h:130px}
 
-.photo-head{display:flex;align-items:baseline;gap:8px 14px;flex-wrap:wrap;margin-bottom:2px}
-.photo-title{font-size:15px;font-weight:700;color:#0f172a}
-.photo-sub{font-size:12px;color:#64748b}
+/* 头部压成一行：标题 + 副标题 + 右侧两个按钮。
+   实测行宽 673px，标题「照片 10:23:25  变焦 + 热成像」+ 副标题约 407px、
+   两个按钮约 121px，一行放得下 —— 省下的 24px 全归下面的画廊。 */
+.photo-head{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;margin-bottom:0;flex:0 0 auto}
+.photo-title{font-size:14px;font-weight:700;color:#0f172a;white-space:nowrap}
+.photo-sub{font-size:11px;color:#64748b;flex:1 1 auto;min-width:0;
+           white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .photo-sub.warn{color:#b45309;font-weight:600}
-.photo-head-tools{margin-left:auto;display:flex;gap:6px;align-items:center}
-/* 头部与其下的内容都不许把卡片撑高：内容多了由 .photo-gallery 自己滚 */
-.photo-head,.photo-head .photo-title,.photo-head .photo-sub{min-width:0}
-.photo-chips{display:flex;flex-wrap:wrap;gap:6px 8px;margin-bottom:2px;flex:0 0 auto;overflow:hidden}
-.photo-chip{font-size:12px;line-height:1.3;background:#f1f5f9;border:1px solid #e2e8f0;
-            border-radius:6px;padding:2px 8px;white-space:nowrap}
+.photo-head-tools{margin-left:auto;display:flex;gap:6px;align-items:center;flex:0 0 auto}
+.photo-head-tools button{height:28px;padding:0 10px;font-size:12px}
+.photo-chips{display:flex;flex-wrap:wrap;gap:4px 6px;margin-bottom:0;flex:0 0 auto;overflow:hidden}
+.photo-chip{font-size:11px;line-height:1.3;background:#f1f5f9;border:1px solid #e2e8f0;
+            border-radius:6px;padding:2px 7px;white-space:nowrap}
 .photo-chip .k{color:#64748b;margin-right:5px}
 .photo-chip .v{font-weight:700;color:#0f172a}
 
 /* 大图 + 小图并排。右栏本来就窄（约 570px），所以比例上给大图更多：
    宽的时候大图占 3 份、小图 1 份；再窄就整体换行。
-   两块都要 flex:0 0 auto + 给一个下限：图片的固有高度是 0（宽度交给 flex 定），
-   父级又是「固定高度 + 内部滚动」，只写 min-height:0 会把画廊压成 0 高、
-   一张图都看不见（踩过两次）。
-   整块由 .photo-gallery 自己滚动 —— 内容比卡片高时在里面滚，不把布局撑破。 */
+   flex-basis 必须是 0（flex:1 1 0）：写 auto 时画廊会去抢「内容高度」，
+   而卡片是固定高度、内容放不下 —— 结果它宁可溢出 13px 也不把多出来的空间
+   给自己（实测：卡片 clientH 418 / scrollH 431，画廊却一直卡在 130 的下限）。
+   min-height 用于兜底；两块子项都要 min-height，因为图片固有高度是 0
+   （宽度交给 flex 定），只写 0 会把画廊压成 0 高、一张图都看不见。
+   整块由 .photo-gallery 自己滚动。 */
 .photo-gallery{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;
-               flex:1 1 auto;min-height:130px;overflow:auto}
-.photo-lead{flex:3 1 260px;min-width:0;min-height:70px}
-.photo-thumbs{flex:1 1 150px;display:flex;flex-wrap:wrap;gap:8px;min-width:0;min-height:70px}
+               flex:1 1 0;min-height:130px;overflow:auto}
+/* 大图 : 小图 ≈ 2 : 1（450 : 213）。想给大图更多就把 260 调大、
+   代价是小图更窄。大图窄一点反而更好：它的高度由宽度决定，
+   窄 → 矮 → 整组更容易落进画廊的可视高度里（不用滚）。 */
+.photo-lead{flex:3 2 260px;min-width:0;min-height:70px}
+.photo-thumbs{flex:1 1 200px;display:flex;flex-wrap:wrap;gap:8px;min-width:0;min-height:70px}
 
 .photo-shot{margin:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#0f172a}
-.photo-shot img{display:block;width:100%;height:auto;max-height:22vh;object-fit:contain}
+/* 不要给 img 定高 + object-fit:contain —— 右栏里容器定宽 448px，一旦把高度也钉成
+   200px，16:9 的图只能缩到 356px 宽，两侧就留出黑边（黑底一露出来就是「黑框」）。
+   这里让宽度决定高度：图填满容器，比例自然，也不会有黑边。 */
+.photo-shot img{display:block;width:100%;height:auto}
 .photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
-.photo-lead .photo-shot img{max-height:32vh}
 .photo-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
            background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
 /* 相机标签上色：变焦 / 广角 / 热成像一眼分清（和大图上那个「大图」标记同色系） */
@@ -562,13 +572,19 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 小图那一列：整块可点（点一下跳视频），所以给个明确的可点手感 */
 .photo-thumb{cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease}
 .photo-thumb:hover{border-color:#2563eb;box-shadow:0 2px 10px rgba(37,99,235,.22)}
-.photo-thumb img{max-height:11vh}
+.photo-thumb img{max-height:none}
 
 /* 「用这张照片时刻跳视频」：每组一条，按钮排一行。
    flex:0 0 auto 很关键：它是固定内容，不能让 flex 把它拉伸，
-   否则会把上面的画廊挤扁（画廊是 flex:1 那个，抢不过它）。 */
-.photo-jump{margin-top:2px;padding-top:8px;border-top:1px dashed #e2e8f0;flex:0 0 auto}
+   否则会把上面的画廊挤扁（画廊是 flex:1 那个，抢不过它）。
+   按钮刻意压扁（28px / 11px 字）：实测 1800 窗口下 6 个候选会长到 205px、
+   换 4 行，把画廊挤到只剩 130px —— 那比按钮本身重要得多。 */
+.photo-jump{margin-top:2px;padding-top:6px;border-top:1px dashed #e2e8f0;flex:0 0 auto}
 .photo-head,.photo-chips{flex:0 0 auto}
+.photo-jump-title{margin-bottom:5px}
+.photo-jump-row{gap:5px}
+.photo-jump-btn{height:28px;padding:0 9px;font-size:11px}
+.photo-jump-note{margin-top:5px;font-size:11px;line-height:1.5}
 .photo-jump-title{font-size:12px;color:#64748b;margin-bottom:7px}
 .photo-jump-title b{color:#0f172a}
 .photo-jump-row{display:flex;flex-wrap:wrap;gap:6px}
@@ -4118,6 +4134,12 @@ function photoGalleryHtml(group){
 // 匹配结果 -> 「跳视频」那一块的 HTML。
 // 同样抽成纯函数：编号按钮、置信度文案、跳不到的说明都在这里定死，
 // 只有「点按钮」那一步需要 DOM。
+//
+// 排版上刻意压紧（用户 2026-10-07 要求展示区占右栏一截，这一块必须让出高度）：
+//   * 按钮只显示「序号 · 流标识」（如 `1 · 101516_T`），完整文件名放 title ——
+//     原来 6 个 `DJI_20260924101516_0001_T.MP4` 会长到 205px、换 4 行，
+//     把上面的照片挤到只剩 130px；
+//   * 说明压成两行短句，不再逐条换行。
 function photoJumpHtml(group,matches){
   if(!group)return '';
 
@@ -4126,23 +4148,30 @@ function photoJumpHtml(group,matches){
 
   if(!list.length){
     return `<div class="photo-jump-title">跳视频：这张照片拍于 <b>${esc(timeText)}</b></div>`
-      +`<div class="photo-jump-note">没有找到时间对得上的视频。常见原因：`
-      +`该架次的视频还没加载到地图（先点左栏的「加载全部轨迹」）、`
-      +`视频文件名里没有可识别的时间、或者这段飞行当时没有录像。</div>`;
+      +`<div class="photo-jump-note">没有找到时间对得上的视频。`
+      +`常见原因：该架次的视频还没加载到地图（先点左栏的「加载全部轨迹」）、`
+      +`视频文件名里没有可识别的时间、或这段飞行当时没有录像。</div>`;
   }
 
-  const buttons=list.map((m,i)=>`<button class="photo-jump-btn" type="button" data-photo-match="${i}">`
-    +`▶ ${i+1}. ${esc(m.video)}</button>`).join('');
+  const buttons=list.map((m,i)=>{
+    const full=String(m.video||'');
+    // 缩略标签：去掉 DJI_ 前缀与 .MP4 后缀，留「时:分:秒_流标识」，够认出来是哪一路。
+    const short=full.replace(/^DJI_/i,'').replace(/\.(MP4|MOV)$/i,'');
+
+    return `<button class="photo-jump-btn" type="button" data-photo-match="${i}"`
+      +` title="跳到 ${esc(full)}（时间差 ${m.gapSeconds>=0?'+':''}${Number(m.gapSeconds).toFixed(1)} 秒）">`
+      +`▶ ${i+1} · ${esc(short)}</button>`;
+  }).join('');
 
   const best=list[0];
 
   let confidence='';
   if(best.inFrame){
-    confidence='<b>照片的地面目标点在该帧画面内</b> —— 时空都对上了，这是最可信的一种。';
+    confidence='<b>目标点在该帧画面内</b> —— 时空都对上了。';
   }else if(Math.abs(best.gapSeconds)<=60){
-    confidence='时刻对得上（分钟以内）。这一帧里没有直接看到照片的目标点，可能是姿态/变焦不同，属正常。';
+    confidence='时刻对得上（分钟以内），只是这一帧没直接看到目标点，属正常。';
   }else{
-    confidence='时间差偏大，对齐只能算**参考** —— 建议按画面自行核对。';
+    confidence='时间差偏大，对齐只能算参考，建议按画面自行核对。';
   }
 
   const notes=list.filter(m=>m.inFrameKnown&&!m.inFrame).length;
@@ -4150,11 +4179,11 @@ function photoJumpHtml(group,matches){
   return `<div class="photo-jump-title">点一下跳到视频的对应时刻`
     +`（照片拍于 <b>${esc(timeText)}</b>，按文件名时刻对齐）</div>`
     +`<div class="photo-jump-row">${buttons}</div>`
-    +`<div class="photo-jump-note">最接近的一段：<b>${esc(best.video)}</b>`
-    +`　时间差 <b>${best.gapSeconds>=0?'+':''}${best.gapSeconds.toFixed(1)} 秒</b>`
-    +(best.droneDistance!=null?`　当时飞机位置相距 <b>${Math.round(best.droneDistance)} 米</b>`:'')
-    +`<br>${confidence}`
-    +(notes?`<br>下面这 ${notes} 段的「画面内」判定为否，只是时间上近，别当同一处看。`:'')
+    +`<div class="photo-jump-note">最接近：<b>${esc(best.video)}</b>`
+    +`　差 <b>${best.gapSeconds>=0?'+':''}${best.gapSeconds.toFixed(1)} 秒</b>`
+    +(best.droneDistance!=null?`　飞机相距 <b>${Math.round(best.droneDistance)} 米</b>`:'')
+    +`　${confidence}`
+    +(notes?`　另有 ${notes} 段只时间近。`:'')
     +`</div>`;
 }
 

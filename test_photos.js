@@ -652,9 +652,11 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '已从地图卡片里挪走（不再位于 altVideos 之前）');
   chk(/\.col-right:has\(\.photo-card\[style\*="display: block"\]\) \.marker-card/.test(html),
     '右栏里两者按 :has() 分高度（照片区 : 标记点 = 3 : 2）');
-  chk(/\.photo-card\{display:none;flex:3 2 0;min-height:220px/.test(html),
-    '展示区自己 flex:3 2 0（比标记点拿得多，够放大图 + 小图 + 跳视频按钮）');
-  chk(/--marker-flex:2 2 0/.test(html), '标记点卡片跟着用 2 份（两边成 3:2）');
+  chk(/\.photo-card\{display:none;flex:4 2 0;min-height:280px/.test(html),
+    '展示区自己 flex:4 2 0（比标记点拿得多，够放大图 + 小图 + 跳视频按钮）');
+  chk(/--marker-flex:0 0 130px/.test(html),
+    '标记点卡片固定让出 130px，其余高度归展示区（照片在右栏里更值钱）');
+  chk(/\.col-right:has\(\.photo-card/.test(html), '用 :has() 判断展示区是否开着');
   chk(/id="photoCard"/.test(html), '有地图下方的展示区容器');
   chk(/id="photoGallery"/.test(html), '展示区里有图片区');
   chk(/id="photoJump"/.test(html), '展示区里有「跳视频」那块');
