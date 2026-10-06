@@ -1442,7 +1442,12 @@ chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
     '标题在左、按钮在右');
   const st = (html.match(/\.side-toggle\{[^}]*\}/) || [''])[0];
   chk(!/position:absolute/.test(st), '不再是绝对定位（那会让它单独占一行）');
-  chk(/height:28px/.test(st), '按钮高度 28px（和标题行其他小按钮一致）');
+  // 左栏所有按钮要一致：切换按钮和 .card-tools button 用同一套尺寸/字号
+  const toolsBtn = (html.match(/\.card-tools button\{[^}]*\}/) || [''])[0];
+  const dim = (s) => (s.match(/height:(\d+)px/) || [])[1] + '/' + (s.match(/font-size:(\d+)px/) || [])[1];
+  chk(dim(st) === dim(toolsBtn),
+    '切换按钮与卡片头按钮尺寸/字号一致（32px / 12px）',
+    `side-toggle=${dim(st)} card-tools=${dim(toolsBtn)}`);
 }
 // 左栏改成「两个页」共用一块地方：项目数据/轨迹文件 ↔ 标记点，由标签开关切换
 chk(/id="viewProject"/.test(html), '项目页包在 #viewProject 里');

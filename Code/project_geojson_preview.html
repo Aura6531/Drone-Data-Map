@@ -88,8 +88,11 @@ html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width
    把那个『项目数据向左收起』的按钮做成标记点页面的标签开关」；
    随后又要求切换用「横扫卷帘」的效果、两个按钮带方向箭头）。
    两个页共用左栏这一块，点按钮来回切；原来的「收起成窄轨」整套样式已删除。 */
-.side-toggle{flex:0 0 auto;height:28px;padding:0 12px;border:1px solid #cbd5e1;border-radius:7px;
-             background:#fff;color:#475569;font-size:13px;font-weight:600;line-height:1;cursor:pointer;
+/* 尺寸/字号对齐卡片头那套按钮（.card-tools button：32px / 12px / 600）——
+   左栏里所有按钮（两个切换按钮 + 标记点页的四个导出按钮）逐项一致，
+   切换按钮原来写 28px / 13px，和导出按钮差一档（用户 2026-10-07 指出）。 */
+.side-toggle{flex:0 0 auto;height:32px;padding:0 12px;border:1px solid #cbd5e1;border-radius:7px;
+             background:#fff;color:#475569;font-size:12px;font-weight:600;line-height:1;cursor:pointer;
              display:flex;align-items:center;justify-content:center;white-space:nowrap}
 .side-toggle:hover{border-color:#2563eb;color:#2563eb;background:#f8fbff}
 /* 当前正显示哪一页：没显示的那一页整体隐藏。
@@ -124,7 +127,7 @@ html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width
    一行，让它们自己换行；用 .card-tools.marker-tools 而不是 .row，
    这样「三张卡片各一个 .card-tools」那套结构保持一致。 */
 .col-left .card-tools.marker-tools{flex-wrap:wrap;justify-content:flex-start;gap:8px;margin-top:2px}
-.col-left .card-tools.marker-tools button{flex:0 1 auto;height:32px;padding:0 10px;font-size:12px;white-space:nowrap}
+.col-left .card-tools.marker-tools button{flex:0 1 auto;height:32px;padding:0 10px;font-size:12px;font-weight:600;white-space:nowrap}
 
 /* 右栏：视频未播放时的占位说明 */
 /* 最小高度：右栏下面还有照片展示区（可伸缩）与标记点卡片，
@@ -435,7 +438,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    保留无害，但真正生效的是 .col-left 里那套。 */
 .marker-card{flex:var(--marker-flex,1 1 auto);min-height:var(--marker-min-h,190px);
              display:flex;flex-direction:column;gap:9px;padding:16px 18px}
-.marker-card h2{margin:0;font-size:17px;display:flex;align-items:center;gap:6px}
+/* 标题不单独收小字号：跟另一页的「项目数据」一样用全局 h2 的 25px。
+   原来写 17px 时，两页的卡片头看着不像一套 —— 切换按钮本身尺寸/字号是一样的，
+   但旁边标题一大一小，视觉上就觉得按钮也不一样（用户 2026-10-07 指出）。 */
+.marker-card h2{margin:0;display:flex;align-items:center;gap:6px}
 .marker-count{font-size:12px;font-weight:700;color:#64748b}
 .marker-tools button{padding:7px 12px;font-size:13px;height:32px}
 .marker-head{display:flex;align-items:center;gap:10px;font-size:12px;color:#64748b;
