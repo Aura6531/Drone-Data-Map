@@ -4626,11 +4626,22 @@ def set_docx_cell(cell, text, size_pt=8.5, bold=False):
 
 
 def set_docx_table_width(table, column_widths):
-    """把表格总宽写死。
+    """把表格总宽、缩进、单元格边距都写死，保证「表格边框」与「插图」同一条线。
 
     python-docx 建的表格 `tblW` 是 `auto/0`：只设网格列宽时，
     有的渲染器（LibreOffice）会按内容重算列宽并把表撑出正文区。
     显式写死总宽（= 各列宽之和）最省心，Word / LibreOffice 都照它排。
+
+    另一半是**位置**，这里有个反直觉的坑（用户实测发现的）：
+
+    Word 定位表格是按**单元格里文字的起始位置**算的，不是按边框。所以
+    `tblInd = 0` 时文字落在正文左边距上，**边框却会被推到边距左边一个「左单元格边距」的距离**
+    —— Word 默认左右单元格边距 0.08 英寸（≈2.03mm），用户量到的「表格边框比照片多出约 2mm」
+    就是这个数（他把它调成 0 之后几乎严格对齐，也验证了这一点）。
+
+    所以这里把 `tblCellMar` 左右都显式写成 0：文字起点、表格边框、左对齐的插图
+    三者就都落在正文左边距上；而且各家阅读器对 `tblInd` 的解释不一致时也不会跑偏
+    （只写 tblInd 补偿的话，Word 与 LibreOffice 会差出一个边距）。
     """
 
     from docx.oxml import OxmlElement
@@ -4641,17 +4652,7 @@ def set_docx_table_width(table, column_widths):
 
     tblPr = table._tbl.tblPr
 
-    # 显式写死缩进 0：不然某些表格样式/阅读器会默认给一个负缩进
-    # （Word 经典行为是 -0.19cm，好让单元格文字与正文对齐，边框却会凸到页边距外），
-    # 那样表格左边框就和插图对不齐了。
-    for existing in tblPr.findall(qn("w:tblInd")):
-        tblPr.remove(existing)
-
-    indent = OxmlElement("w:tblInd")
-    indent.set(qn("w:type"), "dxa")
-    indent.set(qn("w:w"), "0")
-    tblPr.append(indent)
-
+    # 总宽：tblW 要排在 tblInd/tblLayout/tblCellMar 之前（schema 顺序）
     tblW = tblPr.find(qn("w:tblW"))
 
     if tblW is None:
@@ -4660,6 +4661,35 @@ def set_docx_table_width(table, column_widths):
 
     tblW.set(qn("w:type"), "dxa")
     tblW.set(qn("w:w"), str(total_twips))
+
+    # 缩进 0：不给表格样式/阅读器留默认负缩进的余地
+    for existing in tblPr.findall(qn("w:tblInd")):
+        tblPr.remove(existing)
+
+    indent = OxmlElement("w:tblInd")
+    indent.set(qn("w:type"), "dxa")
+    indent.set(qn("w:w"), "0")
+    tblW.addnext(indent)          # 紧跟 tblW，顺序合 schema
+
+    # 单元格边距全 0（见上面的说明：这是边框能不能和插图对齐的关键）
+    for existing in tblPr.findall(qn("w:tblCellMar")):
+        tblPr.remove(existing)
+
+    cell_margins = OxmlElement("w:tblCellMar")
+
+    for side in ("top", "left", "bottom", "right"):
+        node = OxmlElement(f"w:{side}")
+        node.set(qn("w:type"), "dxa")
+        node.set(qn("w:w"), "0")
+        cell_margins.append(node)
+
+    # 顺序要合 schema：tblCellMar 在 tblLayout 之后、tblLook 之前
+    tblLook = tblPr.find(qn("w:tblLook"))
+
+    if tblLook is not None:
+        tblLook.addprevious(cell_margins)
+    else:
+        tblPr.append(cell_margins)
 
     return table
 

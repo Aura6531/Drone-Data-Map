@@ -495,6 +495,26 @@ else:
     chk(xml.count('<w:tblInd w:type="dxa" w:w="0"/>') >= 3,
         "三张表都显式写了缩进 0（挡掉默认的 -0.19cm 负缩进）",
         str(xml.count('<w:tblInd w:type="dxa" w:w="0"/>')))
+
+    # 单元格边距必须全 0：Word 按「单元格里文字的起点」定位表格，
+    # 左右边距非 0（默认 0.08 英寸 ≈ 2.03mm）时表格边框会被推到正文边距左边那么多，
+    # 于是边框和插图差出约 2mm（用户实测就是这个数）。
+    margin_blocks = re.findall(r"<w:tblCellMar>.*?</w:tblCellMar>", xml, re.S)
+    chk(len(margin_blocks) >= 3, "三张表都写了 tblCellMar",
+        str(len(margin_blocks)) + " 处")
+    chk(all(block.count('w:w="0"') == 4 for block in margin_blocks),
+        "上下左右单元格边距都是 0（文字起点＝表格边框＝插图左边缘）",
+        str([block.count('w:w="0"') for block in margin_blocks]))
+
+    first_tblPr = re.search(r"<w:tblPr>.*?</w:tblPr>", xml, re.S)
+    order = first_tblPr.group(0) if first_tblPr else ""
+    positions = [
+        order.find(f"<w:{name}")
+        for name in ("tblW", "tblInd", "tblLayout", "tblCellMar", "tblLook")
+    ]
+    chk(all(positions) and positions == sorted(positions),
+        "tblPr 子元素顺序合 schema（tblW → tblInd → tblLayout → tblCellMar → tblLook）",
+        str(dict(zip(("tblW", "tblInd", "tblLayout", "tblCellMar", "tblLook"), positions))))
     chk(xml.count('<w:jc w:val="center"/>') == 3,
         "只有三行图注是段落居中；插图段落是左对齐（左边缘与表格同一条线）",
         str(xml.count('<w:jc w:val="center"/>')) + " 处段落居中")
