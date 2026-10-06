@@ -544,6 +544,181 @@ def scan_folder(folder_path):
 # Windows 原生选择文件夹
 # ============================================================
 
+def clean_selected_folders(paths):
+    """把用户选中的文件夹路径收拾干净：去掉空值、去重、只留真实存在的目录。"""
+
+    result = []
+
+    for raw in paths or []:
+
+        try:
+            path = os.path.abspath(str(raw).strip().strip('"'))
+
+        except (TypeError, ValueError):
+            continue
+
+        if not path or not os.path.isdir(path):
+            continue
+
+        key = os.path.normcase(path)
+
+        if key in {os.path.normcase(item) for item in result}:
+            continue
+
+        result.append(path)
+
+    return result
+
+
+def select_folders_windows():
+    """选文件夹（**可多选**）。
+
+    tkinter 的 askdirectory 只能选一个 —— 一次要导十几个架次时很难受。
+    Windows 自带的现代文件对话框 IFileOpenDialog 支持
+    FOS_PICKFOLDERS | FOS_ALLOWMULTISELECT，所以直接用 ctypes 调 COM；
+    任何一步失败（老系统、COM 不可用……）都退回原来的单选对话框，行为不变。
+    """
+
+    try:
+        chosen = _com_multi_folder_dialog()
+
+    except Exception:
+        chosen = None
+
+    if chosen:
+        return chosen
+
+    single = select_folder_windows()
+
+    return [single] if single else []
+
+
+def _com_multi_folder_dialog(title="选择无人机数据文件夹（按住 Ctrl / Shift 可多选）"):
+    """ctypes 调 IFileOpenDialog 多选文件夹；失败抛异常（由调用方兜底）。
+
+    vtable 索引（IFileDialog 继承 IUnknown）：
+        3 = Show、9 = SetOptions、10 = GetOptions、17 = SetTitle
+        IFileOpenDialog 追加：27 = GetResults
+        IShellItemArray：7 = GetCount、8 = GetItemAt
+        IShellItem：5 = GetDisplayName
+    """
+
+    import ctypes
+    from ctypes import wintypes
+
+    ole32 = ctypes.WinDLL("ole32")
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", wintypes.DWORD),
+            ("Data2", wintypes.WORD),
+            ("Data3", wintypes.WORD),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+    def make_guid(text):
+        value = GUID()
+
+        if ole32.CLSIDFromString(ctypes.c_wchar_p(text), ctypes.byref(value)) != 0:
+            raise OSError("GUID 解析失败")
+
+        return value
+
+    def call(pointer, index, restype, *argtypes):
+        """按 vtable 下标取方法并调用（返回已绑定 pointer 的可调用对象）。"""
+
+        vtable = ctypes.cast(pointer, ctypes.POINTER(ctypes.c_void_p))[0]
+        address = ctypes.cast(vtable, ctypes.POINTER(ctypes.c_void_p))[index]
+        prototype = ctypes.WINFUNCTYPE(restype, ctypes.c_void_p, *argtypes)
+        method = prototype(address)
+
+        return lambda *args: method(pointer, *args)
+
+    ole32.CoInitialize(None)
+
+    dialog = ctypes.c_void_p()
+    ole32.CoCreateInstance(
+        ctypes.byref(make_guid("{DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7}")),   # CLSID_FileOpenDialog
+        None,
+        1,                                                                  # CLSCTX_INPROC_SERVER
+        ctypes.byref(make_guid("{d57c7288-d4ad-4768-be02-9d969532d960}")),   # IID_IFileOpenDialog
+        ctypes.byref(dialog),
+    )
+
+    if not dialog:
+        raise OSError("CoCreateInstance 失败")
+
+    try:
+        get_options = call(dialog, 10, ctypes.c_long, ctypes.POINTER(wintypes.DWORD))
+        set_options = call(dialog, 9, ctypes.c_long, wintypes.DWORD)
+        set_title = call(dialog, 17, ctypes.c_long, ctypes.c_wchar_p)
+        show = call(dialog, 3, ctypes.c_long, wintypes.HWND)
+        get_results = call(dialog, 27, ctypes.c_long, ctypes.POINTER(ctypes.c_void_p))
+
+        options = wintypes.DWORD()
+
+        if get_options(ctypes.byref(options)) != 0:
+            raise OSError("GetOptions 失败")
+
+        # FOS_PICKFOLDERS(0x20) | FOS_ALLOWMULTISELECT(0x200) | FOS_FORCEFILESYSTEM(0x40)
+        if set_options(options.value | 0x20 | 0x200 | 0x40) != 0:
+            raise OSError("SetOptions 失败")
+
+        set_title(title)
+
+        # Show 返回 0x800704C7（用户取消）时不是错误
+        if show(None) != 0:
+            return []
+
+        items = ctypes.c_void_p()
+
+        if get_results(ctypes.byref(items)) != 0 or not items:
+            raise OSError("GetResults 失败")
+
+        try:
+            get_count = call(items, 7, ctypes.c_long, ctypes.POINTER(wintypes.DWORD))
+            get_item_at = call(
+                items, 8, ctypes.c_long, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)
+            )
+
+            count = wintypes.DWORD()
+
+            if get_count(ctypes.byref(count)) != 0:
+                raise OSError("GetCount 失败")
+
+            paths = []
+
+            for index in range(count.value):
+                item = ctypes.c_void_p()
+
+                if get_item_at(index, ctypes.byref(item)) != 0 or not item:
+                    continue
+
+                try:
+                    # SIGDN_FILESYSPATH = 0x80058000 -> 拿到文件系统路径
+                    name = ctypes.c_wchar_p()
+                    get_display_name = call(
+                        item, 5, ctypes.c_long, ctypes.c_uint,
+                        ctypes.POINTER(ctypes.c_wchar_p)
+                    )
+
+                    if get_display_name(0x80058000, ctypes.byref(name)) == 0 and name.value:
+                        # 刻意不 CoTaskMemFree：释放的是 COM 分配的字符串指针，
+                        # 万一类型对不上就是崩溃；这里每次导入只漏几十字节，不值得冒险。
+                        paths.append(name.value)
+
+                finally:
+                    call(item, 2, ctypes.c_ulong)()
+
+            return clean_selected_folders(paths)
+
+        finally:
+            call(items, 2, ctypes.c_ulong)()
+
+    finally:
+        call(dialog, 2, ctypes.c_ulong)()
+
+
 def select_folder_windows():
 
     result = {
@@ -5544,11 +5719,11 @@ class ProjectManagerHandler(
 
             try:
 
-                selected_path = (
-                    select_folder_windows()
-                )
+                # 多选：Windows 原生对话框支持一次挑多个文件夹。
+                # 返回 paths（全部）并保留 path（第一个）兼容老前端。
+                selected_paths = select_folders_windows()
 
-                if not selected_path:
+                if not selected_paths:
 
                     json_response(
                         self,
@@ -5565,8 +5740,10 @@ class ProjectManagerHandler(
                     {
                         "success":
                             True,
+                        "paths":
+                            selected_paths,
                         "path":
-                            selected_path
+                            selected_paths[0]
                     }
                 )
 

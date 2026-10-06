@@ -800,9 +800,16 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/select-folder/.test(fn), '「选择文件夹」调 select-folder 让服务端弹原生选择框');
   chk(/scan-folder\?path=/.test(fn), '先调 scan-folder 扫描该文件夹');
   chk(/select-files/.test(fn), '「选择文件」调新的 select-files（可多选文件）');
-  chk(/importScannedFolder\(scanned\.folder\)/.test(fn)
+  chk(/importScannedFolder\(scanned\.folder/.test(fn)
      && /importScannedFolder\(picked\.folder\)/.test(fn),
     '两个入口共用同一个提交函数');
+  // 多选：一次挑多个文件夹时逐个扫描+提交，最后只提示一次汇总
+  chk(/const paths=\(picked&&picked\.paths\)\|\|\(\(picked&&picked\.path\)\?\[picked\.path\]:\[\]\)/.test(fn),
+    '「选择文件夹」兼容多选（paths 数组）与单选（path）两种返回');
+  chk(/for\(const path of paths\)/.test(fn), '多个文件夹逐个导入');
+  chk(/importScannedFolder\(scanned\.folder,paths\.length>1\)/.test(fn),
+    '多选时走「安静模式」，不逐个弹提示');
+  chk(/已导入 \$\{done\} 个文件夹/.test(fn), '多选时给一条汇总提示');
 
   const submit = body.slice(body.indexOf('async function importScannedFolder('),
                             body.indexOf('if(addFolderBtn)addFolderBtn.addEventListener'));
@@ -810,10 +817,12 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
     '提交时带上整个扫描结果对象');
   chk(/jsonPost\('\/api\/project\/add-folder',\{project_name:name,folder\}\)/.test(submit),
     'add-folder 提交完整 folder 对象（它原样存下，只传 path 会没有文件清单）');
+  chk(/async function importScannedFolder\(folder,quiet\)/.test(submit),
+    '提交函数支持安静模式（多选时不逐个提示）');
   chk(/r\.updated\?/.test(submit), '后端返回 updated=true 时提示「已更新」而不是「已导入」');
   // 只比真实调用，不比裸字符串 —— 注释里也出现了 add-folder 字样
   chk(fn.indexOf('scan-folder?path=') >= 0
-     && fn.indexOf('scan-folder?path=') < fn.indexOf("importScannedFolder(scanned.folder)"),
+     && fn.indexOf('scan-folder?path=') < fn.indexOf("importScannedFolder(scanned.folder"),
     '扫描在提交之前');
 }
 

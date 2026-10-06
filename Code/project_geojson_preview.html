@@ -4774,17 +4774,20 @@ if(videoMarkModal)videoMarkModal.addEventListener('click',e=>{
 // （askdirectory 只能选文件夹、askopenfilenames 只能选文件），
 // 所以点开后给两个入口，各自打开对应的原生对话框。
 
-async function importScannedFolder(folder){
+async function importScannedFolder(folder,quiet){
   const name=currentProjectName();
   if(!name)return;
 
-  if(!folder){show(projectNotice,'没有选择数据。');return}
+  if(!folder){if(!quiet)show(projectNotice,'没有选择数据。');return}
 
   const r=await jsonPost('/api/project/add-folder',{project_name:name,folder});
-  await scanGeoJSON();
 
-  // 同一个文件夹再次导入时后端返回 updated=true（就地更新，不报错）
-  show(projectNotice,(r&&r.updated?'已更新数据文件夹：':'已导入数据文件夹：')+(folder.path||''));
+  if(!quiet){
+    await scanGeoJSON();
+
+    // 同一个文件夹再次导入时后端返回 updated=true（就地更新，不报错）
+    show(projectNotice,(r&&r.updated?'已更新数据文件夹：':'已导入数据文件夹：')+(folder.path||''));
+  }
 
   // 导入完直接跑完整流程（缺的 SRT/GeoJSON 会在这里补齐）
   await runAutoPipeline();
@@ -4804,13 +4807,34 @@ async function pickFolder(){
   try{
     const picked=await api('/api/project/select-folder');
 
-    if(!picked||!picked.path){show(projectNotice,'没有选择文件夹。');return}
+    // 可以一次选多个文件夹（Windows 原生对话框按住 Ctrl / Shift 多选）
+    const paths=(picked&&picked.paths)||((picked&&picked.path)?[picked.path]:[]);
+
+    if(!paths.length){show(projectNotice,'没有选择文件夹。');return}
 
     // 必须先把文件夹扫一遍再提交：add-folder 是原样存下这份数据、不会自己重扫，
     // 只传 path 的话条目里没有文件清单，后面的检测就看不到这些视频。
-    const scanned=await api('/api/project/scan-folder?path='+encodeURIComponent(picked.path));
+    let done=0;
+    const failed=[];
 
-    await importScannedFolder(scanned.folder);
+    for(const path of paths){
+      try{
+        const scanned=await api('/api/project/scan-folder?path='+encodeURIComponent(path));
+        await importScannedFolder(scanned.folder,paths.length>1);
+        done++;
+      }catch(e){
+        failed.push(path);
+      }
+    }
+
+    if(paths.length>1){
+      await scanGeoJSON();      // 逐个导入时先不刷，最后统一刷一次文件列表
+      show(projectNotice,
+        `已导入 ${done} 个文件夹`+(failed.length?`，${failed.length} 个失败：${failed.map(p=>p.split('\\').pop()).join('、')}`:''),
+        failed.length>0);
+    }else if(failed.length){
+      show(projectNotice,'导入失败：'+failed[0],true);
+    }
   }catch(e){
     show(projectNotice,'选择文件夹未完成或被取消。',true);
   }finally{
