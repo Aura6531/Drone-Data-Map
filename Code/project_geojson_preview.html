@@ -81,11 +81,12 @@ html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width
 .leaflet-interactive.track-hit{pointer-events:stroke}
 .col-mid .card>.card-head{flex:0 0 auto}
 
-.col-left{position:relative;overflow:visible}
+.col-left{position:relative;overflow:hidden}
 .col-left .col-body{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
 /* 左栏的「标签开关」：项目数据 / 轨迹文件  ↔  标记点
    （用户 2026-10-07：「标记点模块跟项目数据和轨迹文件模块占用同一空间，
-   把那个『项目数据向左收起』的按钮做成标记点页面的标签开关」）。
+   把那个『项目数据向左收起』的按钮做成标记点页面的标签开关」；
+   随后又要求切换用「横扫卷帘」的效果、两个按钮带方向箭头）。
    两个页共用左栏这一块，点按钮来回切；原来的「收起成窄轨」整套样式已删除。 */
 .side-toggle{flex:0 0 auto;height:28px;padding:0 12px;border:1px solid #cbd5e1;border-radius:7px;
              background:#fff;color:#475569;font-size:13px;font-weight:600;line-height:1;cursor:pointer;
@@ -101,6 +102,22 @@ html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width
 .col-left #markerCard{display:none}
 .col-left.view-project #viewProject{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
 .col-left.view-markers #markerCard{display:flex;flex-direction:column;min-height:0;flex:1}
+
+/* ---- 横扫卷帘过场 ----
+   切页时给新出现的那一页加一段横向滑入动画；左栏 overflow:hidden，
+   所以滑出画布的部分被裁掉，看着就是「卷帘」扫过去。
+   方向：去标记点（往左）从右边滑进来；回项目（往右）从左边滑进来。
+   只动 transform，不动布局 —— 不会让地图/列表重排，也不会引起滚动条跳动。 */
+.col-left.view-markers #markerCard{animation:leftPaneInLeft .26s ease-out both}
+.col-left.view-project #viewProject{animation:leftPaneInRight .26s ease-out both}
+@keyframes leftPaneInLeft{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes leftPaneInRight{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+/* 用户在系统里关了动画就照旧直接出现（尊重 prefers-reduced-motion） */
+@media(prefers-reduced-motion:reduce){
+  .col-left.view-markers #markerCard,
+  .col-left.view-project #viewProject{animation:none}
+}
+
 /* 标记点页里列表要能撑满并自己滚（和右栏那版一样） */
 .col-left .marker-card{min-height:0}
 /* 导出这四个按钮：左栏 380px 放不下「删除 / 导出 KML / 复制经纬度 / 生成 Word 报告」
@@ -630,7 +647,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     <!-- 左栏是两个「页」共用一块地方（用户 2026-10-07 要求）：
          · 项目页（默认）：项目数据 + 轨迹文件
          · 标记点页：标记点列表 + 删除/导出 KML/复制经纬度/生成报告
-         标题行右侧那个按钮就是标签开关，点一下在两页之间切。 -->
+         右侧标题行那个按钮就是标签开关，点一下「横扫卷帘」切过去。
+         方向感靠按钮上的箭头：项目页右上写「‹ 标记点」（往左扫），
+         标记点页左上写「项目数据 ›」（往右扫回来）。 -->
     <div class="col-body">
       <div class="left-view" id="viewProject">
       <section class="card">
@@ -640,7 +659,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <button id="sideToggle" class="side-toggle" type="button"
                   aria-pressed="false"
                   title="切到标记点（标记点列表与导出）"
-                  aria-label="切到标记点">标记点</button>
+                  aria-label="切到标记点">‹ 标记点</button>
         </div>
 
         <label class="ctrl-label" for="projectSelect">选择项目</label>
@@ -704,9 +723,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
            原来是右栏最下面的卡片，2026-10-07 用户要求挪到这里。 -->
       <section class="card marker-card card-fill" id="markerCard">
         <div class="card-head">
-          <h2>标记点<span id="markerCount" class="marker-count">（空）</span></h2>
+          <!-- 方向在左边：这个按钮从「标记点页」往右扫回项目页 -->
           <button id="sideToggleBack" class="side-toggle" type="button"
-                  title="切回项目数据 / 轨迹文件" aria-label="切回项目数据">项目</button>
+                  title="切回项目数据 / 轨迹文件" aria-label="切回项目数据">项目数据 ›</button>
+          <h2>标记点<span id="markerCount" class="marker-count">（空）</span></h2>
         </div>
         <div class="marker-head">
           <label class="marker-all"><input type="checkbox" id="markerSelectAll">全选</label>
@@ -5527,16 +5547,18 @@ function applyLeftView(view){
     aside.classList.toggle('view-project',!markers);
   }
 
-  // 两个开关的文案：处在哪一页，按钮就写「去另一页」的名字
+  // 两个开关的文案：处在哪一页，按钮就写「去另一页」的名字，并带上方向箭头
+  // （用户要求「加上箭头标示方向」：项目页右上 `‹ 标记点` 往左扫，
+  //   标记点页左上 `项目数据 ›` 往右扫回来）。
   if(sideToggle){
-    sideToggle.textContent=markers?'项目':'标记点';
+    sideToggle.textContent=markers?'项目数据 ›':'‹ 标记点';
     sideToggle.title=markers?'切回项目数据 / 轨迹文件':'切到标记点（标记点列表与导出）';
     sideToggle.setAttribute('aria-label',sideToggle.title);
     // aria-pressed 表示「标记点页是否正显示」
     sideToggle.setAttribute('aria-pressed',markers?'true':'false');
   }
   if(sideToggleBack){
-    sideToggleBack.textContent=markers?'项目':'标记点';
+    sideToggleBack.textContent='项目数据 ›';
     sideToggleBack.title='切回项目数据 / 轨迹文件';
   }
 

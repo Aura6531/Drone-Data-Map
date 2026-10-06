@@ -1447,17 +1447,33 @@ chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
 // 左栏改成「两个页」共用一块地方：项目数据/轨迹文件 ↔ 标记点，由标签开关切换
 chk(/id="viewProject"/.test(html), '项目页包在 #viewProject 里');
 chk(/<aside class="col col-left view-project" id="colLeft">/.test(html), '默认显示项目页');
-chk(/id="sideToggleBack"/.test(html), '标记点页里也有一个切回「项目」的按钮');
+chk(/id="sideToggleBack"/.test(html), '标记点页里也有一个切回「项目数据」的按钮');
 {
   const start = body.indexOf('function applyLeftView(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
   chk(/view-markers/.test(fn) && /view-project/.test(fn), '切换 view-markers / view-project 类');
-  chk(/markers\?'项目':'标记点'/.test(fn), '按钮文案跟着当前页切换');
+  chk(/markers\?'项目数据 ›':'‹ 标记点'/.test(fn),
+    '按钮文案跟着当前页切换，且带方向箭头（用户要求「加上箭头标示方向」）');
   chk(/renderMarkerList\(\)/.test(fn), '切到标记点页时重排列表（栏宽变了）');
   chk(/map\.invalidateSize\(\)/.test(fn), '切换后让地图重算尺寸');
   chk(/refreshMapPipSize\(\)/.test(fn) && /mapPip\.invalidateSize/.test(fn),
     '地图小窗也一起重算');
   chk(/applyVideoPanelLayout\(\)/.test(fn), '切换后更新视频面板的控件换行');
+}
+// 「横扫卷帘」过场：切页时新出现的那一页横向滑入，左栏 overflow:hidden 裁掉滑出部分
+{
+  chk(/\.col-left\{position:relative;overflow:hidden\}/.test(html),
+    '左栏 overflow:hidden（滑出画布的部分被裁掉，才像卷帘）');
+  chk(/@keyframes leftPaneInLeft\{from\{transform:translateX\(100%\)\}/.test(html),
+    '去标记点：从右边滑进来');
+  chk(/@keyframes leftPaneInRight\{from\{transform:translateX\(-100%\)\}/.test(html),
+    '回项目：从左边滑进来');
+  chk(/\.col-left\.view-markers #markerCard\{animation:leftPaneInLeft/.test(html),
+    '标记点页绑定左滑动画');
+  chk(/\.col-left\.view-project #viewProject\{animation:leftPaneInRight/.test(html),
+    '项目页绑定右滑动画');
+  chk(/prefers-reduced-motion:reduce[\s\S]{0,220}animation:none/.test(html),
+    '系统关了动画就直接出现（尊重 prefers-reduced-motion）');
 }
 // 旧的「收起成窄轨」那套应当已经删干净
 chk(!/id="sideRail"/.test(html), '窄轨（sideRail）已删除');

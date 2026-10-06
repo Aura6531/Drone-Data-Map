@@ -451,20 +451,22 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
 
     chk(colLeft && colLeft._classes.has('view-project'), '左栏默认显示「项目数据 / 轨迹文件」页');
     chk(colLeft && !colLeft._classes.has('view-markers'), '默认不是标记点页');
-    chk(toggle && String(toggle.textContent) === '标记点', '开关按钮默认写「标记点」（点它去标记点页）',
+    chk(toggle && String(toggle.textContent) === '‹ 标记点',
+      '开关按钮默认写「‹ 标记点」（带左箭头，点它往左扫到标记点页）',
       toggle ? String(toggle.textContent) : '-');
     chk(toggle && String(toggle.getAttribute('aria-pressed')) === 'false', '默认 aria-pressed=false');
 
     if (toggle) toggle._fire('click');
     chk(colLeft && colLeft._classes.has('view-markers'), '点一下切到标记点页');
-    chk(toggle && String(toggle.textContent) === '项目', '切过去之后按钮写「项目」',
+    chk(toggle && String(toggle.textContent) === '项目数据 ›',
+      '切过去之后按钮写「项目数据 ›」（带右箭头）',
       toggle ? String(toggle.textContent) : '-');
     chk(toggle && String(toggle.getAttribute('aria-pressed')) === 'true', '标记点页时 aria-pressed=true');
     chk(toggle && /切回项目/.test(String(toggle.title)), '悬停提示跟着变');
 
     if (back) back._fire('click');
-    chk(colLeft && colLeft._classes.has('view-project'), '点标记点页里的「项目」按钮切回来');
-    chk(toggle && String(toggle.textContent) === '标记点', '切回来按钮又写「标记点」');
+    chk(colLeft && colLeft._classes.has('view-project'), '点标记点页里的「项目数据 ›」切回来');
+    chk(toggle && String(toggle.textContent) === '‹ 标记点', '切回来按钮又写「‹ 标记点」');
 
     // 旧的「收起成窄轨」应当已经删干净
     chk(!sb.els.has('sideRail') || !html.includes('id="sideRail"'), '窄轨（sideRail）已删除');
