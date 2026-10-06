@@ -63,6 +63,10 @@ if (-not (Test-Path $installerDir)) { throw "没生成安装程序目录 $instal
 # ---------- 4) 打成分发 zip（发给别人的就是这一个文件） ----------
 Step "4/4 分发 zip"
 New-Item -ItemType Directory -Force -Path packaging\installer | Out-Null
+
+# 把「先看这个」的说明放进分发包：使用者第一次双击 exe 会被 SmartScreen 拦一下，
+# 说明里写清楚怎么继续（以及为什么会被拦）。
+Copy-Item 'docs\发给使用者_安装说明.txt' "$installerDir\安装说明（先看这个）.txt" -Force
 $zip = 'packaging\installer\无人机巡查数据地图_安装程序.zip'
 Remove-Item $zip -ErrorAction SilentlyContinue
 Compress-Archive -Path "$installerDir\*" -DestinationPath $zip -CompressionLevel Optimal
