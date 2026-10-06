@@ -644,6 +644,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       名称会在地图上常驻显示。
     </div>
     <input id="videoMarkName" type="text">
+    <div id="videoMarkError" class="mini-modal-error" style="display:none"></div>
     <div class="row mini-modal-actions">
       <button id="videoMarkCancel" class="secondary">取消</button>
       <button id="videoMarkOk">确定</button>
@@ -2466,6 +2467,32 @@ function addVideoMark(latlng,name){
 
 function closeVideoMarkDialog(){
   if(videoMarkModal)videoMarkModal.style.display='none';
+  if(videoMarkError)videoMarkError.style.display='none';
+}
+
+// 名字比较用的归一化：去首尾空白、内部连续空白压成一个、忽略大小写
+// （「Gate 1」和「gate  1」算同一个 —— 免得看着像重名，却又都能存进去）
+function normalizeMarkerName(text){
+  return String(text||'').trim().replace(/\s+/g,' ').toLowerCase();
+}
+
+// 这个名字是不是已经被别的标记点占了（exceptId 留给以后改名用）
+function markerNameTaken(name,exceptId){
+  const want=normalizeMarkerName(name);
+  if(!want)return false;
+
+  return projectMarkers.some(m=>
+    String(m.id||'')!==String(exceptId||'')
+    && normalizeMarkerName(m.name)===want);
+}
+
+function showVideoMarkError(message){
+  if(!videoMarkError)return;
+
+  videoMarkError.textContent=message;
+  videoMarkError.style.display='block';
+
+  if(videoMarkName)videoMarkName.focus();
 }
 
 // 默认名字：项目名-序号。序号取当前项目里已有的最大序号 + 1，
@@ -2499,6 +2526,8 @@ function openVideoMarkDialog(latlng,info){
     videoMarkName.focus();
     if(videoMarkName.select)videoMarkName.select();
   }
+
+  if(videoMarkError)videoMarkError.style.display='none';
 
   videoMarkModal.style.display='flex';
 }
@@ -2562,6 +2591,12 @@ function confirmVideoMark(){
   if(!pendingMark)return;
 
   const name=(videoMarkName.value||'').trim()||nextMarkerName();
+
+  // 名字不能跟已有的重复：重复就留在弹窗里让用户改，不入库
+  if(markerNameTaken(name)){
+    showVideoMarkError(`已经有叫「${name}」的标记点了，换个名字。`);
+    return;
+  }
 
   addVideoMark(pendingMark,name);
 
@@ -4285,6 +4320,7 @@ const newProjectModal=document.getElementById('newProjectModal');
 const importModal=document.getElementById('importModal');
 const videoMarkModal=document.getElementById('videoMarkModal');
 const videoMarkName=document.getElementById('videoMarkName');
+const videoMarkError=document.getElementById('videoMarkError');
 const videoMarkOk=document.getElementById('videoMarkOk');
 const videoMarkCancel=document.getElementById('videoMarkCancel');
 const pickFolderBtn=document.getElementById('pickFolderBtn');

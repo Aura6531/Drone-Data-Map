@@ -452,5 +452,91 @@ console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ==
   chk(played.filter(x => x === 'play').length === 1, '不传第三个参数时默认为自动播放（老调用不受影响）');
 }
 
+console.log('\n=== 12) 标记点名字不能跟已有的重复 ===');
+{
+  const errors = [];
+  const added = [];
+  let closed = 0;
+  let saved = 0;
+  const input = { value: '' };
+
+  const buildConfirm = new Function(
+    'projectMarkers', 'pendingMark', 'videoMarkName', 'addVideoMark',
+    'saveProjectMarkers', 'renderMarkerList', 'closeVideoMarkDialog',
+    'showVideoMarkError', 'projectSelect', 'clip', 'videoPlayer',
+    `${extractFn('nextMarkerName')}
+${extractFn('normalizeMarkerName')}
+${extractFn('markerNameTaken')}
+${extractFn('confirmVideoMark')}
+return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () => pendingMark};`
+  );
+
+  const make = (name) => ({ id: name, name, lat: 23, lng: 112, video: 'a.mp4', time: 1, created: '' });
+
+  function run(existing, typed) {
+    errors.length = 0;
+    added.length = 0;
+    closed = 0;
+    saved = 0;
+    input.value = typed;
+
+    const markers = existing.slice();
+
+    const api = buildConfirm(
+      markers, { lat: 23.1, lng: 112.5 }, input,
+      (ll, nm) => added.push(nm),
+      async () => { saved++ },
+      () => {},
+      () => { closed++ },
+      (message) => errors.push(message),
+      { value: '东莞2' },
+      { path: 'a.mp4' },
+      { currentTime: 42 }
+    );
+
+    api.confirmVideoMark();
+
+    return { markers, api };
+  }
+
+  const base = [make('东莞2-1'), make('3 号排水口')];
+
+  let result = run(base, '东莞2-1');
+  chk(added.length === 0 && result.markers.length === 2, '重名：不新增、不落库',
+    `新增 ${added.length} 个，共 ${result.markers.length} 个`);
+  chk(errors.length === 1 && /已经有叫「东莞2-1」的标记点/.test(errors[0]),
+    '给出重名提示', errors[0]);
+  chk(closed === 0, '重名时不关弹窗（让用户当场改）');
+  chk(saved === 0, '重名时也不写回项目');
+
+  result = run(base, '  东莞2-1  ');
+  chk(errors.length === 1 && added.length === 0, '带首尾空格也算重名', errors[0]);
+
+  result = run([make('Gate 1')], '  gate   1 ');
+  chk(errors.length === 1 && added.length === 0,
+    '忽略大小写与多余空白后算重名（Gate 1 / gate  1）', errors[0]);
+
+  result = run(base, '新取水口');
+  chk(added.length === 1 && added[0] === '新取水口', '不重名就正常新增', added.join(','));
+  chk(errors.length === 0 && closed === 1 && saved === 1, '不重名：无提示、关弹窗、写回项目');
+  const fresh = result.markers[result.markers.length - 1];
+  chk(fresh.name === '新取水口' && fresh.video === 'a.mp4' && fresh.time === 42,
+    '入库的字段照旧（名称 / 视频 / 时间）',
+    `name=${fresh.name} video=${fresh.video} time=${fresh.time}`);
+  chk(result.api.getPending() === null, '确定后清掉待落点，不会重复打点');
+
+  result = run(base, '   ');
+  chk(added.length === 1 && added[0] === '东莞2-2',
+    '名字留空：回落到顺序默认名（且是没被占用的那个）', added.join(','));
+
+  const api = run(base, 'x').api;
+  chk(api.normalizeMarkerName('  A   B  ') === 'a b', '归一化：去空白 + 压空白 + 转小写',
+    api.normalizeMarkerName('  A   B  '));
+  chk(api.markerNameTaken('东莞2-1') === true, '查重：命中', 'true');
+  chk(api.markerNameTaken('东莞2-1', '东莞2-1') === false,
+    '查重：排除自己时不算（给以后改名留着）');
+  chk(api.markerNameTaken('') === false, '空名字不算重名');
+}
+
 console.log(ok ? '\n结果: 全部通过' : '\n结果: 有失败');
 process.exit(ok ? 0 : 1);

@@ -1733,6 +1733,26 @@ console.log('\n=== 点标记点跳转：只定位、不自动播放 ===');
     '轨迹气泡的「从点击位置播放」没被改动（那个仍然自动播）');
 }
 
+console.log('\n=== 标记点名字不能重复 ===');
+{
+  chk(/<div id="videoMarkError" class="mini-modal-error"/.test(html),
+    '命名框里有专门的错误行（和新建项目弹窗一个套路）');
+  chk(/const videoMarkError=document\.getElementById\('videoMarkError'\)/.test(body),
+    '取了 #videoMarkError 引用');
+  chk(/function normalizeMarkerName\(/.test(body),
+    'function normalizeMarkerName()（忽略大小写与多余空白）');
+  chk(/function markerNameTaken\(/.test(body), 'function markerNameTaken()');
+  chk(/function showVideoMarkError\(/.test(body), 'function showVideoMarkError()');
+  chk(/if\(markerNameTaken\(name\)\)\{/.test(body), 'confirmVideoMark 里先查重');
+
+  const confirm = body.slice(body.indexOf('function confirmVideoMark('),
+    body.indexOf('function confirmVideoMark(') + 700);
+  chk(confirm.indexOf('showVideoMarkError') < confirm.indexOf('addVideoMark(pendingMark'),
+    '重名时先提示并 return —— 走不到 addVideoMark');
+  chk(/videoMarkError\.style\.display='none'/.test(body),
+    '打开/关闭弹窗时清掉上一次的错误提示');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));
