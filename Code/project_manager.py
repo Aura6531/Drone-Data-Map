@@ -594,6 +594,66 @@ def select_folders_windows():
     return [single] if single else []
 
 
+def _foreground_window():
+    """当前前台窗口句柄（拿不到就返回 0）。"""
+
+    try:
+        return int(ctypes.windll.user32.GetForegroundWindow() or 0)
+
+    except Exception:
+        return 0
+
+
+def _raise_window_when_ready(title, seconds=8.0):
+    """后台线程：等这个标题的对话框出现后，把它强制提到最前。
+
+    为什么需要：选择框是由**服务进程**弹出的，而前台是浏览器窗口。Windows 有前台锁定，
+    后台进程新建的窗口会被压在别人后面（用户得点任务栏才能看到）。
+    配合「把前台窗口当 owner」一起用，双保险。
+    """
+
+    def worker():
+        import time
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        deadline = time.time() + seconds
+
+        while time.time() < deadline:
+            hwnd = int(user32.FindWindowW(None, title) or 0)
+
+            if hwnd:
+                try:
+                    # 附加到前台线程的输入队列后再抢前台，是绕开前台锁定的标准做法
+                    foreground = int(user32.GetForegroundWindow() or 0)
+                    target_thread = user32.GetWindowThreadProcessId(foreground, None)
+                    this_thread = kernel32.GetCurrentThreadId()
+
+                    user32.AttachThreadInput(target_thread, this_thread, True)
+                    user32.BringWindowToTop(hwnd)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.AttachThreadInput(target_thread, this_thread, False)
+
+                except Exception:
+                    pass
+
+                try:
+                    user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002)   # HWND_TOPMOST
+                    user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, 0x0001 | 0x0002)   # HWND_NOTOPMOST
+
+                except Exception:
+                    pass
+
+                return
+
+            time.sleep(0.1)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+    return thread
+
+
 def _com_multi_folder_dialog(title="选择无人机数据文件夹（按住 Ctrl / Shift 可多选）"):
     """ctypes 调 IFileOpenDialog 多选文件夹；失败抛异常（由调用方兜底）。
 
@@ -667,8 +727,13 @@ def _com_multi_folder_dialog(title="选择无人机数据文件夹（按住 Ctrl
 
         set_title(title)
 
+        # 关键：用当前前台窗口（一般就是浏览器）当属主 —— 有属主的对话框必然浮在属主之上，
+        # 否则它是个无主窗口，会被浏览器盖住（用户得去点任务栏）。
+        owner = _foreground_window()
+        _raise_window_when_ready(title)
+
         # Show 返回 0x800704C7（用户取消）时不是错误
-        if show(None) != 0:
+        if show(owner) != 0:
             return []
 
         items = ctypes.c_void_p()
