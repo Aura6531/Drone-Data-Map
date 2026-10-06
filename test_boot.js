@@ -78,8 +78,17 @@ function makeLStub(calls) {
     addLayer(l) { this._layers.push(l); return this },
     setView() { return this }, on() { return this }, off() { return this },
     setMaxZoom() {}, getZoom() { return 9 }, setZoom() {}, zoomIn() {}, zoomOut() {},
-    removeLayer() {}, addLayer() {}, hasLayer() { return false },
-    invalidateSize() {}, fitBounds() {}, panTo() {}, getBoundsZoom() { return 12 },
+    removeLayer() {}, hasLayer() { return false },
+    invalidateSize() {}, panTo() {}, getBoundsZoom() { return 12 },
+    // 记录每次 fitBounds（视野缩放）的调用：点「加载全部照片」时要验它
+    fitBounds(bounds, options) {
+      calls.fitBounds.push({
+        points: (bounds && bounds._points) ? bounds._points.length : 0,
+        padding: options && options.padding,
+        maxZoom: options && options.maxZoom,
+      });
+      return this;
+    },
     getCenter: () => ({ lat: 23, lng: 114, distanceTo: () => 0 }),
     distance: () => 0,
   };
@@ -125,7 +134,17 @@ function makeLStub(calls) {
     divIcon: () => { calls.divIcon++; return {} },
     icon: () => ({}),
     latLng: (a, b, c) => ({ lat: a, lng: b, alt: c }),
-    latLngBounds: () => ({ pad() { return this }, getCenter: () => ({ lat: 23, lng: 114 }), isValid: () => true, extend() { return this } }),
+    // 记下 extend 进来的点，供 fitBounds 断言「覆盖了几个照片点」
+    latLngBounds: () => {
+      const b = {
+        _points: [],
+        isValid: () => b._points.length > 0,
+        pad() { return this },
+        extend(p) { b._points.push(p); return this },
+        getCenter: () => ({ lat: 23, lng: 114 }),
+      };
+      return b;
+    },
     control: { layers: () => ({ addTo() { return this } }) },
     DomEvent: { stopPropagation() {} },
   };
@@ -151,7 +170,7 @@ function buildSandbox(withLeaflet) {
 
   const timers = [];
   const windowListeners = {};
-  const calls = { divIcon: 0, mapStub: null, markers: [] };
+  const calls = { divIcon: 0, mapStub: null, markers: [], fitBounds: [] };
   const sandbox = {
     document,
     els,
@@ -418,17 +437,29 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
 
   const btn = sb.els.get('photoLayerBtn');
   chk(btn && btn._classes.has('off'), '照片图层默认关（不挡航迹）');
-  chk(btn && String(btn.getAttribute ? '' : '') === '', '开关按钮取得到');
+  chk(btn && String(btn.textContent || '') === '', '开关按钮取得到');
 
-  // 点一下开关：应该建出两个照片点
+  // 点一下「加载全部照片」：应该建出两个照片点，并把视野缩放到全部照片
   const before = svgHolder.length;
   let toggleErr = null;
   if (btn) { try { btn._fire('click') } catch (e) { toggleErr = e } }
   const made = svgHolder.length - before;
-  chk(!toggleErr, '点开关不抛异常', toggleErr ? toggleErr.message : '');
+  chk(!toggleErr, '点「加载全部照片」不抛异常', toggleErr ? toggleErr.message : '');
   chk(made >= 2, '打开后为每个照片点建了图标', made + ' 个');
-  chk(!btn || !btn._classes.has('off'), '开关的 off 类被摘掉了（看着是「开」）');
+  chk(!btn || !btn._classes.has('off'), '按钮的 off 类被摘掉了（看着是「开」）');
   chk(btn && String(btn.getAttribute('aria-pressed')) !== 'false' || !btn, 'aria-pressed 跟着变');
+
+  // 视野缩放：桩里记下 fitBounds 的调用，验证「一次把全部照片摆进画面」
+  chk(sb.calls.fitBounds.length === 1, '点按钮时调了一次 fitBounds（自动缩放到全部照片）',
+    String(sb.calls.fitBounds.length) + ' 次');
+  {
+    const call = sb.calls.fitBounds[0];
+    chk(!!call, '拿到了 fitBounds 的参数');
+    chk(call && call.points === 2, '外接矩形覆盖了 2 个照片点', call ? String(call.points) : '-');
+    chk(call && call.maxZoom === 15, '带 maxZoom 上限（复用 TRACK_FIT_MAX_ZOOM=15，看得全而不是看得近）',
+      call ? String(call.maxZoom) : '-');
+    chk(call && Array.isArray(call.padding) && call.padding.length === 2, '带 padding（点不会贴边）');
+  }
 
   const iconHtml = svgHolder.slice(before).join('\n');
   chk(/photo-dot/.test(iconHtml), '照片点用 SVG 圆点画');

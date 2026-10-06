@@ -1365,7 +1365,7 @@ for (const f of ['fileMatchesFilter', 'filteredGeoFiles', 'buildFileFilters', 'u
   const start = body.indexOf('function updateLoadAllLabel(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
   chk(/加载筛选（\$\{n\}）/.test(fn), '有筛选时按钮写明加载几条');
-  chk(/'加载全部'/.test(fn), '没筛选时显示「加载全部」（缩短以放进一行）');
+  chk(/'加载全部轨迹'/.test(fn), '没筛选时显示「加载全部轨迹」');
 }
 // 按钮文字必须禁止换行，否则窄栏里会被挤成「重新扫/描」两行
 chk(/\.card-tools button\{[^}]*white-space:nowrap/.test(html),
@@ -1374,7 +1374,8 @@ chk(/\.card-tools button\{[^}]*height:32px;padding:0 10px;font-size:12px/.test(h
   '卡片头部按钮收紧到 12px/32px（全局 button 是 16px + 13px 22px）');
 chk(/<button id="refreshBtn" class="secondary">刷新<\/button>/.test(html),
   '「重新扫描」改叫「刷新」（更短，一行放得下）');
-chk(/<button id="loadAllBtn">加载全部<\/button>/.test(html), '「加载全部轨迹」改叫「加载全部」');
+chk(/<button id="loadAllBtn">加载全部轨迹<\/button>/.test(html),
+  '左栏那个按钮叫「加载全部轨迹」（和「加载全部照片」区分开）');
 {
   const start = body.indexOf('function ensureAllLoaded(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
@@ -1538,8 +1539,8 @@ chk(/\.map-tools button\.secondary\{height:36px/.test(html),
 {
   const tools = html.slice(html.indexOf('card-tools file-actions'), html.indexOf('id="fileList"'));
   const ids = ['loadAllBtn', 'refreshBtn', 'clearBtn'].map((id) => tools.indexOf('id="' + id + '"'));
-  chk(ids.every((n) => n > 0), '「加载全部 / 刷新 / 清空」在同一排按钮里');
-  chk(ids[0] < ids[1] && ids[1] < ids[2], '顺序：加载全部 → 刷新 → 清空');
+  chk(ids.every((n) => n > 0), '「加载全部轨迹 / 刷新 / 清空」在同一排按钮里');
+  chk(ids[0] < ids[1] && ids[1] < ids[2], '顺序：加载全部轨迹 → 刷新 → 清空');
   // 整行头部：从标题切到搜索区结束，里面应当只有底图选择、没有「清除地图」
   const mapHead = html.slice(html.indexOf('<h2>轨迹地图</h2>'),
                              html.indexOf('id="poiList"'));

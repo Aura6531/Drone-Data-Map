@@ -101,7 +101,11 @@ body.side-collapsed .col-left .side-rail:hover{background:#f8fbff;border-color:#
 body.side-collapsed .col-left .side-rail:hover .side-rail-icon{color:#2563eb;border-color:#2563eb}
 
 /* 右栏：视频未播放时的占位说明 */
-.video-slot{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;border:2px dashed #dbe3ee;border-radius:14px;background:#fff;text-align:center}
+/* 最小高度：右栏下面还有照片展示区（可伸缩）与标记点卡片，
+   浏览器会把这个「可压缩」的占位块先压小 —— 实测展示区一打开，
+   它就从 379px 掉到 180px，视频画面被裁掉一截。
+   给一个下限，空间不够时让 .col 出滚动条，而不是把画面切掉。 */
+.video-slot{flex:1 1 auto;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;border:2px dashed #dbe3ee;border-radius:14px;background:#fff;text-align:center}
 .video-slot-title{font-size:20px;font-weight:700;color:#94a3b8}
 .video-slot-hint{font-size:14px;color:#a8b3c2;line-height:1.7;max-width:340px}
 
@@ -395,8 +399,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 右栏下半：标记点列表。
    视频面板改成「按内容高度」（flex:0 0 auto），剩下的高度全给列表，
    列表内部滚动 —— 这样右栏原来的空白处就利用起来了。 */
-.col-right .video-panel{flex:0 0 auto}
-.marker-card{flex:1 1 auto;min-height:190px;display:flex;flex-direction:column;gap:9px;padding:16px 18px}
+.col-right .video-panel{flex:0 0 auto;min-height:200px}
+/* flex 与最小高度都走变量：右栏出现照片展示区时，标记点卡片和它平分剩下的高度。
+   变量没被覆盖时就是原来的 1 1 auto / 190px。
+   （min-height 也必须走变量：基础规则的选择器权重比「右栏里」那条低，
+     直接写在基础规则里会把它压过去。） */
+.marker-card{flex:var(--marker-flex,1 1 auto);min-height:var(--marker-min-h,190px);
+             display:flex;flex-direction:column;gap:9px;padding:16px 18px}
 .marker-card h2{margin:0;font-size:17px;display:flex;align-items:center;gap:6px}
 .marker-count{font-size:12px;font-weight:700;color:#64748b}
 .marker-tools button{padding:7px 12px;font-size:13px;height:32px}
@@ -491,38 +500,54 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 当前选中的照片点：外面加一圈琥珀色光晕，和展示区里那张大图呼应 */
 .photo-div-icon.photo-active .photo-dot{stroke:#f59e0b;stroke-width:3}
 
-/* ---- 地图下方的照片展示区 ---- */
+/* ---- 右栏里的照片展示区 ---- */
 /* 点地图上一个照片点，就在这一块里把该组的全部成员一起放出来。
-   放在地图下面（不在左右两栏里）：宽度够，变焦大图能看得清，
-   而且和 .below-map 里已有的检索结果同一套视觉语言。 */
-.photo-card{display:none;margin-top:12px;padding:13px 15px;border-radius:12px;
-            background:#fff;border:1px solid #cbd5e1;box-shadow:0 4px 14px rgba(15,23,42,.07)}
-.photo-head{display:flex;align-items:baseline;gap:8px 14px;flex-wrap:wrap;margin-bottom:10px}
+   位置：右栏「视频」与「标记点」之间，占标记点上方那半截（用户 2026-10-07 要求）。
+   右栏是纵向 flex，所以这里用 flex:1 1 0 和标记点卡片分高度：
+   两者各占「视频面板之外的剩余高度」的一半，内部各自滚动。 */
+.photo-card{display:none;flex:3 2 0;min-height:220px;
+            padding:13px 15px;border-radius:12px;
+            background:#fff;border:1px solid #cbd5e1;
+            box-shadow:0 5px 18px rgba(20,30,50,.07);
+            flex-direction:column;gap:8px;overflow:hidden}
+/* 显示出来时是纵向 flex（display:none 时 flex 不生效，所以两个属性分开写） */
+.photo-card[style*="display: block"],.photo-card[style*="display:block"]{display:flex!important}
+
+/* 标记点卡片：右栏里有照片展示区时，两者分剩下的高度。
+   比例是 flex:3(照片) 对 2(标记点) —— 照片那边要放大图 + 小图 + 跳视频按钮，
+   给太少就只能看见图片的一条（实测 1:1 时画廊只有 110px）。 */
+.col-right .marker-card{--marker-flex:1 1 auto;--marker-min-h:190px}
+.col-right:has(.photo-card[style*="display: block"]) .marker-card,
+.col-right:has(.photo-card[style*="display:block"]) .marker-card{--marker-flex:2 2 0;--marker-min-h:150px}
+
+.photo-head{display:flex;align-items:baseline;gap:8px 14px;flex-wrap:wrap;margin-bottom:2px}
 .photo-title{font-size:15px;font-weight:700;color:#0f172a}
 .photo-sub{font-size:12px;color:#64748b}
 .photo-sub.warn{color:#b45309;font-weight:600}
 .photo-head-tools{margin-left:auto;display:flex;gap:6px;align-items:center}
-
-/* 点信息：一行小标签，和 .hit-chips 同一套做法 */
-.photo-chips{display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:10px}
-.photo-chip{font-size:12px;line-height:1.35;background:#f1f5f9;border:1px solid #e2e8f0;
-            border-radius:6px;padding:3px 9px;white-space:nowrap}
+/* 头部与其下的内容都不许把卡片撑高：内容多了由 .photo-gallery 自己滚 */
+.photo-head,.photo-head .photo-title,.photo-head .photo-sub{min-width:0}
+.photo-chips{display:flex;flex-wrap:wrap;gap:6px 8px;margin-bottom:2px;flex:0 0 auto;overflow:hidden}
+.photo-chip{font-size:12px;line-height:1.3;background:#f1f5f9;border:1px solid #e2e8f0;
+            border-radius:6px;padding:2px 8px;white-space:nowrap}
 .photo-chip .k{color:#64748b;margin-right:5px}
 .photo-chip .v{font-weight:700;color:#0f172a}
 
-/* 大图 + 小图并排。
-   大图用 flex:3 1 340px：宽的时候占大部分，窄的时候（中栏不宽）会先收缩，
-   到 340px 以下自动换行，小图区接着占满整行。
-   不给整个画廊写死高度 —— 大图高度由图片自己的比例决定（16:9 或 5:4），
-   热成像那张不会被拉变形；只有极端高比例时才用 max-height 兜底。 */
-.photo-gallery{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
-.photo-lead{flex:3 1 340px;min-width:0}
-.photo-thumbs{flex:1 1 220px;display:flex;flex-wrap:wrap;gap:10px;min-width:0}
+/* 大图 + 小图并排。右栏本来就窄（约 570px），所以比例上给大图更多：
+   宽的时候大图占 3 份、小图 1 份；再窄就整体换行。
+   两块都要 flex:0 0 auto + 给一个下限：图片的固有高度是 0（宽度交给 flex 定），
+   父级又是「固定高度 + 内部滚动」，只写 min-height:0 会把画廊压成 0 高、
+   一张图都看不见（踩过两次）。
+   整块由 .photo-gallery 自己滚动 —— 内容比卡片高时在里面滚，不把布局撑破。 */
+.photo-gallery{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;
+               flex:1 1 auto;min-height:130px;overflow:auto}
+.photo-lead{flex:3 1 260px;min-width:0;min-height:70px}
+.photo-thumbs{flex:1 1 150px;display:flex;flex-wrap:wrap;gap:8px;min-width:0;min-height:70px}
 
 .photo-shot{margin:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#0f172a}
-.photo-shot img{display:block;width:100%;height:auto;max-height:26vh;object-fit:contain}
+.photo-shot img{display:block;width:100%;height:auto;max-height:22vh;object-fit:contain}
 .photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
-.photo-lead .photo-shot img{max-height:46vh}
+.photo-lead .photo-shot img{max-height:32vh}
 .photo-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
            background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
 /* 相机标签上色：变焦 / 广角 / 热成像一眼分清（和大图上那个「大图」标记同色系） */
@@ -537,10 +562,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 小图那一列：整块可点（点一下跳视频），所以给个明确的可点手感 */
 .photo-thumb{cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease}
 .photo-thumb:hover{border-color:#2563eb;box-shadow:0 2px 10px rgba(37,99,235,.22)}
-.photo-thumb img{max-height:18vh}
+.photo-thumb img{max-height:11vh}
 
-/* 「用这张照片时刻跳视频」：每组一条，按钮排一行 */
-.photo-jump{margin-top:11px;padding-top:10px;border-top:1px dashed #e2e8f0}
+/* 「用这张照片时刻跳视频」：每组一条，按钮排一行。
+   flex:0 0 auto 很关键：它是固定内容，不能让 flex 把它拉伸，
+   否则会把上面的画廊挤扁（画廊是 flex:1 那个，抢不过它）。 */
+.photo-jump{margin-top:2px;padding-top:8px;border-top:1px dashed #e2e8f0;flex:0 0 auto}
+.photo-head,.photo-chips{flex:0 0 auto}
 .photo-jump-title{font-size:12px;color:#64748b;margin-bottom:7px}
 .photo-jump-title b{color:#0f172a}
 .photo-jump-row{display:flex;flex-wrap:wrap;gap:6px}
@@ -626,7 +654,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         </div>
         <!-- 对地图上轨迹内容的三个动作，放在筛选下面（按需求的行序） -->
         <div class="card-tools file-actions">
-          <button id="loadAllBtn">加载全部</button>
+          <button id="loadAllBtn">加载全部轨迹</button>
           <button id="refreshBtn" class="secondary">刷新</button>
           <button id="clearBtn" class="secondary">清空</button>
         </div>
@@ -665,7 +693,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
              这里再包一个 div 会让「三张卡片各一个控件组」的计数变成 4。 -->
         <span class="photo-tools">
           <button id="photoLayerBtn" class="toggle-btn off" type="button" aria-pressed="false"
-                  title="照片图层：显示 / 隐藏（同一目标点的多张照片在地图上合并成一个点）">照片图层</button>
+                  title="加载全部照片：把照片点显示到地图上，并把视野缩放到所有照片都看得见（再点一次隐藏）">加载全部照片</button>
           <!-- 计数分两段：「244 张 → 147 个点」是主信息，必须一直看得见；
                「· 97 处合并」是补充，窗口窄时让位（媒体查询里隐藏），
                免得整串被卡掉半截、连主信息都读不全。 -->
@@ -700,27 +728,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     </div>
     <!-- 底图瓦片之类的次要提示：小字放地图下面，不占地图上方那一大块 -->
     <div id="tileHint" class="tile-hint" style="display:none"></div>
-
-    <!-- 照片展示区：点地图上任意一个照片点，就把该「目标点」的全部照片
-         （变焦 / 广角 / 热成像）一起放到这里 —— 变焦那张当大图，其余小图并排。
-         放在地图下面而不是左右两栏：宽度够，大图能看清；也不会占走地图高度。 -->
-    <section id="photoCard" class="photo-card">
-      <!-- 两个按钮始终存在、靠 disabled 与文案表达状态：
-           比每次渲染重建 DOM 少一类「监听器泄漏」的坑（标记点列表踩过）。 -->
-      <div class="photo-head">
-        <div id="photoTitle" class="photo-title">照片</div>
-        <div id="photoSub" class="photo-sub"></div>
-        <div class="photo-head-tools">
-          <button id="photoMapBtn" class="secondary" type="button"
-                  title="地图定位到该照片点（展示区打开、地图被移开时用）">地图定位</button>
-          <button id="photoCloseBtn" class="secondary" type="button"
-                  title="收起照片展示区（照片图层不受影响）">收起</button>
-        </div>
-      </div>
-      <div id="photoChips" class="photo-chips"></div>
-      <div id="photoGallery" class="photo-gallery"></div>
-      <div id="photoJump" class="photo-jump" style="display:none"></div>
-    </section>
 
     <!-- 地图下面：次要内容，整体缩小 -->
     <div class="below-map">
@@ -797,6 +804,28 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <div id="videoStatus" class="video-status"></div>
         </div>      </div>
     </div>
+
+    <!-- 照片展示区：点地图上任意一个照片点，就把该「目标点」的全部照片
+         （变焦 / 广角 / 热成像）一起放到这里 —— 变焦那张当大图，其余小图并排。
+         放在右栏「视频」与「标记点」之间：用户要求它占标记点上方那半截，
+         这样照片点和照片内容能和地图并排对照着看。 -->
+    <section id="photoCard" class="photo-card">
+      <!-- 两个按钮始终存在、靠 disabled 与文案表达状态：
+           比每次渲染重建 DOM 少一类「监听器泄漏」的坑（标记点列表踩过）。 -->
+      <div class="photo-head">
+        <div id="photoTitle" class="photo-title">照片</div>
+        <div id="photoSub" class="photo-sub"></div>
+        <div class="photo-head-tools">
+          <button id="photoMapBtn" class="secondary" type="button"
+                  title="地图定位到该照片点">地图定位</button>
+          <button id="photoCloseBtn" class="secondary" type="button"
+                  title="收起照片展示区（照片图层不受影响）">收起</button>
+        </div>
+      </div>
+      <div id="photoChips" class="photo-chips"></div>
+      <div id="photoGallery" class="photo-gallery"></div>
+      <div id="photoJump" class="photo-jump" style="display:none"></div>
+    </section>
 
     <!-- 标记点列表：视频画面右键取点得到的点都列在这里。
          勾选后可批量删除 / 导出 KML / 复制名称+经纬度表格 / 生成 Word 报告；
@@ -1223,7 +1252,7 @@ function filteredGeoFiles(){
 function updateLoadAllLabel(){
   const filtered=Boolean(fileFilterDate||fileFilterType);
   const n=filteredGeoFiles().length;
-  loadAllBtn.textContent=filtered?`加载筛选（${n}）`:'加载全部';
+  loadAllBtn.textContent=filtered?`加载筛选（${n}）`:'加载全部轨迹';
 }
 
 // 依据当前文件列表刷新两个下拉框；选项里没有的选中值要清掉
@@ -3962,6 +3991,30 @@ function setPhotoLayer(on){
   applyPhotoLayerVisibility();
 }
 
+// 把视野缩放到「所有照片都看得见」。
+// 用户点「加载全部照片」时要的就是这个：不用自己滚轮找，一次把 147 个点全摆进画面。
+// 上限复用 TRACK_FIT_MAX_ZOOM（和轨迹的自动缩放同一个口径）：147 个点跨近 2 km，
+// 真按 maxZoom 顶到 17 反而只剩几个点，所以这里要的是「看得全」而不是「看得近」。
+// （点单个照片点定位用的是 PHOTO_ZOOM=17，那是另一回事 —— 看细节。）
+function zoomToAllPhotos(){
+  if(!map||!leafletReady()||!photoGroups.length)return false;
+
+  const bounds=L.latLngBounds([]);
+
+  for(const g of photoGroups){
+    const lat=Number(g.lat),lon=Number(g.lon);
+    if(Number.isFinite(lat)&&Number.isFinite(lon))bounds.extend([lat,lon]);
+  }
+
+  if(!bounds.isValid())return false;
+
+  // animate:false 是必须的 —— 跨近 2 km 的一次性缩放，动画既没意义，
+  // 又会在「浏览器偏好减少动画 / 无头环境」下让视图停在动画中间态
+  // （实测：不关动画时 fitBounds 调了、返回值也是 true，但 zoom 与中心完全没变）。
+  map.fitBounds(bounds,{padding:[30,30],maxZoom:TRACK_FIT_MAX_ZOOM,animate:false});
+  return true;
+}
+
 // 重新加载当前项目的照片（换项目、导入新数据之后都要走一次）。
 async function loadProjectPhotos(){
   const name=projectSelect&&projectSelect.value;
@@ -4074,7 +4127,7 @@ function photoJumpHtml(group,matches){
   if(!list.length){
     return `<div class="photo-jump-title">跳视频：这张照片拍于 <b>${esc(timeText)}</b></div>`
       +`<div class="photo-jump-note">没有找到时间对得上的视频。常见原因：`
-      +`该架次的视频还没加载到地图（先点左栏的「加载全部」）、`
+      +`该架次的视频还没加载到地图（先点左栏的「加载全部轨迹」）、`
       +`视频文件名里没有可识别的时间、或者这段飞行当时没有录像。</div>`;
   }
 
@@ -4319,8 +4372,18 @@ function openPhotoVideo(group,name){
   if(videoInfo)videoInfo.textContent='这张照片暂时没有找到对应的视频片段。';
 }
 
-// 开关 / 收起 / 定位 —— 只挂一次监听（和标记点列表同一套做法）
-if(photoLayerBtn)photoLayerBtn.addEventListener('click',()=>setPhotoLayer(!photoLayerOn));
+// 「加载全部照片」：点亮照片图层，并把视野缩放到所有照片都看得见 ——
+// 用户点它要的就是「一次把全部点摆进画面」，不用自己滚轮找。
+// 再点一次收起图层（保持它还是个开关，否则就没法把照片点关掉了）。
+if(photoLayerBtn)photoLayerBtn.addEventListener('click',()=>{
+  if(photoLayerOn){
+    setPhotoLayer(false);
+    return;
+  }
+
+  setPhotoLayer(true);
+  zoomToAllPhotos();
+});
 // 用 ?. ：这两个按钮在卡片内部，理论上传进来的事件对象一定带 stopPropagation，
 // 但不能因为这个可选项把整块功能拖崩（曾经就这么崩过一次）。
 if(photoCloseBtn)photoCloseBtn.addEventListener('click',event=>{event?.stopPropagation?.();closePhotoCard()});

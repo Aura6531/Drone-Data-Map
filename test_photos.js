@@ -605,6 +605,11 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   chk(html.includes("/api/project/photos?name="), '接了后端的照片接口');
   chk(html.includes("/photo?path="), '图片走后端 /photo（不用绝对路径直接喂浏览器）');
   chk(/id="photoLayerBtn"/.test(html), '有照片图层开关');
+  chk(/>加载全部照片</.test(html), '按钮叫「加载全部照片」（用户定的名字）');
+  chk(/<button id="loadAllBtn">加载全部轨迹<\/button>/.test(html),
+    '左栏那个改叫「加载全部轨迹」（和「加载全部照片」区分开）');
+  chk(/textContent=filtered\?`加载筛选（\$\{n\}）`:'加载全部轨迹'/.test(html),
+    '筛选后按钮文案也跟着「加载全部轨迹」');
   // 开关必须在「底图 / 天地图key」那一行里（用户要求放到那里），而不是另起一行
   const toolsRow = html.slice(html.indexOf('card-tools map-tools'), html.indexOf('</div>', html.indexOf('id="photoLayerCountExtra"')));
   chk(/id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow) && /id="photoLayerBtn"/.test(toolsRow),
@@ -615,10 +620,50 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   chk(/max-width:1280px\)\{[\s\S]{0,200}#photoLayerCount\{display:none\}/.test(html),
     '更窄时连张数也让位，只留按钮（按钮是「要点的」，优先保住）');
   chk(!/photoLayerCount\.textContent=total\s*\?[^;]*(->)/.test(html), '计数用「→」而不是 "->"');
+
+  // 点「加载全部照片」要自动缩放到所有照片都看得见（用户 2026-10-07 的要求）
+  chk(/function zoomToAllPhotos\(/.test(html), '有 zoomToAllPhotos()');
+  const zoomFn = extractFn('zoomToAllPhotos');
+  chk(/L\.latLngBounds\(\[\]\)/.test(zoomFn), '按所有照片点求外接矩形');
+  chk(/photoGroups/.test(zoomFn), '遍历的就是 `photoGroups`（画在地图上的那批）');
+  chk(/bounds\.extend\(\[lat,lon\]\)/.test(zoomFn), '每个点都 extend 进去');
+  chk(/map\.fitBounds\(bounds,\{padding:\[30,30\],maxZoom:TRACK_FIT_MAX_ZOOM,animate:false\}\)/.test(zoomFn),
+    'fitBounds 带 padding / maxZoom 上限 / animate:false');
+  // animate:false 不是可有可无：开着动画时（无头环境或浏览器偏好减少动画）
+  // fitBounds 调了、返回 true，但 zoom 与中心完全没变 —— 实测踩过。
+  chk(/animate:false/.test(zoomFn),
+    'animate:false（否则这一下可能停在动画中间态，视图看着完全没动）');
+  chk(/setPhotoLayer\(true\);[\s\S]{0,80}zoomToAllPhotos\(\);/.test(html),
+    '点按钮先点亮图层、再缩放到全部照片');
+
+  // 展示区挪到右栏（视频与标记点之间，占标记点上方那半截）
+  const rightCol = html.slice(html.indexOf('<section class="col col-right"'),
+                              html.indexOf('id="keyModal"'));
+  chk(/id="photoCard"/.test(rightCol), '照片展示区在右栏里');
+  chk(/id="videoModal"/.test(rightCol) && /id="markerCard"/.test(rightCol),
+    '切片确实覆盖了右栏（含视频面板与标记点卡片）');
+  chk(rightCol.indexOf('id="photoCard"') > rightCol.indexOf('id="videoModal"')
+      && rightCol.indexOf('id="photoCard"') < rightCol.indexOf('id="markerCard"'),
+    '位置：视频面板之后、标记点列表之前');
+  chk(!/id="photoCard"[\s\S]{0,20000}id="photoCard"/.test(html), 'photoCard 只有一处');
+  // 原来在地图卡片里（.below-map 之前），现在挪到右栏 —— 所以它应当排在
+  // altVideos / stats 这些「地图下面的次要内容」之后。
+  chk(html.indexOf('id="photoCard"') > html.indexOf('id="altVideos"'),
+    '已从地图卡片里挪走（不再位于 altVideos 之前）');
+  chk(/\.col-right:has\(\.photo-card\[style\*="display: block"\]\) \.marker-card/.test(html),
+    '右栏里两者按 :has() 分高度（照片区 : 标记点 = 3 : 2）');
+  chk(/\.photo-card\{display:none;flex:3 2 0;min-height:220px/.test(html),
+    '展示区自己 flex:3 2 0（比标记点拿得多，够放大图 + 小图 + 跳视频按钮）');
+  chk(/--marker-flex:2 2 0/.test(html), '标记点卡片跟着用 2 份（两边成 3:2）');
   chk(/id="photoCard"/.test(html), '有地图下方的展示区容器');
   chk(/id="photoGallery"/.test(html), '展示区里有图片区');
   chk(/id="photoJump"/.test(html), '展示区里有「跳视频」那块');
-  chk(/photoLayerBtn\.addEventListener\('click',\(\)=>setPhotoLayer/.test(html), '开关接线到 setPhotoLayer');
+  chk(/photoLayerBtn\.addEventListener\('click',\(\)=>\{/.test(html),
+    '开关接线到一个处理函数（点它加载 + 缩放，再点收起）');
+  chk(/if\(photoLayerOn\)\{\s*setPhotoLayer\(false\);/.test(html),
+    '已经显示时再点一次收起图层');
+  chk(/setPhotoLayer\(true\);\s*zoomToAllPhotos\(\)/.test(html),
+    '从关到开这一下会顺便缩放到全部照片');
   chk((html.match(/photoLayerBtn\.addEventListener/g) || []).length === 1, '开关的监听只挂一次');
   chk((html.match(/photoCloseBtn\.addEventListener/g) || []).length === 1, '收起按钮的监听只挂一次');
   chk((html.match(/loadProjectPhotos\(\)/g) || []).length >= 3,
@@ -630,9 +675,11 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '⚠ 角标是独立元素贴在点的右上角');
   chk(!/photo-warn[^}]*background:#fde68a/.test(html), '没有退回到「黄色小圆点」那套');
 
-  // 展示区必须在地图下面（而不是左右两栏里）
-  chk(html.indexOf('id="photoCard"') > html.indexOf('id="map"') && html.indexOf('id="photoCard"') < html.indexOf('id="altVideos"'),
-    '展示区的位置就在地图下方、检索结果之前');
+  // 展示区现在在右栏（2026-10-07 用户要求挪过去），不在中栏地图下面了
+  chk(html.indexOf('id="photoCard"') > html.indexOf('class="col col-mid"'),
+    '展示区不在中栏（地图卡片）里');
+  chk(/<section class="col col-right"[\s\S]*id="photoCard"/.test(html),
+    '展示区在右栏里（与视频 / 标记点同栏）');
 }
 
 console.log('\n=== 9) 遥测请求必须带对参数（这条错了，画面内判定会 147/147 全空）===');
