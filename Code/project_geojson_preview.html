@@ -2796,7 +2796,8 @@ function jumpToMarker(id){
     video:shortFileName(String(m.video))
   };
 
-  openVideoFromPopup(encodeURIComponent(JSON.stringify(payload)));
+  // 只定位、不自动播放：等你点播放按钮再放
+  openVideoFromPopup(encodeURIComponent(JSON.stringify(payload)), false);
 }
 
 function kmlEscape(s){
@@ -3678,9 +3679,11 @@ function startClip(){
     q.set('duration',String(PROXY_SECONDS));
   }
 
-  videoInfo.textContent=st.useProxy
-    ? `从 ${formatTime(st.start)} 开始播放（转码片段 ${PROXY_SECONDS} 秒）`
-    : `从 ${formatTime(st.start)} 开始播放${videoStopAt!==null?'，到 '+formatTime(videoStopAt)+' 自动暂停':''}`;
+  videoInfo.textContent=st.autoPlay===false
+    ? `已定位到 ${formatTime(st.start)}（未自动播放）`
+    : (st.useProxy
+      ? `从 ${formatTime(st.start)} 开始播放（转码片段 ${PROXY_SECONDS} 秒）`
+      : `从 ${formatTime(st.start)} 开始播放${videoStopAt!==null?'，到 '+formatTime(videoStopAt)+' 自动暂停':''}`);
   videoStatus.textContent=st.useProxy
     ?'正在准备转码片段，首次播放需要十几秒……'
     :'正在加载原片（若本机浏览器不支持该编码，会自动切换为转码片段）……';
@@ -3703,6 +3706,14 @@ function startClip(){
     }
 
     videoPlayer.currentTime=seekTo;
+
+    // 只定位、不自动播放（点标记点跳过去就是这种）：停在那一帧，等用户自己点播放
+    if(st.autoPlay===false){
+      videoStatus.textContent='已定位到该时刻（未自动播放），点播放继续。';
+      syncDroneMarker();
+      return;
+    }
+
     videoPlayer.play().then(()=>{
       videoStatus.textContent='正在播放'+(clip&&clip.useProxy?'（转码片段）':'（原片）');
     }).catch(()=>{
@@ -3730,7 +3741,7 @@ function fallbackToProxy(reason){
   startClip();
 }
 
-function openVideoFromPopup(encoded){
+function openVideoFromPopup(encoded,autoPlay=true){
   // 开始播放后，轨迹气泡就没用了，顺手关掉（结果卡里的按钮同样走这里，
   // 那种情况下本来也没有气泡，closePopup 是空操作）
   if(map)map.closePopup();
@@ -3745,7 +3756,9 @@ function openVideoFromPopup(encoded){
       folderIndex:data.folder_index,
       path:data.relative_path,
       useProxy:mode==='proxy',
-      allowFallback:mode==='auto'
+      allowFallback:mode==='auto',
+      // 点标记点跳过来时传 false：只定位到那一帧，不自动播放
+      autoPlay:autoPlay!==false
     };
 
     videoTitle.textContent=data.video||'视频播放';

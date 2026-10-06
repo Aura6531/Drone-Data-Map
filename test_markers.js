@@ -96,7 +96,7 @@ return {
   getActive: () => activeMarkerId
 };`;
 
-const calls = { setView: [], opened: [], saved: 0, drew: 0, alerts: [], confirmAnswer: true };
+const calls = { setView: [], opened: [], autoPlay: [], saved: 0, drew: 0, alerts: [], confirmAnswer: true };
 const markerList = el.markerList;
 
 const build = new Function(
@@ -128,7 +128,10 @@ function fresh(markers, reportAvailable = true) {
     { setView: (ll, z) => calls.setView.push([ll, z]) },
     geoFiles,
     (p) => String(p).replace(/\.geojson$/i, '.mp4'),
-    (enc) => calls.opened.push(JSON.parse(decodeURIComponent(enc))),
+    (enc, autoPlay) => {
+      calls.opened.push(JSON.parse(decodeURIComponent(enc)));
+      calls.autoPlay.push(autoPlay);
+    },
     (s) => String(s),
     (t) => Number(t).toFixed(3),
     { value: '东莞2' },
@@ -287,6 +290,8 @@ console.log('\n=== 7) 点一行：地图跳 16 级 + 视频跳到那一帧 ===')
   chk(p.relative_path === A.video, '视频用标记点里存的那一路', p.relative_path);
   chk(p.video_start === A.time, '从该点的时间开始播（不是从 0）', String(p.video_start));
   chk(p.folder_index === 0, '文件夹序号是从已扫到的文件列表反查的', String(p.folder_index));
+  chk(calls.autoPlay[0] === false,
+    '点标记点跳转：明确要求「只定位、不自动播放」', String(calls.autoPlay[0]));
 
   calls.opened.length = 0;
   r.api.jumpToMarker('b');
@@ -368,6 +373,83 @@ console.log('\n=== 10) 列表排布：少则一栏 / 多了分栏 / 挤不下只
 
   el.markerList.clientWidth = 0;
   el.markerList.classList._set.clear();
+}
+
+console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ===');
+{
+  // 抽出真的 startClip()，用假 videoPlayer 跑一遍：
+  // 标记点入口（autoPlay=false）必须不调 play()，其它入口照旧自动播。
+  const played = [];
+  const syncCalls = [];
+  let metaHandler = null;
+
+  const videoStatus = { textContent: '' };
+  const videoInfo = { textContent: '' };
+  let currentTime = -1;
+
+  const player = {
+    readyState: 1,
+    videoWidth: 1920,
+    videoHeight: 1080,
+    src: '',
+    get currentTime() { return currentTime },
+    set currentTime(v) { currentTime = v },
+    pause() { played.push('pause') },
+    play() { played.push('play'); return Promise.resolve() },
+    load() {},
+    addEventListener(name, fn) { if (name === 'loadedmetadata') metaHandler = fn },
+    removeEventListener() {},
+  };
+
+  const buildStart = new Function(
+    'clip', 'clipTimer', 'videoStopAt', 'proxyBucketOf', 'PROXY_SECONDS',
+    'videoInfo', 'videoStatus', 'videoPlayer', 'syncDroneMarker', 'projectSelect',
+    'videoStage', 'formatTime', 'fallbackToProxy', 'setTimeout', 'clearTimeout',
+    `${extractFn('startClip')}\nreturn {startClip};`
+  );
+
+  function runStart(autoPlay) {
+    played.length = 0;
+    syncCalls.length = 0;
+    metaHandler = null;
+    currentTime = -1;
+    videoStatus.textContent = '';
+    videoInfo.textContent = '';
+
+    const api = buildStart(
+      {
+        data: { video: 'x.mp4', video_end: 0 },
+        start: 90, folderIndex: 0, path: 'a.mp4',
+        useProxy: false, allowFallback: false, autoPlay,
+      },
+      null, null,
+      (t) => Math.floor(t / 30) * 30, 30,
+      videoInfo, videoStatus, player,
+      (t) => syncCalls.push(t), { value: '东莞2' }, null,
+      (t) => Number(t).toFixed(3), () => {},
+      setTimeout, clearTimeout
+    );
+
+    api.startClip();
+    if (metaHandler) metaHandler();     // 模拟元数据到达
+  }
+
+  runStart(false);
+  chk(played.filter(x => x === 'play').length === 0, '标记点入口：play() 一次都没被调用',
+    played.join(',') || '（空）');
+  chk(currentTime === 90, '但确实定位到了该标记点的时间', String(currentTime));
+  chk(/未自动播放/.test(videoStatus.textContent), '状态栏写明未自动播放', videoStatus.textContent);
+  chk(/已定位到/.test(videoInfo.textContent), '信息栏也写成「已定位到」，不写「开始播放」',
+    videoInfo.textContent);
+  chk(syncCalls.length >= 2, '箭头/准星仍然同步到了该时刻', syncCalls.join(','));
+
+  runStart(true);
+  chk(played.filter(x => x === 'play').length === 1, '普通入口（从点击位置播放）：照旧自动播放',
+    played.join(','));
+  chk(currentTime === 90, '起播位置一样是该时刻');
+
+  runStart(undefined);
+  chk(played.filter(x => x === 'play').length === 1, '不传第三个参数时默认为自动播放（老调用不受影响）');
 }
 
 console.log(ok ? '\n结果: 全部通过' : '\n结果: 有失败');

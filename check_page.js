@@ -1719,6 +1719,20 @@ console.log('\n=== 标记点列表：默认名与自动分栏 ===');
     '经纬度靠左对齐');
 }
 
+console.log('\n=== 点标记点跳转：只定位、不自动播放 ===');
+{
+  chk(/function openVideoFromPopup\(encoded,autoPlay=true\)/.test(body),
+    'openVideoFromPopup 多了 autoPlay 参数（默认 true，老调用不受影响）');
+  chk(/autoPlay:autoPlay!==false/.test(body), 'autoPlay 记进 clip');
+  chk(/if\(st\.autoPlay===false\)\{/.test(body),
+    'startClip：不自动播放时停在那一帧就 return');
+  chk(/JSON\.stringify\(payload\)\), false\)/.test(body),
+    '点标记点跳转时明确传 false');
+  chk(/已定位到该时刻（未自动播放）/.test(body), '状态栏写明未自动播放');
+  chk(/openVideoFromPopup\('\$\{encoded\}'\)/.test(html),
+    '轨迹气泡的「从点击位置播放」没被改动（那个仍然自动播）');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));
