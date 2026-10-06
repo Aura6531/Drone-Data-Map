@@ -14,7 +14,7 @@
 > 本程序的地图底图与「输入地名定位」由**天地图**提供，需要一串属于你自己的 key（tk）。
 > 它是**免费**的，申请大约 2 分钟：
 
-1. 打开天地图控制台：<https://console.tianditu.gov.cn/api/key>
+1. 打开天地图控制台：<https://lbs.tianditu.gov.cn/authorization/authorization.html>
 2. 注册/登录 → 点**创建应用** → **应用类型选「浏览器端」** → 提交
 3. 把生成的 **32 位** tk 复制下来，粘贴到下面的输入框
 

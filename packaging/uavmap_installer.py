@@ -32,7 +32,7 @@ APP_NAME = "无人机巡查数据地图"
 APP_EXE = "UAVMap.exe"
 APP_VERSION = "1.0.0"
 REG_PATH = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_NAME}"
-KEY_URL = "https://console.tianditu.gov.cn/api/key"
+KEY_URL = "https://lbs.tianditu.gov.cn/authorization/authorization.html"
 UNINSTALL_BAT = "卸载.bat"
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
@@ -362,7 +362,9 @@ def run_wizard():
     tk.Label(
         step2,
         text=("底图与地名搜索由天地图提供，需要一串属于你自己的 key（免费，约 2 分钟申请）：\n"
-              "① 打开下面的网址并注册/登录　② 创建应用，类型选「浏览器端」　③ 把生成的 32 位 tk 粘到下面\n"
+              "① 打开下面的「申请说明」页，注册/登录并申请成为开发者\n"
+              "② 进「控制台 → 应用管理」创建应用，类型选「浏览器端」\n"
+              "③ 把生成的 32 位 tk 粘到下面\n"
               "没填也能用：底图会退回 OpenStreetMap，只是地名搜索不可用。"),
         justify="left", wraplength=px(490), fg="#444"
     ).pack(fill="x", pady=(px(6), px(8)))
