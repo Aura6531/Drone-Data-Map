@@ -1765,6 +1765,24 @@ console.log('\n=== 服务端返回网页时的报错要能看懂 ===');
     '正常 JSON 的路径不变：r.ok 且无 error 才返回，有 error 照旧抛');
 }
 
+console.log('\n=== 机头 → 准星 的注视指示线 ===');
+{
+  chk(/const LOOK_LINE_STYLE=\{/.test(body), '有独立的线样式常量');
+  chk(/color:'#9ca3af'/.test(body) && /weight:1/.test(body) && /dashArray:'3,7'/.test(body),
+    '很浅很细的灰色虚线（#9ca3af / 1px / 3,7）');
+  chk(/interactive:false/.test(body), '指示线不接鼠标，不挡地图点击');
+  chk(/lineCap:'round'/.test(body), '虚线端点是圆的（细线更好看）');
+  chk(/const DRONE_NOSE_PX=14/.test(body), '机尖偏移量抽成常量，方便调');
+  chk(/function droneNoseLatLng\(/.test(body), 'function droneNoseLatLng()（按航向算机头位置）');
+  chk(/function updateLookLine\(/.test(body) && /function hideLookLine\(/.test(body),
+    'function updateLookLine() / hideLookLine()');
+  chk(/updateLookLine\(drone,target\)/.test(body), 'syncCrosshair 里跟着准星一起更新');
+  chk(/function hideMapCrosshair\(\)\{[\s\S]{0,200}hideLookLine\(\)/.test(body),
+    '准星隐藏时线一起收掉（关视频 / 关准星 / 清空地图都走 hideMapCrosshair）');
+  chk(/map\.on\('zoomend',\(\)=>\{if\(mapCrosshair\)syncCrosshair\(\)\}\)/.test(body),
+    '缩放后重算起点（起点是按像素偏移算的，缩放会变）');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));

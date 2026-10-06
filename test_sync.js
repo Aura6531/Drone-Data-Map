@@ -208,5 +208,50 @@ console.log('\n=== 关键：找不到航迹时必须提示 + 自动补加载（�
   chk(/fetchGeo\(/.test(loader), '按需向后端取 GeoJSON');
 }
 
+console.log('\n=== 机头 -> 准星 的注视指示线 ===');
+{
+  const nosePx = Number((html.match(/const DRONE_NOSE_PX=(\d+)/) || [])[1]);
+  chk(nosePx > 0, '从页面里读到机尖偏移量 DRONE_NOSE_PX', String(nosePx));
+
+  // 假地图：project/unproject 用线性映射，够验证方向和偏移量
+  const SCALE = 1000;
+  const fakeMap = {
+    getZoom: () => 16,
+    project: (ll) => ({ x: ll.lng * SCALE, y: -ll.lat * SCALE }),
+    unproject: (p) => ({ lat: -p.y / SCALE, lng: p.x / SCALE }),
+  };
+  const fakeL = { point: (x, y) => ({ x, y }) };
+
+  const buildNose = new Function(
+    'L', 'map', 'droneBearing', 'DRONE_NOSE_PX',
+    `${extractFn('droneNoseLatLng')}\nreturn droneNoseLatLng;`
+  );
+
+  const at = (bearing) => buildNose(fakeL, fakeMap, bearing, nosePx)({ lat: 23.0, lng: 112.0 });
+
+  const north = at(0);
+  const east = at(90);
+  const south = at(180);
+  const west = at(270);
+
+  chk(north.lat > 23.0 && Math.abs(north.lng - 112.0) < 1e-9,
+    '航向 0° -> 机头在正北', north.lat.toFixed(6));
+  chk(east.lng > 112.0 && Math.abs(east.lat - 23.0) < 1e-9,
+    '航向 90° -> 机头在正东', east.lng.toFixed(6));
+  chk(south.lat < 23.0 && Math.abs(south.lng - 112.0) < 1e-9,
+    '航向 180° -> 机头在正南', south.lat.toFixed(6));
+  chk(west.lng < 112.0 && Math.abs(west.lat - 23.0) < 1e-9,
+    '航向 270° -> 机头在正西', west.lng.toFixed(6));
+
+  const offset = Math.abs(north.lat - 23.0);
+  chk(Math.abs(offset - nosePx / SCALE) < 1e-9,
+    `偏移量正好等于 ${nosePx} 像素换算出来的距离`, offset.toFixed(6));
+
+  chk(buildNose(fakeL, null, 0, nosePx)({ lat: 23, lng: 112 }) === null,
+    '没有地图时返回 null，不抛异常');
+  chk(buildNose(fakeL, fakeMap, 45, nosePx)(null) === null,
+    '没有飞机位置时返回 null');
+}
+
 console.log('\n结果:', ok ? '全部通过' : '有失败项');
 process.exit(ok ? 0 : 1);

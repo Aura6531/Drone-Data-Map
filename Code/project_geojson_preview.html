@@ -1006,6 +1006,10 @@ function initMap(){
     }
     setProbe(e.latlng,'地图点击','');
   });
+
+  // 「机头 -> 准星」那条指示线的起点是按像素算的，缩放后要重算一次
+  // （视频在播时每帧都会重算；暂停时靠这里补上）
+  map.on('zoomend',()=>{if(mapCrosshair)syncCrosshair()});
 }
 
 /* ============================================================
@@ -2167,9 +2171,65 @@ function centerGroundLatLng(drone,yaw,pitch,alt){
   return offsetLatLng(drone,distance,yaw);
 }
 
+/* ============================================================
+   飞机 -> 准星 的注视指示线
+   ------------------------------------------------------------
+   从飞机图标的【机头】连到准星（相机中心在地面上的落点），
+   很浅很细的灰色虚线 —— 一眼看出「飞机正在看向这边」。
+   起点按像素偏移算（图标中心 -> 机尖），所以缩放后要重算一次。
+   ============================================================ */
+
+const LOOK_LINE_STYLE={
+  color:'#9ca3af',
+  weight:1,
+  opacity:.65,
+  dashArray:'3,7',
+  lineCap:'round',
+  interactive:false
+};
+
+// 图标 34px、锚点在中心；SVG 里机尖在 (20,3)（viewBox 40）-> 中心往上约 14px
+const DRONE_NOSE_PX=14;
+
+let mapLookLine=null;
+
+function droneNoseLatLng(droneLatLng){
+  if(!map||!droneLatLng)return null;
+
+  const zoom=map.getZoom();
+  const center=map.project(droneLatLng,zoom);
+  const rad=(Number(droneBearing)||0)*Math.PI/180;
+
+  // 屏幕坐标：x 向右、y 向下；航向是从正北顺时针
+  const nose=L.point(
+    center.x+Math.sin(rad)*DRONE_NOSE_PX,
+    center.y-Math.cos(rad)*DRONE_NOSE_PX
+  );
+
+  return map.unproject(nose,zoom);
+}
+
+function updateLookLine(droneLatLng,target){
+  if(!map||!target)return;
+
+  const nose=droneNoseLatLng(droneLatLng)||droneLatLng;
+
+  if(!mapLookLine){
+    mapLookLine=L.polyline([nose,target],LOOK_LINE_STYLE).addTo(map);
+  }else{
+    mapLookLine.setLatLngs([nose,target]);
+  }
+}
+
+function hideLookLine(){
+  if(mapLookLine&&map)map.removeLayer(mapLookLine);
+  mapLookLine=null;
+}
+
 function hideMapCrosshair(){
   if(mapCrosshair&&map)map.removeLayer(mapCrosshair);
   mapCrosshair=null;
+  hideLookLine();
 }
 
 function syncCrosshair(){
@@ -2216,6 +2276,8 @@ function syncCrosshair(){
   }else{
     mapCrosshair.setLatLng(target);
   }
+
+  updateLookLine(drone,target);
 
   const el=mapCrosshair.getElement();
   if(el)el.classList.toggle('zoomed',zoomed);
