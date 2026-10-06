@@ -5455,6 +5455,102 @@ class ProjectManagerHandler(
         # 本地第三方资源（Leaflet 等），让页面不依赖外网 CDN
         # ----------------------------------------------------
 
+        # 照片缩略图 / 原图：/photo?path=<绝对路径>
+        # 安全：只允许读「某个项目文件夹内」的图片（否则就成了任意文件读取）。
+        if path == "/photo":
+
+            from urllib.parse import parse_qs
+
+            try:
+                raw = (parse_qs(parsed.query).get("path") or [""])[0]
+
+                if not raw:
+                    raise ValueError("缺少 path。")
+
+                candidate = Path(raw).resolve()
+
+                if candidate.suffix.lower() not in (".jpg", ".jpeg", ".png", ".dng"):
+                    raise ValueError("只支持图片。")
+
+                allowed = False
+
+                for project_file in PROJECT_DIR.glob("*/project.json"):
+                    try:
+                        data = json.loads(project_file.read_text(encoding="utf-8"))
+
+                    except (OSError, ValueError):
+                        continue
+
+                    for item in data.get("folders") or []:
+                        folder = item.get("path")
+
+                        if not folder:
+                            continue
+
+                        try:
+                            candidate.relative_to(Path(folder).resolve())
+                            allowed = True
+                            break
+
+                        except ValueError:
+                            pass
+
+                    if allowed:
+                        break
+
+                if not allowed:
+                    raise ValueError("这个路径不在任何项目文件夹里。")
+
+                payload = candidate.read_bytes()
+                content_type = {
+                    ".png": "image/png",
+                    ".dng": "image/x-adobe-dng",
+                }.get(candidate.suffix.lower(), "image/jpeg")
+
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Cache-Control", "private, max-age=3600")
+                self.end_headers()
+                self.wfile.write(payload)
+
+            except Exception as e:
+                # 状态行与 header 只能是 ASCII（放中文会让客户端收到畸形响应、直接断开），
+                # 中文说明一律放 body。
+                message = str(e).encode("utf-8")
+
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(message)))
+                self.end_headers()
+                self.wfile.write(message)
+
+            return
+
+        # 照片定位：把项目里各架次文件夹的 JPG 读出来、算中心点、按目标点合并成组。
+        # 前端靠它画「照片图层」和地图下方那条展示区。
+        if path == "/api/project/photos":
+
+            from urllib.parse import parse_qs
+
+            try:
+                name = (parse_qs(parsed.query).get("name") or [""])[0]
+
+                if not name:
+                    raise ValueError("缺少项目名。")
+
+                project = load_project(name)
+                folders = [item.get("path") for item in (project.get("folders") or []) if item.get("path")]
+
+                import photo_meta
+
+                json_response(self, photo_meta.build_photo_payload(folders))
+
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+
+            return
+
         if path.startswith("/vendor/"):
 
             name = path[len("/vendor/"):]

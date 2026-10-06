@@ -281,6 +281,31 @@ def ground_target(meta, ground_elevation=None, prefer_lrf=True):
     }
 
 
+_META_CACHE = {}
+
+
+def build_photo_payload(folders):
+    """给前端用的照片数据：按目标点分好组 + 统计。folders 是项目里的文件夹路径。"""
+
+    photos = collect_photos(folders, cache=_META_CACHE)
+    groups = group_photos(photos)
+
+    with_target = sum(1 for _ in photos if ground_target(_))
+
+    return {
+        "photos": len(photos),
+        "scanned": len(photos),
+        "groups": groups,
+        "counts": {
+            "groups": len(groups),
+            "photos": len(photos),
+            "with_target": with_target,
+            "inaccurate": sum(1 for g in groups if g["accuracy"] != "实测"),
+            "merged": sum(1 for g in groups if g["count"] > 1),
+        },
+    }
+
+
 def photo_stamp(meta):
     """照片的时刻（秒级）。文件名里那串时间就是拍摄时刻，优先用它。"""
 
