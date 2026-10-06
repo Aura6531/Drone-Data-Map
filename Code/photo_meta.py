@@ -255,6 +255,18 @@ def ground_target(meta, ground_elevation=None, prefer_lrf=True):
 
     target_lat, target_lon = destination(lat, lon, float(yaw), distance)
 
+    # 数据质量标签（用户要求：退回平地假设的，必须明确标成「位置不准」）
+    if method == "flat-ground":
+        accuracy = "位置不准"
+        accuracy_note = (
+            "激光测距失败（LRFStatus=" + (lrf_status or "空") + "）"
+            if lrf_status and lrf_status != "Normal"
+            else "该张没有激光数据"
+        ) + "，中心点按平地假设估算"
+    else:
+        accuracy = "实测"
+        accuracy_note = "中心点由激光测距结果解算"
+
     return {
         "lat": target_lat,
         "lon": target_lon,
@@ -263,6 +275,8 @@ def ground_target(meta, ground_elevation=None, prefer_lrf=True):
         "depression": depression,
         "method": method,
         "detail": detail,
+        "accuracy": accuracy,
+        "accuracy_note": accuracy_note,
         "lrf_point": (lrf.get("lat"), lrf.get("lon")) if lrf.get("lat") else None,
     }
 
@@ -341,7 +355,9 @@ def main():
     for key, label in labels.items():
         print(f"    {label:44} {stats.get(key, 0):4} 张")
 
-    print(f"\n  没有激光数据的照片：{no_lrf} 张（水面/未触发测距等）")
+    print(f"\n  没有激光数据的照片：{no_lrf} 张（水面反射/超出量程等）")
+    print(f"  其中标为「位置不准」的：{stats.get('flat-ground', 0)} 张"
+          f"（走平地假设 -> 交付时必须带这个标签）")
 
     if diffs:
         average = sum(diffs) / len(diffs)
@@ -362,8 +378,10 @@ def main():
 
         if target:
             print(f"    中心点 {target['lat']:.6f}, {target['lon']:.6f}"
-                  f"   水平 {target['distance']:.1f} m   [{target['method']}]")
+                  f"   水平 {target['distance']:.1f} m   [{target['method']}]"
+                  f"   质量标签：{target['accuracy']}")
             print(f"           依据：{target['detail']}")
+            print(f"           说明：{target['accuracy_note']}")
 
         if lrf.get("lat"):
             print(f"    激光点 {lrf['lat']:.6f}, {lrf['lon']:.6f}   斜距 {lrf.get('distance')} m")
