@@ -13,6 +13,7 @@ import socket
 import sys
 import threading
 import urllib.request
+import zipfile
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -419,6 +420,37 @@ else:
     saved_shot = Image.open(ROOT / "report_cache" / shots[-1].name)
     chk(saved_shot.info.get("dpi") is not None,
         "落盘的截图确实带了 DPI 元数据", str(saved_shot.info.get("dpi")))
+
+    # ---------- 字体统一：中文 微软雅黑、西文数字 Arial ----------
+    with zipfile.ZipFile(docx_path) as package:
+        styles_xml = package.read("word/styles.xml").decode("utf-8")
+
+    chk(styles_xml.count(f'w:eastAsia="{pm.REPORT_FONT_CJK}"') >= 3,
+        "Normal / Title / Heading 1 都写了中文字体（各一份）",
+        str(styles_xml.count(f'w:eastAsia="{pm.REPORT_FONT_CJK}"')) + " 处")
+    chk(f'w:ascii="{pm.REPORT_FONT_LATIN}"' in styles_xml
+        and f'w:hAnsi="{pm.REPORT_FONT_LATIN}"' in styles_xml,
+        "西文与数字走 Arial（w:ascii / w:hAnsi）")
+    chk('w:rFonts' in xml and f'w:eastAsia="{pm.REPORT_FONT_CJK}"' in xml,
+        "目录里手写的超链接 run 也显式带上了字体")
+
+    # ---------- 经纬度带半球：N/E，南纬西经是 S/W ----------
+    chk(pm.format_latitude(23.03441) == "23.034410 N", "北纬写 N", pm.format_latitude(23.03441))
+    chk(pm.format_longitude(112.466997) == "112.466997 E", "东经写 E",
+        pm.format_longitude(112.466997))
+    chk(pm.format_latitude(-12.3456789) == "12.345679 S",
+        "南纬写 S，数值取绝对值（不用负号）", pm.format_latitude(-12.3456789))
+    chk(pm.format_longitude(-70.5) == "70.500000 W", "西经写 W", pm.format_longitude(-70.5))
+    chk(pm.format_latitude(0) == "0.000000 N", "赤道按 N 处理", pm.format_latitude(0))
+
+    chk(document.tables[1].rows[1].cells[1].text.endswith(" N"),
+        "字段表里的纬度带 N", document.tables[1].rows[1].cells[1].text)
+    chk(document.tables[1].rows[2].cells[1].text.endswith(" E"),
+        "字段表里的经度带 E", document.tables[1].rows[2].cells[1].text)
+    chk(document.tables[0].rows[1].cells[2].text.endswith(" N")
+        and document.tables[0].rows[1].cells[3].text.endswith(" E"),
+        "汇总表里也带上了 N / E",
+        document.tables[0].rows[1].cells[2].text + " / " + document.tables[0].rows[1].cells[3].text)
 
     headings = [p.text for p in document.paragraphs if p.style.name.startswith("Heading 1")]
     chk("一、1 号排水口" in headings and "二、2 号 <桥下> & \"涵洞\"" in headings,

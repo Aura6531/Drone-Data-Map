@@ -4341,6 +4341,13 @@ def add_docx_internal_link(paragraph, anchor, text):
 
     properties = OxmlElement("w:rPr")
 
+    # 目录项也要显式给字体（这是手写 XML 的 run，不显式给就吃主题字体）
+    fonts = OxmlElement("w:rFonts")
+    fonts.set(qn("w:ascii"), REPORT_FONT_LATIN)
+    fonts.set(qn("w:hAnsi"), REPORT_FONT_LATIN)
+    fonts.set(qn("w:eastAsia"), REPORT_FONT_CJK)
+    properties.append(fonts)
+
     color = OxmlElement("w:color")
     color.set(qn("w:val"), "0563C1")
     properties.append(color)
@@ -4436,6 +4443,52 @@ def add_report_picture(document, path, max_height_cm=REPORT_VIDEO_IMAGE_MAX_HEIG
     return paragraph
 
 
+# 报告里的字体：中文走 w:eastAsia，西文与数字走 w:ascii/w:hAnsi。
+# 只设前者的话，Word 会拿主题里的东亚字体（python-docx 默认模板是 MS Gothic）
+# 去配西文，标题就会一半微软雅黑、一半 MS Gothic。
+REPORT_FONT_LATIN = "Arial"
+REPORT_FONT_CJK = "微软雅黑"
+
+
+def set_report_font(target, size_pt=None, bold=None):
+    """统一样式或 run 的字体：西文/数字 Arial，中文 微软雅黑。"""
+
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    target.font.name = REPORT_FONT_LATIN
+
+    if size_pt is not None:
+        target.font.size = Pt(size_pt)
+
+    if bold is not None:
+        target.font.bold = bold
+
+    element = getattr(target, "_element", None)
+
+    if element is None:
+        element = target.element          # 段落样式走这条
+
+    rfonts = element.get_or_add_rPr().get_or_add_rFonts()
+    rfonts.set(qn("w:eastAsia"), REPORT_FONT_CJK)
+
+
+def format_latitude(lat):
+    """纬度：23.057453 N / 12.3 S（南纬写 S，数值取绝对值，不出现负号）。"""
+
+    value = float(lat)
+
+    return f"{abs(value):.6f} {('N' if value >= 0 else 'S')}"
+
+
+def format_longitude(lng):
+    """经度：114.094390 E / 70.5 W（西经写 W）。"""
+
+    value = float(lng)
+
+    return f"{abs(value):.6f} {('E' if value >= 0 else 'W')}"
+
+
 def docx_point_field_table(document, point):
     """每个点那一节里的「字段 / 值」小表。"""
 
@@ -4468,7 +4521,7 @@ def docx_point_field_table(document, point):
         for cell in row.cells:
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
-                    run.font.size = Pt(10)
+                    set_report_font(run, 10)
 
     set_docx_table_width(table, widths)
 
@@ -4493,14 +4546,11 @@ def breakable_text(text, every=12):
 def set_docx_cell(cell, text, size_pt=8.5, bold=False):
     """写单元格并把字号压下来（汇总表 7 列，默认字号会撑爆）。"""
 
-    from docx.shared import Pt
-
     cell.text = str(text)
 
     for paragraph in cell.paragraphs:
         for run in paragraph.runs:
-            run.font.size = Pt(size_pt)
-            run.font.bold = bold
+            set_report_font(run, size_pt, bold)
 
 
 def set_docx_table_width(table, column_widths):
@@ -4552,8 +4602,9 @@ def normalize_report_points(points):
             "name": str(raw.get("name") or f"标记点 {index}"),
             "lat": lat,
             "lng": lng,
-            "lat_text": f"{lat:.6f}",
-            "lng_text": f"{lng:.6f}",
+            # 经纬度带上半球：N/S、E/W（南纬西经不写负号，直接给 S/W）
+            "lat_text": format_latitude(lat),
+            "lng_text": format_longitude(lng),
             "place": str(raw.get("place") or "未解析"),
             "video": str(raw.get("video") or ""),
             "time": raw.get("time") or 0,
@@ -4601,17 +4652,21 @@ def build_docx_report(payload):
     section.top_margin = Cm(2.5)
     section.bottom_margin = Cm(2.5)
 
-    # 中文字体：不指定的话中文会退化成宋体
-    normal = document.styles["Normal"]
-    normal.font.name = "微软雅黑"
-    normal.font.size = Pt(10.5)
-    normal.element.rPr.rFonts.set(qn("w:eastAsia"), "微软雅黑")
+    # 正文：西文 Arial + 中文微软雅黑。（只设一种的话，Word 会拿主题里的
+    # 东亚字体 —— python-docx 默认模板是 MS Gothic —— 去凑另一种，就会出现两种字体）
+    set_report_font(document.styles["Normal"], 10.5)
 
-    # 标题：默认 Title 样式 28pt，长项目名会顶出页面
-    title_style = document.styles["Title"]
-    title_style.font.name = "微软雅黑"
-    title_style.font.size = Pt(19)
-    title_style.element.rPr.rFonts.set(qn("w:eastAsia"), "微软雅黑")
+    # 标题：默认 Title 是 28pt，长项目名会顶出页面，压到 19pt
+    set_report_font(document.styles["Title"], 19)
+
+    # 章节小标题（目录 / 汇总表 / 一、二、…）也要设 —— 它们默认继承主题字体，
+    # 正是「标题里中文一种字体、数字另一种」的根源
+    for style_name in ("Heading 1", "Heading 2", "Heading 3", "List Number"):
+        try:
+            set_report_font(document.styles[style_name])
+
+        except KeyError:
+            pass
 
     document.add_heading(
         f"标记点报告 —— 项目「{project_name or '未命名'}」",
@@ -4623,10 +4678,11 @@ def build_docx_report(payload):
         f"标记点：{len(points)} 个　　视频截图：{mode_text}"
     )
     meta.runs[0].font.size = Pt(9)
+    set_report_font(meta.runs[0], 9)
 
     document.add_heading("目录", level=1)
     hint = document.add_paragraph("点击下面任意一项，可直接跳到对应章节。")
-    hint.runs[0].font.size = Pt(9)
+    set_report_font(hint.runs[0], 9)
 
     for index, point in enumerate(points, start=1):
         paragraph = document.add_paragraph(style="List Number")
@@ -4695,7 +4751,7 @@ def build_docx_report(payload):
                 f"图 1　目标点视频截图（{point['video'] or '-'}　"
                 f"{point['time_text']}）"
             )
-            caption.runs[0].font.size = Pt(9)
+            set_report_font(caption.runs[0], 9)
             caption.paragraph_format.space_after = Pt(2)
             caption.paragraph_format.keep_with_next = True   # 图 2 跟着它一起走
 
@@ -4707,7 +4763,7 @@ def build_docx_report(payload):
                 f"{point['basemap_name'] or '当前底图'}　"
                 f"缩放 {point['zoom']} 级）"
             )
-            caption.runs[0].font.size = Pt(9)
+            set_report_font(caption.runs[0], 9)
             caption.paragraph_format.space_after = Pt(2)
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)

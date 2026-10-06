@@ -1,4 +1,4 @@
-import sys, json, io, pathlib
+import sys, json, io, pathlib, shutil
 
 sys.stdout.reconfigure(encoding="utf-8")
 # 路径按脚本所在目录推导（换机器/换盘符都不用改）
@@ -6,6 +6,29 @@ ROOT = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "Code"))
 
 import project_manager as pm
+
+# 测试期间不要碰真实的磁盘缓存：geocode_place 会先查 Code/geocode_cache/（30 天），
+# 只要「肇庆市」被页面搜索框缓存过一次，下面第 3 段就永远走缓存、假 urlopen 不被调用，
+# 断言会莫名其妙全空。所以换到测试自己的缓存目录（已 gitignore），并且每次先清空 ——
+# 否则上一次跑留下的缓存会同样把第 3 段弄成假绿/假红。
+_TEST_CACHE = ROOT / "_test_geocode_cache"
+
+pm.GEOCODE_CACHE_DIR = _TEST_CACHE
+
+
+def clear_geocode_cache():
+    """内存缓存 + 磁盘缓存一起清。
+
+    只清内存是不够的：前面几段一旦把关键词写进磁盘缓存（30 天有效），
+    后面「这段应该发请求 / 应该报错」的断言就会全部落空 ——
+    这个文件以前就踩过：第 3 段缓存了「肇庆市」，第 6 段就不再发请求、也不报错了。
+    """
+
+    pm.GEOCODE_MEMORY.clear()
+    shutil.rmtree(pm.GEOCODE_CACHE_DIR, ignore_errors=True)
+
+
+clear_geocode_cache()
 
 # 让测试确定化：不要读真实的 tianditu_key.txt
 NO_SUCH = ROOT / "__no_such_key_file__.txt"
@@ -120,7 +143,7 @@ def fake_urlopen(request, timeout=None):
 
 pm.urllib.request.urlopen = fake_urlopen
 pm.TIANDITU_KEY = "TESTKEY"
-pm.GEOCODE_MEMORY.clear()
+clear_geocode_cache()
 data = pm.geocode_place("肇庆市")
 
 chk(data["keyword"] == "肇庆市", "回显关键词")
@@ -151,14 +174,14 @@ print("\n=== 5) v1 返回结构（ret_code + 空格 lonlat）===")
 v1 = {"ret_code": 0, "remark": "请求成功", "count": "1",
       "pois": [{"name": "绿茵超市", "lonlat": "116.420888 39.609496", "address": "北京市大兴区"}]}
 pm.urllib.request.urlopen = lambda request, timeout=None: FakeResp(v1)
-pm.GEOCODE_MEMORY.clear()
+clear_geocode_cache()
 d1 = pm.geocode_place("超市")
 chk(d1["count"] == 1 and d1["results"][0]["lat"] == 39.609496, "v1 结构可解析", d1["results"])
 
 print("\n=== 6) 天地图报错时的提示 ===")
 pm.urllib.request.urlopen = lambda request, timeout=None: FakeResp(
     {"status": {"code": -1, "cndesc": "无效的 tk 参数"}})
-pm.GEOCODE_MEMORY.clear()
+clear_geocode_cache()
 try:
     pm.geocode_place("肇庆市")
     chk(False, "应抛出 ValueError")
@@ -167,7 +190,7 @@ except ValueError as e:
 
 pm.urllib.request.urlopen = lambda request, timeout=None: FakeResp(
     {"count": 0, "resultType": 1, "status": {"cndesc": "缺少参数：mapBound", "infocode": 2003}})
-pm.GEOCODE_MEMORY.clear()
+clear_geocode_cache()
 try:
     pm.geocode_place("东莞市")
     chk(False, "应抛出 ValueError")
@@ -176,7 +199,7 @@ except ValueError as e:
 
 pm.urllib.request.urlopen = lambda request, timeout=None: FakeResp(
     {"msg": "该tk已限流", "code": 302010, "resolve": "请求已限流，请稍后重试!"})
-pm.GEOCODE_MEMORY.clear()
+clear_geocode_cache()
 try:
     pm.geocode_place("西江大桥")
     chk(False, "应抛出 ValueError")
@@ -186,7 +209,7 @@ except ValueError as e:
 
 print("\n=== 7) 参数校验 ===")
 pm.urllib.request.urlopen = lambda request, timeout=None: FakeResp(v2)
-pm.GEOCODE_MEMORY.clear()
+clear_geocode_cache()
 for bad in ("", "   "):
     try:
         pm.geocode_place(bad); chk(False, f"空关键词应报错 {bad!r}")
