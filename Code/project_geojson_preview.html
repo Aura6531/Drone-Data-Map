@@ -1141,7 +1141,29 @@ function applyReportCapabilities(caps){
   updateMarkerBar();
 }
 
-async function api(url,options={}){const r=await fetch(url,options);const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||`请求失败：${r.status}`);return d}
+async function api(url,options={}){
+  const r=await fetch(url,options);
+  const text=await r.text();
+
+  let d=null;
+
+  if(text){
+    try{
+      d=JSON.parse(text);
+    }catch(e){
+      // 服务端回的是网页而不是数据（几乎都是 404 的 HTML 错误页）。
+      // 最常见的原因：端口上还跑着旧代码的服务 —— Python 只在启动时载入一次，
+      // 而页面是每次请求现读的，所以会出现「界面是新的、接口却是旧的」。
+      throw new Error(`服务端返回的不是数据，而是一个网页（HTTP ${r.status}）。`
+        +'端口上很可能还跑着一个旧代码的服务：关掉它、重新启动服务，再刷新本页即可。');
+    }
+  }
+
+  if(!r.ok)throw new Error((d&&d.error)||`请求失败：${r.status}`);
+  if(d&&d.error)throw new Error(d.error);
+
+  return d;
+}
 
 async function loadProjects(){
   try{

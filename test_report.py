@@ -8,7 +8,9 @@
 import io
 import json
 import pathlib
+import socket
 import sys
+import threading
 import urllib.request
 
 sys.stdout.reconfigure(encoding="utf-8")
@@ -362,6 +364,51 @@ chk(pm.resolve_report_image("不存在.jpg") is None, "图不存在就返回 Non
 
 caps = pm.report_capabilities()
 chk(set(caps) == {"docx", "pillow", "ffmpeg"}, "/api/config 里如实报告依赖", str(caps))
+
+print("\n=== 6) 启动自检：端口上已有旧服务时要能提醒 ===")
+
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
+
+
+class StubConfigHandler(BaseHTTPRequestHandler):
+    """只回旧版 /api/config 的桩服务，冒充「上一次没关掉的进程」。"""
+
+    def do_GET(self):
+        body = b'{"tianditu": true}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+# 空端口：不该打扰
+probe = socket.socket()
+probe.bind(("127.0.0.1", 0))
+free_port = probe.getsockname()[1]
+probe.close()
+
+chk(pm.existing_server_hint("127.0.0.1", free_port, timeout=0.5) is None,
+    "端口上没东西就不出声（返回 None）")
+
+stub = ThreadingHTTPServer(("127.0.0.1", 0), StubConfigHandler)
+stub_port = stub.server_address[1]
+threading.Thread(target=stub.serve_forever, daemon=True).start()
+
+try:
+    hint = pm.existing_server_hint("127.0.0.1", stub_port, timeout=2)
+finally:
+    stub.shutdown()
+    stub.server_close()
+
+chk(isinstance(hint, str) and str(stub_port) in hint,
+    "有旧服务时给出提示，并点明是哪个端口",
+    (hint or "").splitlines()[0] if hint else None)
+chk(bool(hint) and "随机抢答" in hint and "taskkill" in hint,
+    "提示里讲清原因 + 给出可照做的命令")
 
 print()
 if ok:

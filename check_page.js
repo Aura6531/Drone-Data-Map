@@ -1753,6 +1753,18 @@ console.log('\n=== 标记点名字不能重复 ===');
     '打开/关闭弹窗时清掉上一次的错误提示');
 }
 
+console.log('\n=== 服务端返回网页时的报错要能看懂 ===');
+{
+  chk(/const text=await r\.text\(\)/.test(body),
+    'api() 先取文本再自己解析 JSON（不再直接 r.json()）');
+  chk(/服务端返回的不是数据，而是一个网页/.test(body),
+    '不是 JSON 时给出人话解释（原来的 "Unexpected token \'<\'" 看不懂）');
+  chk(/旧代码的服务/.test(body),
+    '提示里点明「端口上还跑着旧代码服务」这个最常见原因');
+  chk(/return d;\n\}/.test(body) && /if\(d&&d\.error\)throw new Error\(d\.error\)/.test(body),
+    '正常 JSON 的路径不变：r.ok 且无 error 才返回，有 error 照旧抛');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));

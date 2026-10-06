@@ -6253,6 +6253,37 @@ class ProjectManagerHandler(
         )
 
 
+def existing_server_hint(host, port, timeout=2):
+    """启动前探一下：这个端口上是不是已经有服务在应答。
+
+    有的话多半是上一次没关干净的旧进程。两个进程同时绑同一端口会「随机抢答」，
+    典型表现是「页面是新的、接口却 404」—— 因为页面是每次请求现读的，
+    而 Python 代码只在进程启动时载入一次。
+
+    返回一句给人看的提示；端口上没东西时返回 None。
+    """
+
+    try:
+        with urllib.request.urlopen(
+            f"http://{host}:{port}/api/config",
+            timeout=timeout
+        ) as response:
+            response.read(64)
+
+    except Exception:
+        return None
+
+    return (
+        f"⚠   {host}:{port} 上已经有服务在应答 —— 很可能是上一次没关掉的旧进程。\n"
+        f"    两个进程绑同一端口会随机抢答，表现是「改了代码却 404 / 时通时不通」，\n"
+        f"    甚至出现「页面是新的、接口是旧的」（页面每次现读，Python 只在启动时载入）。\n"
+        f"    建议先关掉旧的再启动：\n"
+        f"        netstat -ano | findstr :{port}\n"
+        f"        taskkill /PID <上面那个 PID> /F\n"
+        f"    （本进程仍会照常启动，但这件事没解决前可能出现各种莫名其妙的现象。）"
+    )
+
+
 # ============================================================
 # 启动服务器
 # ============================================================
@@ -6266,6 +6297,9 @@ if __name__ == "__main__":
 
     HOST = "127.0.0.1"
     PORT = 8000
+
+    # 绑端口之前先看有没有旧服务占着（绑上之后再问就问不出来了，两个都能绑成功）
+    port_hint = existing_server_hint(HOST, PORT)
 
     server = ThreadingHTTPServer(
         (
@@ -6314,6 +6348,10 @@ if __name__ == "__main__":
     print()
     print("按 Ctrl+C 停止服务器")
     print()
+
+    if port_hint:
+        print(port_hint)
+        print()
 
     try:
 
