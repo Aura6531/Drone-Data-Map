@@ -3443,6 +3443,52 @@ def get_tianditu_key():
     return TIANDITU_KEY
 
 
+def save_tianditu_key(raw_key, clear=False):
+    """把网页上补填的天地图 key 写进数据目录的 tianditu_key.txt。
+
+    返回给前端的只有状态与掩码，**不回显完整 key**。
+    key 是每次请求现读文件的，所以写完立刻生效（不用重启服务，也不用重装程序）。
+    """
+
+    key = str(raw_key or "").strip()
+
+    if clear or not key:
+        try:
+            if TIANDITU_KEY_FILE.is_file():
+                TIANDITU_KEY_FILE.unlink()
+
+        except OSError as e:
+            raise ValueError(f"删不掉 {TIANDITU_KEY_FILE.name}：{e}")
+
+        return {
+            "success": True,
+            "cleared": True,
+            "active": bool(get_tianditu_key()),
+            "note": "（环境变量 TIANDITU_KEY 仍在生效）" if (os.environ.get("TIANDITU_KEY") or "").strip() else "",
+        }
+
+    if not re.fullmatch(r"[0-9A-Za-z]{32}", key):
+        raise ValueError("天地图 key 是 32 位数字/字母，请检查是否复制完整、前后有没有多空格。")
+
+    TIANDITU_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    TIANDITU_KEY_FILE.write_text(
+        "# 天地图 key（tk）—— 由网页上的「天地图key」按钮写入，可以随时覆盖\n"
+        "# 以 # 开头的行会被忽略；第一行非注释内容就是生效的 key\n"
+        f"{key}\n",
+        encoding="utf-8",
+    )
+
+    return {
+        "success": True,
+        "cleared": False,
+        "active": bool(get_tianditu_key()),
+        "masked": key[:4] + "…" + key[-4:],
+        "source": str(TIANDITU_KEY_FILE),
+        "envOverride": bool((os.environ.get("TIANDITU_KEY") or "").strip()),
+    }
+
+
 def enable_dpi_awareness():
     """声明本进程 DPI 感知。
 
@@ -6246,6 +6292,22 @@ class ProjectManagerHandler(
         path = urlparse(
             self.path
         ).path
+
+        # 网页上补填 / 更换天地图 key：客户先开始用、key 后批下来的场景。
+        # 只认本机（服务本来就只绑 127.0.0.1）。
+        if path == "/api/tianditu/key":
+
+            try:
+                data = self.read_json()
+                result = save_tianditu_key(data.get("key"), bool(data.get("clear")))
+
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+                return
+
+            json_response(self, result)
+
+            return
 
         # 优雅退出：托盘「退出」菜单、以及托盘不可用时的手动出口都用它。
         # 只认本机（服务本来就只绑 127.0.0.1），并且用 POST 触发，避免被网页

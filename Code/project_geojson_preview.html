@@ -274,8 +274,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 搜索区独立成行。input 的 min-width 留小一点，窄卡片时按钮自然换行而不是溢出 */
 /* 地名搜索并进标题行：它会占据标题与「底图」之间的剩余宽度，
    窄卡片时可以换到下一行（card-head 本身允许 wrap）。 */
-.search-bar{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;margin:0 0 0 14px;flex:1 1 260px;min-width:0}
-.search-bar input{height:36px;border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:14px;flex:1 1 auto;min-width:160px}
+.search-bar{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;margin:0 0 0 14px;flex:0 1 280px;min-width:0}
+.search-bar input{height:36px;border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:14px;flex:1 1 auto;min-width:120px}
+/* 「天地图key」按钮：和底图选单同排，放在它右边。已配置时变绿 */
+.key-btn{height:36px;padding:0 12px;font-size:13px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+.key-btn:hover{border-color:#2563eb;color:#2563eb}
+.key-btn.ok{border-color:#16a34a;color:#15803d;background:#f0fdf4}
+.key-btn.ok::after{content:" ✓"}
 /* 「搜索地名」按钮与输入框等高 36px（原来是一整行时的 50px） */
 .search-bar button{height:36px;padding:0 16px;font-size:13px;flex:0 0 auto;white-space:nowrap}
 .search-bar input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
@@ -529,6 +534,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <option value="satellite">卫星图（天地图影像）</option>
           <option value="osm">OpenStreetMap</option>
         </select>
+        <button id="keyBtn" class="key-btn" type="button"
+                title="天地图 key：还没申请下来也能先用系统；拿到后在这里补填，存盘即生效">天地图key</button>
       </div>
     </div>
 
@@ -664,6 +671,26 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 
 </div>
 <!-- 画面右键取点的命名框 -->
+<!-- 天地图 key：先用系统、后补 key 的入口（由地图工具栏右侧的「天地图key」按钮打开） -->
+<div id="keyModal" class="mini-modal" style="display:none">
+  <div class="mini-modal-box">
+    <div class="mini-modal-title">天地图 key</div>
+    <div class="mini-modal-hint">
+      还没申请下来也能继续用系统（底图退回 OpenStreetMap，地名搜索不可用）。<br>
+      申请好后把 <b>32 位 tk</b> 粘到下面，点保存<strong>即刻生效</strong> —— 不用重启，也不用重装程序。<br>
+      申请地址：<a href="https://lbs.tianditu.gov.cn/authorization/authorization.html"
+                 target="_blank" rel="noreferrer">lbs.tianditu.gov.cn/authorization/authorization.html</a>
+    </div>
+    <input id="keyInput" type="text" placeholder="粘贴 32 位天地图 key（tk）" spellcheck="false" autocomplete="off">
+    <div id="keyModalError" class="mini-modal-error" style="display:none"></div>
+    <div id="keyModalState" class="mini-modal-hint" style="margin:9px 0 0"></div>
+    <div class="row mini-modal-actions">
+      <button id="keyCancel" class="secondary" type="button">取消</button>
+      <button id="keySave" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
 <div id="videoMarkModal" class="mini-modal" style="display:none">
   <div class="mini-modal-box">
     <div class="mini-modal-title">标记此处</div>
@@ -4133,6 +4160,108 @@ if(speedToggle){
 [videoPlayer,videoThermal].forEach(el=>{
   if(el&&typeof el.addEventListener==='function')el.addEventListener('loadedmetadata',applyPlaybackRate);
 });
+
+/* ============================================================
+   天地图 key：先用系统、后补 key
+   客户可能 key 还没批下来就先开始用；拿到 32 位 tk 之后在网页上补填即可。
+   服务端把它写进数据目录的 tianditu_key.txt，而 key 是每次请求现读的，
+   所以保存后立刻生效 —— 不用重启服务，更不用重装程序。
+   ============================================================ */
+
+const keyBtn=document.getElementById('keyBtn');
+const keyModal=document.getElementById('keyModal');
+const keyInput=document.getElementById('keyInput');
+const keySave=document.getElementById('keySave');
+const keyCancel=document.getElementById('keyCancel');
+const keyModalError=document.getElementById('keyModalError');
+const keyModalState=document.getElementById('keyModalState');
+
+function showKeyError(message){
+  if(!keyModalError)return;
+
+  keyModalError.textContent=message||'';
+  keyModalError.style.display=message?'block':'none';
+}
+
+async function refreshKeyState(){
+  try{
+    const config=await api('/api/config');
+    const active=!!(config&&config.tianditu);
+
+    if(keyBtn)keyBtn.classList.toggle('ok',active);
+
+    return active;
+
+  }catch(e){
+    return false;
+  }
+}
+
+async function openKeyDialog(){
+  if(!keyModal)return;
+
+  showKeyError('');
+
+  if(keyInput)keyInput.value='';
+
+  const active=await refreshKeyState();
+
+  if(keyModalState){
+    keyModalState.textContent=active
+      ? '当前状态：已配置 ✓（底图与地名搜索可用）。要换 key 就直接粘新的，保存即生效。'
+      : '当前状态：未配置 —— 底图在用 OpenStreetMap，地名搜索不可用。拿到 tk 后粘进来保存即可。';
+  }
+
+  keyModal.style.display='flex';
+
+  if(keyInput)keyInput.focus();
+}
+
+function closeKeyDialog(){
+  if(keyModal)keyModal.style.display='none';
+}
+
+async function saveKey(){
+  const value=(keyInput&&keyInput.value||'').trim();
+
+  if(!value&&!confirm('没有填 key。要清除已保存的天地图 key 吗？'))return;
+
+  if(keySave)keySave.disabled=true;
+
+  showKeyError('');
+
+  try{
+    const result=await jsonPost('/api/tianditu/key',value?{key:value}:{key:'',clear:true});
+
+    closeKeyDialog();
+    await refreshKeyState();
+
+    // 瓦片是服务端按 key 代理并缓存的：换 key 后把底图重载一次，
+    // 否则地图上还留着上一把 key 的缓存或失败瓦片。
+    const basemapSelect=document.getElementById('baseMap');
+
+    if(basemapSelect)basemapSelect.dispatchEvent(new Event('change'));
+
+    show(projectNotice,value
+      ? '天地图 key 已保存'+(result&&result.masked?`（${result.masked}）`:'')+'，底图与地名搜索现在可用。'
+      : '已清除保存的天地图 key。'+(result&&result.note?result.note:''));
+
+  }catch(e){
+    showKeyError(e.message||'保存失败。');
+
+  }finally{
+    if(keySave)keySave.disabled=false;
+  }
+}
+
+if(keyBtn)keyBtn.addEventListener('click',openKeyDialog);
+if(keyCancel)keyCancel.addEventListener('click',closeKeyDialog);
+if(keyModal)keyModal.addEventListener('click',e=>{if(e.target===keyModal)closeKeyDialog()});
+if(keyInput)keyInput.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(keySave)keySave.click()}});
+if(keySave)keySave.addEventListener('click',saveKey);
+
+// 启动时同步一次按钮状态（已配置就变绿）。桩环境下 api 不存在，别让它把整页初始化带崩。
+try{refreshKeyState()}catch(e){}
 
 /* ============================================================
    视频窗口默认停靠在右栏

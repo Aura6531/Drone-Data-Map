@@ -872,6 +872,16 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/!document\.hidden/.test(body), '页面不可见时跳过，后台标签页不浪费 CPU');
   chk(/typeof requestAnimationFrame!=='function'\)return;/.test(body),
     '没有 rAF 的环境直接不启用（否则桩环境/老 webview 初始化就崩）');
+
+  // 天地图 key 按钮：在底图选单右边，运行中就能补填
+  chk(/id="baseMap"[\s\S]{0,400}?<\/select>\s*<button id="keyBtn"/.test(html),
+    '「天地图key」按钮紧跟在底图选单右边');
+  chk(/id="keyModal"/.test(html) && /id="keyInput"/.test(html), '有补填 key 的弹窗与输入框');
+  chk(/jsonPost\('\/api\/tianditu\/key'/.test(body), '保存时提交到 /api/tianditu/key');
+  chk(/basemapSelect\.dispatchEvent\(new Event\('change'\)\)/.test(body), '换 key 后重载底图瓦片');
+  chk(/try\{refreshKeyState\(\)\}catch\(e\)\{\}/.test(body), '启动时同步按钮状态，且不拖垮初始化');
+  chk(/\.key-btn\.ok/.test(html), '已配置时按钮变绿');
+  chk(/\.search-bar\{[^}]*flex:0 1 280px/.test(html), '搜索栏进一步缩短，给按钮腾位置');
   chk(/if\(restoring\|\|offX>0\.25/.test(body) && !/fitBounds/.test(
       body.slice(body.indexOf("if(mode==='center')"), body.indexOf('// fit 模式'))),
     '「居中」模式只平移不改缩放 —— 这正是「跟随当前缩放等级」');
@@ -1536,9 +1546,9 @@ chk(/\.map-tools button\.secondary\{height:36px/.test(html),
   // 要求「紧随右括号」会匹配不上（我上一版就栽在这儿）
   chk(/\.search-bar\{[^}]*margin:0 0 0 14px/.test(html),
     '搜索区不再是独立一行（并进标题行，左边留 14px 间距）');
-chk(/\.search-bar\{[^}]*flex:1 1 260px/.test(html),
-  '搜索区占据标题与「底图」之间的剩余宽度');
-chk(/\.search-bar input\{[^}]*min-width:160px/.test(html), '输入框最小宽度 160px，窄卡片不溢出');
+chk(/\.search-bar\{[^}]*flex:0 1 280px/.test(html),
+  '搜索区在标题与「底图」之间，基准宽度收窄到 280px');
+chk(/\.search-bar input\{[^}]*min-width:120px/.test(html), '输入框最小宽度 120px（给右侧的底图/key 按钮腾位置）');
 chk(/\.search-bar input\{[^}]*height:36px/.test(html), '输入框高度收到 36px（原来整行时是 50px）');
 chk(/\.search-bar button\{height:36px/.test(html), '「搜索地名」按钮与输入框等高 36px');
 {
