@@ -592,6 +592,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             <button id="footprintToggle" class="toggle-btn" type="button" aria-pressed="true" title="镜头视场范围：显示 / 关闭（画面在地面上的覆盖区域）">视场</button>
             <button id="thermalToggle" class="toggle-btn" type="button" hidden aria-pressed="true" title="同步热成像画面：显示 / 关闭（画面左下角）">红外</button>
             <button id="mapPipToggle" class="toggle-btn" type="button" aria-pressed="true" title="地图小地图：显示 / 关闭（画面右下角，跟着飞机走）">小地图</button>
+            <button id="speedToggle" class="toggle-btn" type="button" aria-pressed="false" title="2 倍速播放：开 / 关（可见光与热成像同步，切换视频后仍然生效）">2×</button>
             <!-- 原来自制了一个「全屏」按钮，但它和浏览器自带控件那个重复，
                  而且原生那个是真铺满、零黑边（自制那条 theater 布局始终有黑边）。
                  所以按需求删掉自制按钮，全屏统一用视频控件里的那个。 -->
@@ -4090,6 +4091,48 @@ if(mapPipToggle){
     applyMapPipVisibility();
   });
 }
+
+/* ============================================================
+   2 倍速播放
+   按钮放在「小地图」右边。可见光与热成像小窗同步变速，
+   切换视频后仍然生效（靠 defaultPlaybackRate + loadedmetadata 重新应用，
+   因为 <video> 在 load() 时会把 playbackRate 复位成 defaultPlaybackRate）。
+   ============================================================ */
+
+const speedToggle=document.getElementById('speedToggle');
+const FAST_PLAYBACK_RATE=2;
+const NORMAL_PLAYBACK_RATE=1;
+let fastSpeedOn=false;
+
+function applyPlaybackRate(){
+  const rate=fastSpeedOn?FAST_PLAYBACK_RATE:NORMAL_PLAYBACK_RATE;
+
+  [videoPlayer,videoThermal].forEach(el=>{
+    if(!el)return;
+
+    try{
+      el.defaultPlaybackRate=rate;
+      el.playbackRate=rate;
+
+    }catch(e){}
+  });
+
+  setToggleState(speedToggle,fastSpeedOn);
+}
+
+if(speedToggle){
+  speedToggle.addEventListener('click',()=>{
+    fastSpeedOn=!fastSpeedOn;
+    applyPlaybackRate();
+  });
+}
+
+// 换视频 / 换源之后重新应用一次（可见光与热成像各挂一遍）。
+// 判 addEventListener 的类型：test_boot.js 用桩元素跑顶层脚本，
+// 直接调会 TypeError 把整页初始化搞崩（这个坑上一轮刚踩过）。
+[videoPlayer,videoThermal].forEach(el=>{
+  if(el&&typeof el.addEventListener==='function')el.addEventListener('loadedmetadata',applyPlaybackRate);
+});
 
 /* ============================================================
    视频窗口默认停靠在右栏

@@ -848,6 +848,21 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
     '只在 fit 模式自动切换，不覆盖用户明确选的「不跟随」');
   chk(/if\(isZoomGesture\(ev\)\)switchFollowToCenter\(\);/.test(body), '记用户操作时顺手切模式');
   chk(/map\.on\('boxzoomstart',mark\)/.test(body), 'Shift 框选缩放也计入用户操作');
+
+  // 2 倍速按钮：放在「小地图」右边（按钮在 HTML 段里，不是 script 段 —— 用 html）
+  chk(/id="mapPipToggle"[^>]*>小地图<\/button>\s*<button id="speedToggle"/.test(html),
+    '「2×」按钮紧挨在「小地图」右边');
+  chk(/id="speedToggle"[^>]*>2×<\/button>/.test(html), '按钮文案就是 2×');
+  chk(/const FAST_PLAYBACK_RATE=2;/.test(body) && /const NORMAL_PLAYBACK_RATE=1;/.test(body),
+    '1 倍 / 2 倍两个档位');
+  chk(/speedToggle\.addEventListener\('click'/.test(body) && /fastSpeedOn=!fastSpeedOn/.test(body),
+    '点一下在 1× 与 2× 之间切换');
+  chk(/\[videoPlayer,videoThermal\]\.forEach/.test(body), '可见光与热成像小窗一起变速');
+  chk(/el\.defaultPlaybackRate=rate;/.test(body),
+    '同时设 defaultPlaybackRate —— load() 会把 playbackRate 复位成它，否则切视频就掉回 1×');
+  chk(/addEventListener\('loadedmetadata',applyPlaybackRate\)/.test(body),
+    '切换视频后自动重新应用倍速');
+  chk(/setToggleState\(speedToggle,fastSpeedOn\)/.test(body), '按钮按下状态跟着走');
   chk(/if\(restoring\|\|offX>0\.25/.test(body) && !/fitBounds/.test(
       body.slice(body.indexOf("if(mode==='center')"), body.indexOf('// fit 模式'))),
     '「居中」模式只平移不改缩放 —— 这正是「跟随当前缩放等级」');
