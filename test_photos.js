@@ -1027,6 +1027,71 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
       return;
     }
 
+    // ---- 分组规则（2026-10-07 改成「同一文件夹 + 同一序号」）----
+    // 一次按快门出一张 V 与一张 T，序号相同；但文件名时刻可能差 1 秒
+    // （T 文件小先写完、V 大后写完）。旧键「同一秒」会拆错 26 个序号、并错 1 组。
+    try {
+      const r = await fetch(base + '/api/project/photos?name=' + encodeURIComponent('东莞1'),
+                            { signal: AbortSignal.timeout(120000) });
+      const d = await r.json().catch(() => null);
+      const groups = (d && d.groups) || [];
+
+      chk(r.ok && groups.length > 0, '真实接口给出照片分组',
+        groups.length ? `${groups.length} 组 / ${d.counts.photos} 张` : `HTTP ${r.status}`);
+
+      const tagOf = (n) => (String(n).match(/_([A-Za-z]+)\.JPG$/i) || [, ''])[1].toUpperCase();
+      const seqOf = (n) => (String(n).match(/DJI_\d{8}\d{6}_(\d+)_/) || [, ''])[1];
+
+      // ① 每组都是「一张 V + 一张 T」（不再是 97 组对 + 50 组单张）
+      const sizes = {};
+      for (const g of groups) sizes[g.count] = (sizes[g.count] || 0) + 1;
+      chk(Object.keys(sizes).length === 1 && Number(Object.keys(sizes)[0]) === 2,
+        '每组都是 2 张（T+V 成对）', JSON.stringify(sizes));
+
+      const combos = new Set(groups.map(g => g.members.map(m => tagOf(m.name)).sort().join('+')));
+      chk(combos.size === 1 && combos.has('T+V'),
+        '每组的成员都是「_V + _T」', [...combos].join(' / '));
+
+      // ② 每组的大图都是 _V（顺序：变焦 > 广角 > 热成像）
+      const notV = groups.filter(g => tagOf(g.members[0].name) !== 'V');
+      chk(notV.length === 0, '每组的第一张（大图）都是 _V',
+        notV.length ? notV.slice(0, 3).map(g => g.members[0].name).join(', ') : '');
+
+      // ③ 序号不再被拆到两个组里
+      const seen = new Map();
+      let dup = 0;
+      for (let i = 0; i < groups.length; i++) {
+        for (const m of groups[i].members) {
+          const k = m.folder + '|' + seqOf(m.name);
+          if (seen.has(k) && seen.get(k) !== i) dup++;
+          seen.set(k, i);
+        }
+      }
+      chk(dup === 0, '同一文件夹 + 同一序号只出现在一个组里（不再拆错）', dup + ' 处重复');
+
+      // ④ 组数 = 照片数 / 2，且升序（前端按这个顺序编号「第 N / M 个目标点」）
+      chk(groups.length * 2 === d.counts.photos,
+        '组数 = 照片数 / 2', `${groups.length} 组 / ${d.counts.photos} 张`);
+      chk(d.counts.merged === groups.length, '统计里的「合并」数 = 组数（每组都合并了 2 张）',
+        String(d.counts.merged));
+      const stamps = groups.map(g => g.stamp);
+      chk(stamps.join() === stamps.slice().sort().join(), '组按时刻升序（前端的第 N 个点才对得上时间）');
+
+      // ⑤ 跨秒的那一对要真的合成一组（0020：10:01:45 的 V + 10:01:46 的 T）
+      const pair0020 = groups.find(g => g.members.some(m => /_0020_/.test(m.name) && /10014/.test(m.name)));
+      chk(!!pair0020 && pair0020.members.length === 2,
+        '差 1 秒的那一对（_V 10:01:45 + _T 10:01:46）合成了一组',
+        pair0020 ? pair0020.members.map(m => m.name).join(' + ') : '(找不到)');
+
+      // ⑥ 组内解算点间距只记录不拆组：有 3 组 > 8 m
+      const far = groups.filter(g => Number(g.spread_m) > 8);
+      chk(far.length >= 1 && groups.length > far.length,
+        '组内间距 > 8m 的组仍然保留（只记 spread_m，不拿它拆组）',
+        `${far.length} 组，最大 ${Math.max(...groups.map(g => Number(g.spread_m) || 0)).toFixed(1)} m`);
+    } catch (e) {
+      chk(false, '真实分组接口请求没抛异常', e.message);
+    }
+
     const url = base + '/api/project/telemetry?' + new URLSearchParams(
       page.telemetryQuery({ folder_index: 0, relative_path: 'DJI_20260924095258_0001_V.geojson' }, '东莞1')
     ).toString();

@@ -317,6 +317,20 @@ def photo_stamp(meta):
     return ""
 
 
+def photo_seq(meta):
+    """文件名里的**序号**（`DJI_20260924100146_0020_T` 里的 0020）。
+
+    这是「同一次按快门」的标识：一次快门会同时出一张 V（可见光）与一张 T（热成像），
+    两张的序号相同。**但两者的文件名时刻可能差 1 秒** —— 热成像文件小、先写完，
+    可见光文件大、后写完（用户 2026-10-07 说明的现象）。
+    所以配对必须用序号，不能用「同一秒」。
+    """
+
+    match = re.search(r"DJI_\d{8}\d{6}_(\d+)_", meta.get("name") or "")
+
+    return match.group(1) if match else ""
+
+
 # 相机优先序：用户要求「优先展示变焦，用大图」，然后广角可见光，最后热成像
 CAMERA_ORDER = {"ZoomCamera": 0, "WideCamera": 1, "InfraredCamera": 2}
 
@@ -324,8 +338,15 @@ CAMERA_ORDER = {"ZoomCamera": 0, "WideCamera": 1, "InfraredCamera": 2}
 def group_photos(metas, max_gap_m=8.0):
     """把「同一目标点」的多张照片合并成一组（用户要求：地图上合并成一个点）。
 
-    分组规则：同一架次文件夹里、**同一秒**拍摄的照片算一组（T/V/S 就是同一秒成对拍），
-    再要求中心点相距不超过 max_gap_m 米（防止同秒拍的两张其实瞄的是不同目标）。
+    分组规则（2026-10-07 改）：**同一架次文件夹里、文件名序号相同**的算一组。
+    一次按快门会同时出 V（可见光，文件大）与 T（热成像，文件小），两张序号一样；
+    但文件名里的**时刻**可能差 1 秒 —— 大文件后写完。所以原来的「同一秒」键
+    既会把一对拆成两个点（实测 26 个序号），也会把不同目标在同一秒拍的并到一起
+    （实测 1 组）。序号 + 文件夹才是「同一次按快门」。
+
+    max_gap_m 只用来**记录**两张解算点的距离（写进 group 的 spread_m 供诊断），
+    **不再拿它拆组** —— 同一目标的 T/V 虽然同一次拍，但两支镜头的解算点实测能差
+    9~19 m（激光落点/视场不同），拿 8 m 卡会把真的一对拆开。
 
     组内排序：变焦优先 -> 广角 -> 热成像（前端按这个顺序展示，第一张用大图）。
     """
@@ -339,27 +360,33 @@ def group_photos(metas, max_gap_m=8.0):
             continue
 
         stamp = photo_stamp(meta)
+        seq = photo_seq(meta)
         folder = str(pathlib.Path(meta["path"]).parent)
+
+        # 认不出序号的（文件名不合规范）退回「同一秒」，至少不比以前差
+        key = (folder, seq) if seq else (folder, stamp + "#stamp")
+
         placed = False
 
         for group in groups:
-            if group["folder"] != folder or group["stamp"] != stamp:
-                continue
-
-            gap = haversine(group["lat"], group["lon"], target["lat"], target["lon"])
-
-            if gap > max_gap_m:
+            if group["key"] != key:
                 continue
 
             group["members"].append((meta, target))
             group["accuracy"] = group["accuracy"] if group["accuracy"] == target["accuracy"] else "混合"
             group["lat"] = (group["lat"] * (len(group["members"]) - 1) + target["lat"]) / len(group["members"])
             group["lon"] = (group["lon"] * (len(group["members"]) - 1) + target["lon"]) / len(group["members"])
+
+            # 组时刻取组内最早的那张（T 先写完时仍然是它，V 先写时也一样）
+            if stamp and stamp < group["stamp"]:
+                group["stamp"] = stamp
+
             placed = True
             break
 
         if not placed:
             groups.append({
+                "key": key,
                 "folder": folder,
                 "stamp": stamp,
                 "lat": target["lat"],
@@ -376,6 +403,16 @@ def group_photos(metas, max_gap_m=8.0):
             key=lambda item: CAMERA_ORDER.get(item[0].get("camera"), 9),
         )
 
+        # 组内两张（或更多）解算点相距多远 —— 只作诊断信息，不参与拆组
+        spread = 0.0
+
+        for i in range(len(members)):
+            for j in range(i + 1, len(members)):
+                spread = max(spread, haversine(
+                    members[i][1]["lat"], members[i][1]["lon"],
+                    members[j][1]["lat"], members[j][1]["lon"],
+                ))
+
         result.append({
             "stamp": group["stamp"],
             "folder": group["folder"],
@@ -384,6 +421,7 @@ def group_photos(metas, max_gap_m=8.0):
             "accuracy": group["accuracy"],
             "count": len(members),
             "lead": members[0][0].get("camera"),          # 前端用这张当大图
+            "spread_m": round(spread, 1),                 # 组内解算点最大间距（诊断用）
             "members": [
                 {
                     "name": meta["name"],
