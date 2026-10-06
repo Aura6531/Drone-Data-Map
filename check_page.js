@@ -1787,13 +1787,29 @@ console.log('\n=== 报告里的地图截图：16:9 + 飞机与注视虚线 ===')
 {
   chk(/function reportDroneAt\(/.test(body),
     'function reportDroneAt()（取该时刻飞机的位置与朝向）');
-  chk(/const track=loadedTracks\.find/.test(body), '飞机位置取自已加载的航迹');
+  chk(/const loaded=loadedTracks\.find/.test(body),
+    '飞机位置优先用已加载的航迹');
   chk(/indexAtTime\(track\.times,Number\(m\.time\)\|\|0\)/.test(body), '按标记点的时间取航迹点');
   chk(/bearingAt\(track\.coords,i\)/.test(body), '朝向用 bearingAt()');
-  chk(/这条航迹没加载就先不画飞机/.test(body),
-    '航迹没加载时不画飞机（图照样出，不整份失败）');
-  chk(/width:1600,\s*\n\s*height:640/.test(body),
-    '地图截图用 2.5:1（报告里横向铺满、上下更扁，一节才好同页）');
+  chk(/reportTrackCache\[want\]=track/.test(body),
+    '没加载就现取这条视频的 GeoJSON 并缓存（不再依赖「已加载航迹」）');
+  chk(/const REPORT_MAP_MAX_ZOOM=18/.test(body),
+    '报告地图默认 18 级（16 级字太小）');
+  chk(/function reportMapZoomFor\(/.test(body),
+    'function reportMapZoomFor()：装不下才自动降级');
+  chk(/await reportDroneAt\(m\)/.test(body), 'reportDroneAt 改成异步（要能现取航迹）');
+  chk(/async function reportTrackFor\(/.test(body), 'function reportTrackFor()');
+  chk(/const gj=await fetchGeo\(f\)/.test(body),
+    '航迹没加载就现取这条视频的 GeoJSON（不再依赖「已加载航迹」）');
+  chk(/reportTrackCache\[want\]/.test(body), '取回来的航迹按视频路径缓存，一个点只取一次');
+  chk(/centerLat=\(m\.lat\+drone\.lat\)\/2/.test(body),
+    '有飞机时取「目标点与飞机的中点」做取景中心');
+  chk(/body\.target_lat=m\.lat/.test(body),
+    '目标点单独传给后端（否则红十字会画到中点上去）');
+  chk(/zoom=reportMapZoomFor\(centerLat,distance\)/.test(body),
+    '缩放级来自 reportMapZoomFor');
+  chk(/width:REPORT_MAP_WIDTH/.test(body) && /height:REPORT_MAP_HEIGHT/.test(body),
+    '截图尺寸用常量（1600×640）');
   chk(/body\.drone_lat=drone\.lat/.test(body) && /body\.drone_bearing=drone\.bearing/.test(body),
     '把飞机的位置与朝向一起传给 /api/mapsnapshot');
 }

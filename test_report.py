@@ -255,6 +255,47 @@ try:
         "drone_lat": "坏值", "drone_lng": target_lng,
     })["drone"] is False, "飞机参数坏掉时当作没给，图照出")
 
+    # ---------- 取景中心 ≠ 目标点：红十字必须落在目标点上 ----------
+    def is_crosshair(pixel):
+        r, g, b = pixel
+        return r > 150 and r - g > 60 and r - b > 60
+
+    drone_lat3 = target_lat + 120 / 111320.0        # 飞机在目标点正北 120m
+    center_lat3 = (target_lat + drone_lat3) / 2     # 取景取「中点」
+
+    shifted = pm.make_map_snapshot({
+        "lat": center_lat3, "lng": target_lng, "zoom": 18,
+        "basemap": "osm", "width": 640, "height": 640,
+        "target_lat": target_lat, "target_lng": target_lng,
+        "drone_lat": drone_lat3, "drone_lng": target_lng, "drone_bearing": 180,
+    })
+
+    chk(shifted["zoom"] == 18, "缩放级原样透传（18 级，字看得清）", str(shifted["zoom"]))
+    chk(shifted["drone"] is True, "18 级时飞机照样画")
+
+    img3 = Image.open(ROOT / "report_cache" / shifted["file"]).convert("RGB")
+
+    center_world = pm.mercator_world_pixel(center_lat3, target_lng, 18)
+    target_world = pm.mercator_world_pixel(target_lat, target_lng, 18)
+    drone_world3 = pm.mercator_world_pixel(drone_lat3, target_lng, 18)
+
+    left3 = center_world[0] - 640 / 2.0
+    top3 = center_world[1] - 640 / 2.0
+
+    target_px3 = (int(round(target_world[0] - left3)), int(round(target_world[1] - top3)))
+    drone_px3 = (int(round(drone_world3[0] - left3)), int(round(drone_world3[1] - top3)))
+
+    chk(abs(target_px3[1] - 320) > 10,
+        "这个用例里目标点确实不在图片中心（否则测不出问题）",
+        f"目标点 y={target_px3[1]}，图片中心 y=320")
+    chk(is_crosshair(img3.getpixel(target_px3)),
+        "红十字画在目标点上", str(img3.getpixel(target_px3)))
+    chk(not is_crosshair(img3.getpixel((320, 320))),
+        "图片正中不再有红十字（取景中心≠目标点时不写死中心）",
+        str(img3.getpixel((320, 320))))
+    chk(max(abs(a - b) for a, b in zip(img3.getpixel(drone_px3), pm.DRONE_ARROW_FILL)) < 40,
+        "飞机画在飞机位置上", str(img3.getpixel(drone_px3)))
+
 finally:
     pm.cached_map_tile_bytes = real_tile_bytes
 

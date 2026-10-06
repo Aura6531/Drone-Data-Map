@@ -538,5 +538,35 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
   chk(api.markerNameTaken('') === false, '空名字不算重名');
 }
 
+console.log('\n=== 13) 报告地图取景：默认 18 级，飞机离远了才降级 ===');
+{
+  const height = Number((html.match(/REPORT_MAP_HEIGHT=(\d+)/) || [])[1]);
+  const maxZoom = Number((html.match(/REPORT_MAP_MAX_ZOOM=(\d+)/) || [])[1]);
+  const margin = Number((html.match(/REPORT_MAP_MARGIN=([\d.]+)/) || [])[1]);
+
+  chk(maxZoom === 18, '默认取景就是 18 级（字看得清）', String(maxZoom));
+  chk(height > 0 && margin > 1, '从页面里读到画面高度与余量',
+    `高 ${height}px，余量 ×${margin}`);
+
+  const zoomFor = new Function(
+    'REPORT_MAP_HEIGHT', 'REPORT_MAP_MAX_ZOOM', 'REPORT_MAP_MARGIN',
+    `${extractFn('reportMapZoomFor')}\nreturn reportMapZoomFor;`
+  )(height, maxZoom, margin);
+
+  chk(zoomFor(23.05, 0) === 18, '距离 0（这条视频没有飞机）：18 级', String(zoomFor(23.05, 0)));
+  chk(zoomFor(23.05, 100) === 18, '飞机在 100m 内：仍是 18 级', String(zoomFor(23.05, 100)));
+  chk(zoomFor(23.05, 800) < 18, '飞机 800m：自动降级', String(zoomFor(23.05, 800)));
+  chk(zoomFor(23.05, 100000) === 10, '极远：退到下限 10 级就停', String(zoomFor(23.05, 100000)));
+
+  // 降级之后，目标点与飞机确实都还塞得进画面
+  for (const distance of [0, 100, 400, 800, 2000, 8000]) {
+    const zoom = zoomFor(23.05, distance);
+    const mpp = 156543.03392 * Math.cos(23.05 * Math.PI / 180) / Math.pow(2, zoom);
+    chk(height / 2 * mpp >= distance / 2 * margin - 1e-6,
+      `${distance}m 时用 ${zoom} 级：两点都装得下`,
+      `半高 ${(height / 2 * mpp).toFixed(0)}m >= 需要 ${(distance / 2 * margin).toFixed(0)}m`);
+  }
+}
+
 console.log(ok ? '\n结果: 全部通过' : '\n结果: 有失败');
 process.exit(ok ? 0 : 1);

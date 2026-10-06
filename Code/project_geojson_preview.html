@@ -3114,16 +3114,64 @@ async function reportVideoImageOf(m,mode){
   }
 }
 
-// 报告用：这个标记点当时飞机在哪、朝哪 —— 地图截图上要画飞机和注视虚线
-function reportDroneAt(m){
+/* 报告地图：取景与飞机
+   ------------------------------------------------------------
+   两个要点：
+   1. 默认 18 级（字看得清）。但飞机与目标点都得在画面里 —— 离得远时自动降级，
+      宁可字小一点，也不能出现「只有地图、没有飞机和虚线」。
+   2. 飞机位置不依赖「航迹是否已加载」：没加载就现取这条视频的 GeoJSON 并缓存。
+      以前只看 loadedTracks，页面刷新过 / 没点过「加载全部」就静默不画（踩过）。
+   ============================================================ */
+
+const REPORT_MAP_WIDTH=1600;
+const REPORT_MAP_HEIGHT=640;
+const REPORT_MAP_MAX_ZOOM=18;
+const REPORT_MAP_MARGIN=1.3;        // 两点之外再留 30% 余量，免得贴边
+
+const reportTrackCache={};
+
+async function reportTrackFor(m){
   const want=String(m.video||'').toLowerCase();
   if(!want)return null;
 
-  const track=loadedTracks.find(t=>
+  const loaded=loadedTracks.find(t=>
     videoPathFromGeojson(t.fileInfo.relative_path).toLowerCase()===want);
 
+  if(loaded)return loaded;
+
+  if(reportTrackCache[want]!==undefined)return reportTrackCache[want];
+
+  const f=geoFiles.find(x=>videoPathFromGeojson(x.relative_path).toLowerCase()===want);
+
+  if(!f){reportTrackCache[want]=null;return null}
+
+  try{
+    const gj=await fetchGeo(f);
+    const feature=((gj&&gj.features)||[]).find(x=>
+      x.geometry&&x.geometry.type==='LineString');
+
+    const track=feature?{
+      coords:feature.geometry.coordinates||[],
+      times:(feature.properties||{}).point_times||[],
+      fileInfo:f
+    }:null;
+
+    reportTrackCache[want]=track;
+
+    return track;
+
+  }catch(e){
+    reportTrackCache[want]=null;
+    return null;
+  }
+}
+
+// 这个标记点当时飞机在哪、朝哪
+async function reportDroneAt(m){
+  const track=await reportTrackFor(m);
+
   if(!track||!track.coords||!track.coords.length||!track.times||!track.times.length){
-    return null;   // 这条航迹没加载就先不画飞机，图照样出
+    return null;
   }
 
   const i=indexAtTime(track.times,Number(m.time)||0);
@@ -3136,22 +3184,62 @@ function reportDroneAt(m){
   return {lat:c[1],lng:c[0],bearing:(bearing==null?0:bearing)};
 }
 
-// 地图截图：底图跟随当前选择；比例用 2.5:1（报告里横向铺满正文宽，
-// 上下裁得扁一些，好让「字段表 + 两张图 + 两行图注」稳稳排在同一页）
+// 取景用的缩放级：尽量 18；飞机离得远到塞不进这张图时才往下调。
+// （纯函数：给中心纬度与两点地面距离就能算，方便单测）
+function reportMapZoomFor(centerLat,distanceMeters){
+  const needHalf=Math.max(0,Number(distanceMeters)||0)/2*REPORT_MAP_MARGIN;
+
+  for(let zoom=REPORT_MAP_MAX_ZOOM;zoom>10;zoom--){
+    const metersPerPixel=156543.03392
+      *Math.cos(Number(centerLat)*Math.PI/180)/Math.pow(2,zoom);
+
+    if(REPORT_MAP_HEIGHT/2*metersPerPixel>=needHalf)return zoom;
+  }
+
+  return 10;
+}
+
+// 地图截图：底图跟随当前选择；比例 2.5:1（报告里横向铺满正文宽）。
+// 有飞机时取「目标点与飞机的中点」，并按距离选缩放级 —— 保证飞机和虚线都在画面里。
 async function reportMapImageOf(m,basemap){
   try{
+    const drone=await reportDroneAt(m);
+
+    let centerLat=m.lat;
+    let centerLng=m.lng;
+    let zoom=REPORT_MAP_MAX_ZOOM;
+
+    if(drone&&map){
+      centerLat=(m.lat+drone.lat)/2;
+      centerLng=(m.lng+drone.lng)/2;
+
+      let distance=0;
+
+      try{
+        distance=map.distance({lat:m.lat,lng:m.lng},{lat:drone.lat,lng:drone.lng});
+      }catch(e){
+        distance=0;
+      }
+
+      zoom=reportMapZoomFor(centerLat,distance);
+    }
+
     const body={
-      lat:m.lat,
-      lng:m.lng,
-      zoom:TRACK_FOCUS_ZOOM,
+      lat:centerLat,
+      lng:centerLng,
+      zoom,
       basemap,
-      width:1600,
-      height:640
+      width:REPORT_MAP_WIDTH,
+      height:REPORT_MAP_HEIGHT
     };
 
-    // 把飞机的位置与朝向一起传过去，后端会画上飞机图标和「飞机 -> 目标点」的虚线
-    const drone=reportDroneAt(m);
+    // 取景中心可能不是目标点（有飞机时取中点），所以红十字的位置单独给
+    if(drone){
+      body.target_lat=m.lat;
+      body.target_lng=m.lng;
+    }
 
+    // 把飞机的位置与朝向一起传过去，后端会画上飞机图标和「飞机 -> 目标点」的虚线
     if(drone){
       body.drone_lat=drone.lat;
       body.drone_lng=drone.lng;

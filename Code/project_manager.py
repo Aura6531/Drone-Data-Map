@@ -3945,12 +3945,16 @@ def draw_drone_arrow(draw, center, bearing, size=DRONE_ARROW_SIZE):
     )
 
 
-def compose_map_snapshot(lat, lng, zoom, kind, width, height, drone=None):
-    """按指定底图拼一张地图截图，并在正中标出目标点。
+def compose_map_snapshot(lat, lng, zoom, kind, width, height, drone=None, target=None):
+    """按指定底图拼一张地图截图，并标出目标点。
 
     不用前端 canvas 截图：瓦片跨域会污染画布，拿不到图。
-    drone 给了（lat/lng/bearing）就再画上飞机图标和「飞机 -> 目标点」的注视虚线，
-    和地图页面上看到的是同一种表达。
+
+    - `lat` / `lng`：**取景中心**（图片正中间对应的经纬度）
+    - `target`：**目标点**（画红十字与虚线终点的地方），不给就当取景中心。
+      有飞机时取景中心取「目标点与飞机的中点」，这时两者不是一个点。
+    - `drone`：给了（lat/lng/bearing）就画飞机图标和「飞机 -> 目标点」的注视虚线，
+      和地图页面上看到的是同一种表达。
     """
 
     from PIL import Image, ImageDraw
@@ -3959,7 +3963,7 @@ def compose_map_snapshot(lat, lng, zoom, kind, width, height, drone=None):
 
     tiles_across = 1 << zoom
 
-    # 目标点在「整幅世界地图」上的像素坐标
+    # 取景中心在「整幅世界地图」上的像素坐标
     world_x, world_y = mercator_world_pixel(lat, lng, zoom)
 
     left = world_x - width / 2.0
@@ -4014,11 +4018,23 @@ def compose_map_snapshot(lat, lng, zoom, kind, width, height, drone=None):
         (offset_x, offset_y, offset_x + width, offset_y + height)
     ).convert("RGB")
 
-    # 正中标出目标点：白圈打底 + 红十字，深浅底图上都看得见
+    # 标出目标点：白圈打底 + 红十字，深浅底图上都看得见。
+    # 位置按坐标算而不是写死图片中心 —— 有飞机时取景中心是「目标点与飞机的中点」，
+    # 目标点会偏一点，写死中心就会把红十字画错地方。
     draw = ImageDraw.Draw(image)
 
-    center_x = width // 2
-    center_y = height // 2
+    if target and target.get("lat") is not None and target.get("lng") is not None:
+        target_x, target_y = mercator_world_pixel(
+            float(target["lat"]),
+            float(target["lng"]),
+            zoom
+        )
+
+    else:
+        target_x, target_y = world_x, world_y
+
+    center_x = int(round(target_x - left))
+    center_y = int(round(target_y - top))
     radius = 16
 
     draw.ellipse(
@@ -4246,6 +4262,20 @@ def make_map_snapshot(payload):
     width = max(320, min(width, 2560))
     height = max(240, min(height, 1920))
 
+    # 目标点（红十字/虚线终点）：不给就当取景中心
+    target = None
+
+    if payload.get("target_lat") is not None and payload.get("target_lng") is not None:
+
+        try:
+            target = {
+                "lat": float(payload["target_lat"]),
+                "lng": float(payload["target_lng"]),
+            }
+
+        except (TypeError, ValueError):
+            target = None
+
     # 飞机的位置与朝向（可选）：给了就在图上画飞机和注视虚线
     drone = None
 
@@ -4261,7 +4291,7 @@ def make_map_snapshot(payload):
         except (TypeError, ValueError):
             drone = None
 
-    image = compose_map_snapshot(lat, lng, zoom, kind, width, height, drone)
+    image = compose_map_snapshot(lat, lng, zoom, kind, width, height, drone, target)
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
