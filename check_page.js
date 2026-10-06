@@ -851,8 +851,8 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
 
   // 2 倍速按钮：放在「小地图」右边（按钮在 HTML 段里，不是 script 段 —— 用 html）
   chk(/id="mapPipToggle"[^>]*>小地图<\/button>\s*<button id="speedToggle"/.test(html),
-    '「2×」按钮紧挨在「小地图」右边');
-  chk(/id="speedToggle"[^>]*>2×<\/button>/.test(html), '按钮文案就是 2×');
+    '「2倍速」按钮紧挨在「小地图」右边');
+  chk(/id="speedToggle"[^>]*>2倍速<\/button>/.test(html), '按钮文案就是「2倍速」');
   chk(/const FAST_PLAYBACK_RATE=2;/.test(body) && /const NORMAL_PLAYBACK_RATE=1;/.test(body),
     '1 倍 / 2 倍两个档位');
   chk(/speedToggle\.addEventListener\('click'/.test(body) && /fastSpeedOn=!fastSpeedOn/.test(body),
