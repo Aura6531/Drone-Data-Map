@@ -4429,8 +4429,57 @@ function jumpToPhotoVideo(m){
   }
 }
 
-// 点展示区里的某张照片时，按**这张**照片的时刻跳（同组内 T/V 是同秒拍的，
-// 所以结果通常和用组时刻一样；将来若有不同秒的成员，这里也不会跳错）。
+// 文件名末尾的流标识：_V / _T / _S（照片与视频用的是同一套）。
+// 返回大写字母；认不出来返回空串。
+function streamTagOf(name,extPattern){
+  const base=String(name||'')
+    .replace(extPattern||/\.(JPG|JPEG|PNG|MP4|MOV)$/i,'');
+
+  const m=base.match(/_([A-Za-z]+)$/);
+
+  return m?m[1].toUpperCase():'';
+}
+
+// 从候选里挑出「该给这张照片播的那一路」。
+// 优先级：① 同一路视频（_V 配 _V）→ ② 同一架次（照片和视频是同时刻拍的，
+// 前缀里 DJI_年月日时分秒 一致、只有序号不同）→ ③ 手上排序最好的那条
+// （至少时刻是对的，界面上仍会标时间差）。
+// 抽成纯函数是为了能直接断言；openPhotoVideo 只管取候选与发起播放。
+function pickMatchForPhoto(matches,name){
+  if(!Array.isArray(matches)||!matches.length)return null;
+
+  const target=String(name||'');
+  const wantTag=streamTagOf(target,/\.(JPG|JPEG|PNG)$/i);
+
+  // ① 同一路视频
+  if(wantTag){
+    for(const m of matches){
+      if(streamTagOf(m.relativePath,/\.(MP4|MOV)$/i)===wantTag)return m;
+    }
+  }
+
+  // ② 同一架次（时间戳一致，序号不同也算）
+  const stem=photoStreamPrefix(target,/\.(JPG|JPEG|PNG)$/i);
+
+  if(stem){
+    for(const m of matches){
+      if(photoStreamPrefix(m.relativePath,/\.(MP4|MOV)$/i)===stem)return m;
+    }
+  }
+
+  // ③ 兜底
+  return matches[0];
+}
+
+// 点展示区里的某张照片时，按**这张**照片的时刻跳。
+//
+// 关键：**先按流标识配对**（照片 `_V` -> 视频 `_V`），不要按整个文件名前缀配。
+// 照片和视频的序号是各自计数、通常对不上：
+//   照片 DJI_20260924095348_0002_V.JPG   -> 前缀 DJI_20260924095348_0002
+//   视频 DJI_20260924095258_0001_V.MP4   -> 前缀 DJI_20260924095258_0001
+// 按前缀配几乎从不命中，于是全都退回 matches[0]（那一条是按「画面内/时间差」
+// 排序出来的，可能是 S 或 T）—— 表现就是「点广角照片却跳出热成像/另一路视频」。
+// 实测 244 张里有 189 张跳错，改成按流标识配后全部对上。
 function openPhotoVideo(group,name){
   if(!group)return;
 
@@ -4438,20 +4487,8 @@ function openPhotoVideo(group,name){
 
   const matches=photoMatches&&photoMatches.get(photoSelected);
 
-  // 先按文件名前缀找同名的那一条（视频和照片是同一个 DJI 编号，
-  // 只是扩展名与 _T/_V/_S 后缀不同）
   if(Array.isArray(matches)&&matches.length){
-    let best=null;
-
-    for(const m of matches){
-      if(target&&photoStreamPrefix(m.relativePath,/\.(MP4|MOV)$/i)
-         ===photoStreamPrefix(target)){
-        best=m;
-        break;
-      }
-    }
-
-    jumpToPhotoVideo(best||matches[0]);
+    jumpToPhotoVideo(pickMatchForPhoto(matches,target));
     return;
   }
 
@@ -4461,7 +4498,7 @@ function openPhotoVideo(group,name){
     const fresh=photoMatchesFor(group);
     if(fresh.length){
       if(photoMatches)photoMatches.set(photoSelected,fresh);
-      jumpToPhotoVideo(fresh[0]);
+      jumpToPhotoVideo(pickMatchForPhoto(fresh,target));
       return;
     }
   }catch(e){}

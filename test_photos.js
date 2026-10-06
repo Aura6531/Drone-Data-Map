@@ -50,7 +50,9 @@ const PURE = [
   'photoLeadMember', 'photoGroupTimeText', 'photoLeadName', 'photoShotText',
   'photoGroupLabel', 'hexToRgba',
   // 图片地址 / 前缀
-  'photoThumbUrl', 'photoStreamPrefix', 'photoVideoFolderPath',
+  'photoThumbUrl', 'photoStreamPrefix', 'photoVideoFolderPath', 'streamTagOf',
+  // 点某张照片时「该播哪一路」的选择（这条错过一次：点 _V 照片跳成了 _S 视频）
+  'pickMatchForPhoto',
   // 时刻对齐
   'videoRealStartMs', 'photoFileTime', 'photoVideoStartSeconds', 'photoFrameAt',
   // 匹配与展示
@@ -704,8 +706,46 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '展示区在右栏里（与视频 / 标记点同栏）');
 }
 
-console.log('\n=== 9) 遥测请求必须带对参数（这条错了，画面内判定会 147/147 全空）===');
-(async () => {
+console.log('\n=== 9) 点某张照片该播哪一路（这条错过一次：点 _V 跳成了 _S）===');
+{
+  // 照片与视频的序号是各自计数、通常对不上：
+  //   照片 DJI_20260924095348_0002_V.JPG（同架次第 2 张）
+  //   视频 DJI_20260924095258_0001_V.MP4（同架次第 1 段）
+  // 所以**不能**按整个文件名前缀配对，要按末尾的流标识 _V/_T/_S。
+  const V = { video: 'DJI_20260924095258_0001_V.MP4', relativePath: 'DJI_20260924095258_0001_V.MP4' };
+  const T = { video: 'DJI_20260924095258_0001_T.MP4', relativePath: 'DJI_20260924095258_0001_T.MP4' };
+  const S = { video: 'DJI_20260924095258_0001_S.MP4', relativePath: 'DJI_20260924095258_0001_S.MP4' };
+  // 候选顺序按「画面内 / 时间差」排，S 排第一是常有的事
+  const matches = [S, T, V];
+
+  chk(page.streamTagOf('DJI_20260924095348_0002_V.JPG') === 'V', '取照片的流标识 V');
+  chk(page.streamTagOf('DJI_20260924095258_0001_T.MP4', /\.(MP4|MOV)$/i) === 'T', '取视频的流标识 T');
+  chk(page.streamTagOf('没有后缀.jpg') === '', '认不出来就返回空串');
+
+  chk(page.pickMatchForPhoto(matches, 'DJI_20260924095348_0002_V.JPG') === V,
+    '点 _V 照片 -> 挑 _V 视频（不能因为 S 排在前面就跳到 S）');
+  chk(page.pickMatchForPhoto(matches, 'DJI_20260924095348_0002_T.JPG') === T,
+    '点 _T 照片 -> 挑 _T 视频');
+  chk(page.pickMatchForPhoto([T, V], 'DJI_20260924095348_0002_V.JPG') === V, '顺序无关，按标识配对');
+
+  // 该流不在候选中时：退回「同一架次」（时间戳一致、序号不同也算）
+  const noV = [S, T];
+  chk(page.pickMatchForPhoto(noV, 'DJI_20260924095348_0002_V.JPG') === S,
+    '没有 _V 候选时退回同一架次的第一条（时间戳一致，序号不同也算）');
+  const otherFlight = [{ video: 'X_20260924090000_0009_V.MP4', relativePath: 'X_20260924090000_0009_V.MP4' }];
+  chk(page.pickMatchForPhoto(otherFlight, 'DJI_20260924095348_0002_V.JPG') === otherFlight[0],
+    '连同一架次都没有时，退回排序最好的那条（至少时刻是对）');
+
+  chk(page.pickMatchForPhoto([], 'a_V.JPG') === null, '没有候选时返回 null');
+  chk(page.pickMatchForPhoto(null, 'a_V.JPG') === null, '候选不是数组也返回 null');
+
+  // 源码层面也要盯住：不能再退回「按整前缀配」那套
+  const fn = extractFn('openPhotoVideo');
+  chk(/pickMatchForPhoto\(matches,target\)/.test(fn), 'openPhotoVideo 用 pickMatchForPhoto 挑');
+  chk(/pickMatchForPhoto\(fresh,target\)/.test(fn), '「还没匹配」那条兜底路径也用它（不再直接跳 fresh[0]）');
+}
+
+console.log('\n=== 10) 遥测请求必须带对参数（这条错了，画面内判定会 147/147 全空）===');(async () => {
   // 真实的挫败场景：/api/project/telemetry 要 name + folder_index + path（相对路径、.mp4）。
   // 早先 ensureTrackTelemetry 只传 path，而且传的是航迹自己的 .geojson 相对路径 ——
   // 后端先回「缺少项目名称」，补上 name 后又回「指定文件不是 MP4/MOV 视频」。
