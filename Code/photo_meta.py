@@ -281,6 +281,147 @@ def ground_target(meta, ground_elevation=None, prefer_lrf=True):
     }
 
 
+def photo_stamp(meta):
+    """照片的时刻（秒级）。文件名里那串时间就是拍摄时刻，优先用它。"""
+
+    match = re.search(r"DJI_(\d{8})(\d{6})_", meta.get("name") or "")
+
+    if match:
+        return f"{match.group(1)}_{match.group(2)}"
+
+    return ""
+
+
+# 相机优先序：用户要求「优先展示变焦，用大图」，然后广角可见光，最后热成像
+CAMERA_ORDER = {"ZoomCamera": 0, "WideCamera": 1, "InfraredCamera": 2}
+
+
+def group_photos(metas, max_gap_m=8.0):
+    """把「同一目标点」的多张照片合并成一组（用户要求：地图上合并成一个点）。
+
+    分组规则：同一架次文件夹里、**同一秒**拍摄的照片算一组（T/V/S 就是同一秒成对拍），
+    再要求中心点相距不超过 max_gap_m 米（防止同秒拍的两张其实瞄的是不同目标）。
+
+    组内排序：变焦优先 -> 广角 -> 热成像（前端按这个顺序展示，第一张用大图）。
+    """
+
+    groups = []
+
+    for meta in metas:
+        target = ground_target(meta)
+
+        if not target:
+            continue
+
+        stamp = photo_stamp(meta)
+        folder = str(pathlib.Path(meta["path"]).parent)
+        placed = False
+
+        for group in groups:
+            if group["folder"] != folder or group["stamp"] != stamp:
+                continue
+
+            gap = haversine(group["lat"], group["lon"], target["lat"], target["lon"])
+
+            if gap > max_gap_m:
+                continue
+
+            group["members"].append((meta, target))
+            group["accuracy"] = group["accuracy"] if group["accuracy"] == target["accuracy"] else "混合"
+            group["lat"] = (group["lat"] * (len(group["members"]) - 1) + target["lat"]) / len(group["members"])
+            group["lon"] = (group["lon"] * (len(group["members"]) - 1) + target["lon"]) / len(group["members"])
+            placed = True
+            break
+
+        if not placed:
+            groups.append({
+                "folder": folder,
+                "stamp": stamp,
+                "lat": target["lat"],
+                "lon": target["lon"],
+                "accuracy": target["accuracy"],
+                "members": [(meta, target)],
+            })
+
+    result = []
+
+    for group in groups:
+        members = sorted(
+            group["members"],
+            key=lambda item: CAMERA_ORDER.get(item[0].get("camera"), 9),
+        )
+
+        result.append({
+            "stamp": group["stamp"],
+            "folder": group["folder"],
+            "lat": group["lat"],
+            "lon": group["lon"],
+            "accuracy": group["accuracy"],
+            "count": len(members),
+            "lead": members[0][0].get("camera"),          # 前端用这张当大图
+            "members": [
+                {
+                    "name": meta["name"],
+                    "folder": str(pathlib.Path(meta["path"]).parent),
+                    "camera": meta.get("camera"),
+                    "accuracy": target["accuracy"],
+                    "accuracy_note": target["accuracy_note"],
+                    "lat": target["lat"],
+                    "lon": target["lon"],
+                    "distance": round(target["distance"], 1),
+                    "depression": round(target["depression"], 1),
+                    "gimbal_yaw": meta.get("gimbal_yaw"),
+                    "relative_alt": meta.get("alt_relative"),
+                    "drone_lat": meta["lat"],
+                    "drone_lon": meta["lon"],
+                }
+                for meta, target in members
+            ],
+        })
+
+    return result
+
+
+def collect_photos(folders, cache=None):
+    """扫这些文件夹里的 JPG，逐张读元数据（带内存缓存，按 路径+大小+mtime 失效）。"""
+
+    cache = cache if cache is not None else {}
+    metas = []
+
+    for folder in folders:
+        root = pathlib.Path(folder)
+
+        if not root.is_dir():
+            continue
+
+        paths = sorted({
+            p.resolve()
+            for p in list(root.glob("**/*.JPG")) + list(root.glob("**/*.jpg"))
+        })
+
+        for path in paths:
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+
+            key = (str(path), stat.st_size, int(stat.st_mtime))
+            meta = cache.get(key)
+
+            if meta is None:
+                try:
+                    meta = read_jpeg_meta(path)
+
+                except Exception:
+                    continue
+
+                cache[key] = meta
+
+            metas.append(meta)
+
+    return metas
+
+
 def haversine(a_lat, a_lon, b_lat, b_lon):
     """两点间地面距离（米）—— 用来和激光测距交叉验证。"""
 
