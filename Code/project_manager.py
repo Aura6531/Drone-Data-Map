@@ -4471,7 +4471,13 @@ REPORT_FONT_CJK = "微软雅黑"
 
 
 def set_report_font(target, size_pt=None, bold=None):
-    """统一样式或 run 的字体：西文/数字 Arial，中文 微软雅黑。"""
+    """统一样式或 run 的字体：西文/数字 Arial，中文 微软雅黑。
+
+    关键：**必须先把主题字体引用删掉**。样式里常常写着
+    `w:asciiTheme="majorHAnsi"` / `w:eastAsiaTheme="majorEastAsia"`，
+    它们的优先级高于 `w:ascii` / `w:eastAsia` —— 只写字体名不改主题引用的话，
+    标题里的中文仍是主题的 MS Gothic、数字仍是主题的 Calibri（踩过）。
+    """
 
     from docx.oxml.ns import qn
     from docx.shared import Pt
@@ -4490,34 +4496,41 @@ def set_report_font(target, size_pt=None, bold=None):
         element = target.element          # 段落样式走这条
 
     rfonts = element.get_or_add_rPr().get_or_add_rFonts()
+
+    for theme_attr in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
+        rfonts.attrib.pop(qn(f"w:{theme_attr}"), None)
+
     rfonts.set(qn("w:eastAsia"), REPORT_FONT_CJK)
 
 
 def format_latitude(lat):
-    """纬度：23.057453 N / 12.3 S（南纬写 S，数值取绝对值，不出现负号）。"""
+    """纬度数值：带符号的十进制度数（南纬为负、北纬为正）。
 
-    value = float(lat)
+    半球写在表头里（`纬度（°N）`），数字尾巴上不带 N/S —— 用户要拿去复制粘贴，
+    多两个字母很碍事；半球用正负号表示，比写 S/W 更好复制。
+    """
 
-    return f"{abs(value):.6f} {('N' if value >= 0 else 'S')}"
+    return f"{float(lat):.6f}"
 
 
 def format_longitude(lng):
-    """经度：114.094390 E / 70.5 W（西经写 W）。"""
+    """经度数值：带符号的十进制度数（西经为负、东经为正）。"""
 
-    value = float(lng)
-
-    return f"{abs(value):.6f} {('E' if value >= 0 else 'W')}"
+    return f"{float(lng):.6f}"
 
 
 def docx_point_field_table(document, point):
-    """每个点那一节里的「字段 / 值」小表。"""
+    """每个点那一节里的「字段 / 值」小表（中部左对齐）。"""
 
-    from docx.shared import Cm, Pt
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Cm
 
     rows = [
         ("名称", point.get("name") or "标记点"),
-        ("纬度", point.get("lat_text") or ""),
-        ("经度", point.get("lng_text") or ""),
+        # 半球写在表头里；数字用正负号区分南北/东西，方便直接复制
+        ("纬度（°N）", point.get("lat_text") or ""),
+        ("经度（°E）", point.get("lng_text") or ""),
         ("所在位置", point.get("place") or "未解析"),
         ("视频文件", point.get("video") or "-"),
         ("视频时间", point.get("time_text") or "-"),
@@ -4536,6 +4549,10 @@ def docx_point_field_table(document, point):
 
         for cell, width in zip(cells, widths):
             cell.width = width
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+            for paragraph in cell.paragraphs:
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
     for row in table.rows:
         for cell in row.cells:
@@ -4564,11 +4581,19 @@ def breakable_text(text, every=12):
 
 
 def set_docx_cell(cell, text, size_pt=8.5, bold=False):
-    """写单元格并把字号压下来（汇总表 7 列，默认字号会撑爆）。"""
+    """写单元格：字号压下来（汇总表 7 列，默认字号会撑爆）+ 中部左对齐。"""
+
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     cell.text = str(text)
 
+    # 统一「中部左对齐」：垂直居中、水平靠左
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
     for paragraph in cell.paragraphs:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
         for run in paragraph.runs:
             set_report_font(run, size_pt, bold)
 
@@ -4710,7 +4735,7 @@ def build_docx_report(payload):
 
     document.add_heading("汇总表", level=1)
 
-    columns = ["序号", "名称", "纬度", "经度", "所在位置", "视频文件", "视频时间"]
+    columns = ["序号", "名称", "纬度（°N）", "经度（°E）", "所在位置", "视频文件", "视频时间"]
 
     # 列宽写死 + 关掉自动伸缩：长文件名（下划线处 Word 不断行）容易把表撑出正文区
     column_widths = (

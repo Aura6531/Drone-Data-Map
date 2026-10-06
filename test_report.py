@@ -442,23 +442,43 @@ else:
     chk('w:rFonts' in xml and f'w:eastAsia="{pm.REPORT_FONT_CJK}"' in xml,
         "目录里手写的超链接 run 也显式带上了字体")
 
-    # ---------- 经纬度带半球：N/E，南纬西经是 S/W ----------
-    chk(pm.format_latitude(23.03441) == "23.034410 N", "北纬写 N", pm.format_latitude(23.03441))
-    chk(pm.format_longitude(112.466997) == "112.466997 E", "东经写 E",
+    # ---------- 经纬度：数字带符号，半球写在表头里 ----------
+    chk(pm.format_latitude(23.03441) == "23.034410", "北纬是正数", pm.format_latitude(23.03441))
+    chk(pm.format_longitude(112.466997) == "112.466997", "东经是正数",
         pm.format_longitude(112.466997))
-    chk(pm.format_latitude(-12.3456789) == "12.345679 S",
-        "南纬写 S，数值取绝对值（不用负号）", pm.format_latitude(-12.3456789))
-    chk(pm.format_longitude(-70.5) == "70.500000 W", "西经写 W", pm.format_longitude(-70.5))
-    chk(pm.format_latitude(0) == "0.000000 N", "赤道按 N 处理", pm.format_latitude(0))
+    chk(pm.format_latitude(-12.3456789) == "-12.345679", "南纬是负数（不取绝对值）",
+        pm.format_latitude(-12.3456789))
+    chk(pm.format_longitude(-70.5) == "-70.500000", "西经是负数", pm.format_longitude(-70.5))
 
-    chk(document.tables[1].rows[1].cells[1].text.endswith(" N"),
-        "字段表里的纬度带 N", document.tables[1].rows[1].cells[1].text)
-    chk(document.tables[1].rows[2].cells[1].text.endswith(" E"),
-        "字段表里的经度带 E", document.tables[1].rows[2].cells[1].text)
-    chk(document.tables[0].rows[1].cells[2].text.endswith(" N")
-        and document.tables[0].rows[1].cells[3].text.endswith(" E"),
-        "汇总表里也带上了 N / E",
-        document.tables[0].rows[1].cells[2].text + " / " + document.tables[0].rows[1].cells[3].text)
+    chk(document.tables[1].rows[1].cells[0].text == "纬度（°N）",
+        "字段表把半球写在表头里", document.tables[1].rows[1].cells[0].text)
+    chk(document.tables[1].rows[2].cells[0].text == "经度（°E）",
+        "经度表头同样", document.tables[1].rows[2].cells[0].text)
+    chk(" N" not in document.tables[1].rows[1].cells[1].text
+        and " E" not in document.tables[1].rows[2].cells[1].text,
+        "数字里不再带 N/E（复制时最碍事）",
+        document.tables[1].rows[1].cells[1].text + " / " + document.tables[1].rows[2].cells[1].text)
+    chk(document.tables[0].rows[0].cells[2].text == "纬度（°N）"
+        and document.tables[0].rows[0].cells[3].text == "经度（°E）",
+        "汇总表表头也写明半球",
+        document.tables[0].rows[0].cells[2].text + " / " + document.tables[0].rows[0].cells[3].text)
+
+    # ---------- 主题字体引用必须删掉 ----------
+    heading_block = re.search(r'<w:style [^>]*w:styleId="Heading1".*?</w:style>', styles_xml, re.S)
+    chk(heading_block is not None, "styles.xml 里找得到 Heading1 样式")
+
+    block = heading_block.group(0) if heading_block else ""
+    chk("asciiTheme" not in block and "eastAsiaTheme" not in block,
+        "Heading1 里已无主题字体引用（这正是标题中文落 MS Gothic、数字落 Calibri 的原因）",
+        str(re.findall(r'w:(?:ascii|hAnsi|eastAsia|cstheme)Theme="[^"]*"', block)[:3]))
+    chk('w:ascii="Arial"' in block and f'w:eastAsia="{pm.REPORT_FONT_CJK}"' in block,
+        "Heading1 明确写了 Arial + 微软雅黑")
+
+    # ---------- 表格内容：中部左对齐 ----------
+    chk(xml.count('w:vAlign w:val="center"') >= 20,
+        "单元格垂直居中（中部）", str(xml.count('w:vAlign w:val="center"')) + " 个单元格")
+    chk(xml.count('w:jc w:val="left"') >= 20,
+        "单元格内容水平靠左", str(xml.count('w:jc w:val="left"')) + " 处")
 
     headings = [p.text for p in document.paragraphs if p.style.name.startswith("Heading 1")]
     chk("一、1 号排水口" in headings and "二、2 号 <桥下> & \"涵洞\"" in headings,
