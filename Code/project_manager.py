@@ -245,21 +245,24 @@ PROXY_CRF = 25               # H.264 质量，越小越清晰、文件越大
 
 # 「导出前后 10 秒」：以当前播放位置为中心，前 5 秒 + 后 5 秒，压成 1080p。
 # 这种片段是拿来转发给别人的，但**不能为了小把画面压糊**：
-# 用户 2026-10-07 反馈「码率压得有点高，看着比较糊」。实测同一段真实素材
-# （4K 原片第 600 秒起 10 秒，缩到 1080p，与 crf12/slow 的对照算分）：
-#     crf28 + 2200k：2.3 MB，SSIM 0.894，PSNR 30.5 dB  ← 原来那档，确实糊
+# 用户 2026-10-07 先反馈「码率压得有点高，看着比较糊」，随后定档：
+# 「用 18，每次导出文件控制在 10MB 左右我觉得是没问题的」。
+# 实测同一段真实素材（4K 原片第 600 秒起 10 秒，缩到 1080p，
+# 与 crf12/slow 的对照算 SSIM/PSNR）：
+#     crf28 + 2200k：2.3 MB，SSIM 0.894，PSNR 30.5 dB  ← 最初那档，确实糊
 #     crf24 + 4000k：4.3 MB，SSIM 0.939，PSNR 33.4 dB
 #     crf22 + 5000k：5.8 MB，SSIM 0.953，PSNR 34.7 dB
-#     crf20 + 6000k：7.3 MB，SSIM 0.960，PSNR 35.6 dB  ← 现在这档，肉眼看已经很干净
-#     crf18 + 8000k：9.8 MB，SSIM 0.970，PSNR 37.1 dB
-# 选 crf20：10 秒约 7 MB，微信/邮件转发都没问题，画质比原来好一大截。
-# 想再小就调 CLIP_CRF（22 -> 约 5.8 MB）；想更清晰调到 18。
+#     crf20 + 6000k：7.3 MB，SSIM 0.960，PSNR 35.6 dB
+#     crf18 + 8000k：9.8 MB，SSIM 0.970，PSNR 37.1 dB  ← 现在这档（约 10 MB）
+# 注意 CRF 与限码率要配套：CRF 18 想要更高码率，若还卡在 6000k 就等于白设，
+# 所以限码率同步提到 8000k。
+# 想再小就把 CLIP_CRF 调到 20（约 7.3 MB）或 22（约 5.8 MB）。
 CLIP_BEFORE_SECONDS = 5
 CLIP_AFTER_SECONDS = 5
 CLIP_HEIGHT = 1080
-CLIP_CRF = 20
-CLIP_MAXRATE = "6000k"
-CLIP_BUFSIZE = "12000k"
+CLIP_CRF = 18
+CLIP_MAXRATE = "8000k"
+CLIP_BUFSIZE = "16000k"
 CLIP_AUDIO_BITRATE = "96k"
 CLIP_DIR_NAME = "video_clip"
 CLIP_CACHE_MAX_MB = 2048     # 导出片段目录上限，超出后按最旧的删

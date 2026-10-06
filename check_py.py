@@ -48,9 +48,10 @@ print("\n=== 导出「前后 10 秒」的实现要点 ===")
 chk("CLIP_BEFORE_SECONDS = 5" in src and "CLIP_AFTER_SECONDS = 5" in src,
     "默认前 5 秒 + 后 5 秒（一共 10 秒）")
 chk("CLIP_HEIGHT = 1080" in src, "导出高度 1080p")
-# 画质：原来 crf28 + 2200k 实测 SSIM 0.894、用户说糊；现在 crf20 + 6000k
-chk("CLIP_CRF = 20" in src, "CRF 20（比原来的 28 清晰一大截）")
-chk('CLIP_MAXRATE = "6000k"' in src, "限码率 6000k（原来 2200k 太狠）")
+# 画质：原来 crf28 + 2200k 实测 SSIM 0.894、用户说糊；
+# 现在 crf18 + 8000k（用户定档：每次约 10 MB 可以接受）
+chk("CLIP_CRF = 18" in src, "CRF 18（比原来的 28 清晰一大截）")
+chk('CLIP_MAXRATE = "8000k"' in src, "限码率 8000k（和 CRF 18 配套；原来 2200k 太狠）")
 chk('"-maxrate", CLIP_MAXRATE' in src and '"-bufsize", CLIP_BUFSIZE' in src,
     "限码率与缓冲都走常量")
 chk('f"scale=-2:{CLIP_HEIGHT}"' in src, "按 1080p 等比缩放（宽度自动偶数）")
