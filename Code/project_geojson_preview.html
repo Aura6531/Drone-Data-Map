@@ -1061,13 +1061,54 @@ function initMap(){
   try{
     if(!map)return;
 
-    const mark=()=>{
+    // 这次用户操作是不是「缩放」：滚轮、双击、+/− 控件、Shift 框选、键盘 +/-
+    function isZoomGesture(ev){
+      try{
+        if(!ev)return false;
+
+        const type=String(ev.type||'');
+
+        if(type==='wheel'||type==='dblclick'||type==='boxzoomstart')return true;
+
+        if(type==='keydown'){
+          const key=String(ev.key||'');
+          return key==='+'||key==='-'||key==='='||key==='Add'||key==='Subtract';
+        }
+
+        if(type==='mousedown'){
+          const node=ev.target;
+          // Leaflet 自带的缩放控件：+/− 两颗按钮都在 .leaflet-control-zoom 里
+          if(node&&node.closest&&node.closest('.leaflet-control-zoom'))return true;
+        }
+
+        // Leaflet 事件对象（dragstart / boxzoomstart）里包着原生事件
+        return ev.originalEvent?isZoomGesture(ev.originalEvent):false;
+
+      }catch(e){return false}
+    }
+
+    // 用户自己缩放过：跟随改成「居中」—— 只平移、不再改缩放，
+    // 也就是「跟随他现在的缩放级别」。
+    // 只在 fit 模式下自动切；「不跟随」是他明确选的，不去覆盖。
+    function switchFollowToCenter(){
+      try{
+        if(!followModeSelect||followModeSelect.value!=='fit')return;
+
+        followModeSelect.value='center';
+        followModeSelect.dispatchEvent(new Event('change'));   // 复用原有的保存 + 跟随逻辑
+
+      }catch(e){}
+    }
+
+    const mark=ev=>{
       lastUserMapAction=Date.now();
 
       // 记一笔「用户接管过地图」：宽限期一到，主动把跟随视野收回来一次。
       // 只靠 followViewport 的安全区判断不够 —— 用户缩得比较远时，飞机仍在安全区内，
       // 地图会一直停在他放的位置，表现就是「松手后不跟回来，等飞机飞出边界才动」。
       followRestorePending=true;
+
+      if(isZoomGesture(ev))switchFollowToCenter();
 
       if(followRestoreTimer)clearTimeout(followRestoreTimer);
 
@@ -1077,6 +1118,7 @@ function initMap(){
         followViewport();
       },FOLLOW_USER_GRACE+150);
     };
+
     const container=(typeof map.getContainer==='function')?map.getContainer():null;
 
     if(container&&typeof container.addEventListener==='function'){
@@ -1084,7 +1126,10 @@ function initMap(){
         .forEach(ev=>container.addEventListener(ev,mark,{passive:true}));
     }
 
-    if(typeof map.on==='function')map.on('dragstart',mark);   // dragstart 只有用户拖动才会触发
+    if(typeof map.on==='function'){
+      map.on('dragstart',mark);       // 只有用户拖动才会触发
+      map.on('boxzoomstart',mark);    // Shift 框选缩放，同样是用户操作
+    }
 
   }catch(e){}
 })();

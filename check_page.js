@@ -817,9 +817,10 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/watchUserMapActions/.test(body) && /container\.addEventListener\(ev,mark/.test(body),
     '监听用户对地图的直接操作（拖动 / 滚轮 / 缩放按钮 / 双击 / 触摸）');
   chk(/map\.on\('dragstart',mark\)/.test(body), '拖动同样计入用户操作');
-  chk(!/zoomstart/.test(body.slice(body.indexOf('watchUserMapActions'),
-                                   body.indexOf('watchUserMapActions') + 900)),
-    '不用 zoomstart 判断用户操作（程序化 fitBounds 也会触发它，会把自动跟随误判成用户操作）');
+  // 注意用带引号的精确匹配：boxzoomstart 里也含 zoomstart 这几个字母，
+  // 早先这里用包含判断，一加 boxzoomstart 就误报了。
+  chk(!/'zoomstart'/.test(body),
+    '不用 Leaflet 的 zoomstart 判断用户操作（程序化 fitBounds 也会触发它，会把自动跟随误判成用户操作）');
   {
     const followBody = body.slice(body.indexOf('function followViewport('));
     const graceAt = followBody.indexOf('lastUserMapAction<FOLLOW_USER_GRACE');
@@ -835,6 +836,21 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   }
   chk(/followRestoreTimer=setTimeout\(/.test(body),
     '定时兜底：视频暂停时没有 tick，也能在宽限期后收回视野');
+
+  // 手动缩放 -> 跟随改为「居中」，保持用户当前缩放级别
+  chk(/function isZoomGesture\(ev\)/.test(body), '能判断「这次用户操作是缩放」');
+  chk(/type==='wheel'\|\|type==='dblclick'\|\|type==='boxzoomstart'/.test(body),
+    '滚轮 / 双击 / Shift 框选都算缩放');
+  chk(/closest\('\.leaflet-control-zoom'\)/.test(body), '点 +/− 缩放控件算缩放');
+  chk(/function switchFollowToCenter\(\)/.test(body) && /followModeSelect\.value='center'/.test(body),
+    '手动缩放后跟随切到「跟随·居中」');
+  chk(/followModeSelect\.value!=='fit'\)return;/.test(body),
+    '只在 fit 模式自动切换，不覆盖用户明确选的「不跟随」');
+  chk(/if\(isZoomGesture\(ev\)\)switchFollowToCenter\(\);/.test(body), '记用户操作时顺手切模式');
+  chk(/map\.on\('boxzoomstart',mark\)/.test(body), 'Shift 框选缩放也计入用户操作');
+  chk(/if\(restoring\|\|offX>0\.25/.test(body) && !/fitBounds/.test(
+      body.slice(body.indexOf("if(mode==='center')"), body.indexOf('// fit 模式'))),
+    '「居中」模式只平移不改缩放 —— 这正是「跟随当前缩放等级」');
   chk(/async function pickFolder\(quiet\)/.test(fn), 'pickFolder 支持 quiet（自动弹出时取消不报错）');
   chk(/if\(pickFolderBtn\)pickFolderBtn\.addEventListener\('click',\(\)=>pickFolder\(\)\)/.test(body),
     '手动点「选文件夹」用箭头函数包一层（否则事件对象会被当成 quiet，提示被吃掉）');
