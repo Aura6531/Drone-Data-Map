@@ -881,7 +881,7 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/basemapSelect\.dispatchEvent\(new Event\('change'\)\)/.test(body), '换 key 后重载底图瓦片');
   chk(/try\{refreshKeyState\(\)\}catch\(e\)\{\}/.test(body), '启动时同步按钮状态，且不拖垮初始化');
   chk(/\.key-btn\.ok/.test(html), '已配置时按钮变绿');
-  chk(/\.search-bar\{[^}]*flex:0 1 280px/.test(html), '搜索栏进一步缩短，给按钮腾位置');
+  chk(/\.search-bar\{[^}]*flex:1 1 auto/.test(html), '搜索栏自适应占满整行剩余宽度（底图/key 按钮固定在最右）');
   // 输入框下方直接给官网申请页（不再做指南 PDF）
   chk(/id="keyInput"[\s\S]{0,300}?<div class="key-link-row">[\s\S]{0,300}?authorization\.html/.test(html),
     '申请地址链接就在输入框下方');
@@ -1551,8 +1551,8 @@ chk(/\.map-tools button\.secondary\{height:36px/.test(html),
   // 要求「紧随右括号」会匹配不上（我上一版就栽在这儿）
   chk(/\.search-bar\{[^}]*margin:0 0 0 14px/.test(html),
     '搜索区不再是独立一行（并进标题行，左边留 14px 间距）');
-chk(/\.search-bar\{[^}]*flex:0 1 280px/.test(html),
-  '搜索区在标题与「底图」之间，基准宽度收窄到 280px');
+chk(/\.search-bar\{[^}]*flex:1 1 auto/.test(html),
+  '搜索区占满标题与「底图」之间的剩余宽度（宽度自适应，不再固定收窄）');
 chk(/\.search-bar input\{[^}]*min-width:120px/.test(html), '输入框最小宽度 120px（给右侧的底图/key 按钮腾位置）');
 chk(/\.search-bar input\{[^}]*height:36px/.test(html), '输入框高度收到 36px（原来整行时是 50px）');
 chk(/\.search-bar button\{height:36px/.test(html), '「搜索地名」按钮与输入框等高 36px');
