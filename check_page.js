@@ -1690,6 +1690,35 @@ console.log('\n=== 标记点报告（Word）===');
   chk(!/fldSimple|TOC \\o/.test(html), '页面里没有域代码目录那套东西（目录由服务端书签实现）');
 }
 
+console.log('\n=== 标记点列表：默认名与自动分栏 ===');
+{
+  chk(!/placeholder="例如/.test(html), '取点命名框不再写「例如：…」占位提示');
+  chk(/function nextMarkerName\(/.test(body), 'function nextMarkerName()（项目名-序号）');
+  chk(/videoMarkName\.value=nextMarkerName\(\)/.test(body),
+    '弹窗打开时预填顺序生成的默认名');
+  chk(/videoMarkName\.placeholder=''/.test(body), '预填的同时清掉占位文本');
+  chk(/if\(videoMarkName\.select\)videoMarkName\.select\(\)/.test(body),
+    '预填后整段选中 —— 一打字就是替换，不改就用默认');
+  chk(/\|\|nextMarkerName\(\)/.test(body), '名字被清空再确定时，仍回落到默认名');
+
+  chk(/function markerListLayout\(/.test(body) && /function applyMarkerLayout\(/.test(body),
+    'function markerListLayout() / applyMarkerLayout()（自动分栏）');
+  chk(/markerList\.style\.gridTemplateColumns/.test(body),
+    '把算出来的栏数写进 grid-template-columns');
+  chk(/classList\.toggle\('marker-compact',layout\.compact\)/.test(body),
+    '挤不下时切到 marker-compact（只留名称）');
+  chk(/applyMarkerLayout\(\);\s*\/\/ 栏宽变了/.test(body),
+    '窗口尺寸变化时重排列表');
+
+  chk(/\.marker-list\{[^}]*display:grid/.test(html), '列表用 grid（可多栏）');
+  chk(/\.marker-list\.marker-compact \.marker-num\{display:none\}/.test(html),
+    '密集模式隐藏经纬度，只保留名称');
+  chk(/\.marker-name\{flex:0 1 auto/.test(html),
+    '名称不再撑满整行（经纬度与 × 才能紧跟其后）');
+  chk(/\.marker-num\{flex:0 0 auto;text-align:left/.test(html),
+    '经纬度靠左对齐');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));

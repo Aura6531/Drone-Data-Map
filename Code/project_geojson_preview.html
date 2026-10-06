@@ -373,19 +373,26 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .marker-all{display:flex;align-items:center;gap:6px;margin:0;font-weight:700;font-size:13px;color:#334155}
 .marker-all input{width:15px;height:15px;margin:0}
 .marker-cols{margin-left:auto}
-.marker-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:6px}
+/* 标记点列表：默认一栏；数量多了由 JS 按可用宽度自动分栏
+   （markerListLayout：每栏最多 8 行，宽度够就并栏）；
+   栏太窄或点太多时降级成 .marker-compact —— 只留名称。 */
+.marker-list{flex:1;min-height:0;overflow:auto;display:grid;gap:6px 10px;align-content:start}
 .marker-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid #e5eaf2;
             border-radius:8px;background:#fff;font-size:13px;cursor:pointer}
 .marker-row:hover{background:#f8fbff;border-color:#bfdbfe}
 .marker-row.is-active{border-color:#f59e0b;background:#fffbeb}
 .marker-row input[type=checkbox]{width:15px;height:15px;flex:0 0 auto;margin:0}
-.marker-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-             font-weight:700;color:#0f172a}
-.marker-num{flex:0 0 auto;width:84px;text-align:right;color:#475569;
+/* 名称不撑满整行：经纬度与 × 紧跟名称之后，整体靠左 */
+.marker-name{flex:0 1 auto;min-width:0;max-width:58%;overflow:hidden;text-overflow:ellipsis;
+             white-space:nowrap;font-weight:700;color:#0f172a}
+.marker-num{flex:0 0 auto;text-align:left;color:#475569;
             font-family:ui-monospace,Consolas,monospace;font-size:12px}
 .marker-del{flex:0 0 auto;width:22px;height:22px;padding:0;line-height:1;border-radius:6px;
             background:#f1f5f9;color:#64748b;font-size:13px}
 .marker-del:hover{background:#fee2e2;color:#b91c1c}
+/* 密集模式：只保留名称列（栏能更窄，于是能分出更多栏） */
+.marker-list.marker-compact .marker-num{display:none}
+.marker-list.marker-compact .marker-name{max-width:78%}
 .marker-empty{font-size:13px;color:#94a3b8;line-height:1.7;padding:6px 2px}
 .marker-hint{font-size:12px;color:#64748b;line-height:1.6}
 /* 报告弹窗里的两个尺寸选项 */
@@ -633,10 +640,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
   <div class="mini-modal-box">
     <div class="mini-modal-title">标记此处</div>
     <div class="mini-modal-hint">
-      已算出画面这一点对应的地面位置（按平地假设）。给它起个名字，
-      会在地图上打一个点并常驻显示这个名称。
+      已经按「项目名-序号」填好了默认名字，直接点「确定」即可；也可以改成别的名字。
+      名称会在地图上常驻显示。
     </div>
-    <input id="videoMarkName" type="text" placeholder="例如：3 号排水口">
+    <input id="videoMarkName" type="text">
     <div class="row mini-modal-actions">
       <button id="videoMarkCancel" class="secondary">取消</button>
       <button id="videoMarkOk">确定</button>
@@ -2461,15 +2468,39 @@ function closeVideoMarkDialog(){
   if(videoMarkModal)videoMarkModal.style.display='none';
 }
 
+// 默认名字：项目名-序号。序号取当前项目里已有的最大序号 + 1，
+// 删掉中间几个也不会重号（例如已有 1、3 时下一个是 4）。
+function nextMarkerName(){
+  const base=String(projectSelect.value||'').trim()||'标记点';
+  const prefix=base+'-';
+
+  let max=0;
+
+  for(const m of projectMarkers){
+    const name=String(m.name||'');
+    if(name.indexOf(prefix)!==0)continue;
+
+    const tail=name.slice(prefix.length);
+    if(/^\d+$/.test(tail))max=Math.max(max,Number(tail));
+  }
+
+  return prefix+(max+1);
+}
+
 function openVideoMarkDialog(latlng,info){
   pendingMark=latlng;
   if(!videoMarkModal)return;
 
-  videoMarkName.value='';
-  videoMarkName.placeholder=
-    `例如：3 号排水口（距无人机约 ${Math.round(info.distance)} m）`;
+  // 预填一个顺序生成的默认名，并整段选中 —— 直接打字就是替换，
+  // 不改就是默认名（所以不再需要「例如：…」那种占位提示）
+  if(videoMarkName){
+    videoMarkName.value=nextMarkerName();
+    videoMarkName.placeholder='';
+    videoMarkName.focus();
+    if(videoMarkName.select)videoMarkName.select();
+  }
+
   videoMarkModal.style.display='flex';
-  videoMarkName.focus();
 }
 
 // 当前项目的标记点（从 project.json 的 markers 读进来 / 保存回去）
@@ -2530,7 +2561,7 @@ async function loadProjectMarkers(){
 function confirmVideoMark(){
   if(!pendingMark)return;
 
-  const name=(videoMarkName.value||'').trim()||'标记';
+  const name=(videoMarkName.value||'').trim()||nextMarkerName();
 
   addVideoMark(pendingMark,name);
 
@@ -2610,6 +2641,41 @@ function updateMarkerBar(){
   }
 }
 
+// 列表排布：数量少就一栏；多了按可用宽度分栏（每栏最多 8 行）；
+// 栏数还是不够就降级成「只留名称」—— 名称短，栏能更窄，于是能分出更多栏。
+function markerListLayout(count,width){
+  const ROWS_PER_COLUMN=8;
+  const FULL_MIN=260;      // 带经纬度时一栏的最小宽度
+  const COMPACT_MIN=150;   // 只留名称时一栏的最小宽度
+
+  const available=Math.max(0,Number(width)||0);
+  const need=Math.max(1,Math.ceil(count/ROWS_PER_COLUMN));
+
+  const fullColumns=Math.max(1,Math.floor(available/FULL_MIN));
+
+  let columns=Math.min(need,fullColumns);
+  let compact=false;
+
+  if(need>columns){
+    const compactColumns=Math.max(1,Math.floor(available/COMPACT_MIN));
+    if(compactColumns>columns){
+      compact=true;
+      columns=Math.min(need,compactColumns);
+    }
+  }
+
+  return {columns, compact};
+}
+
+function applyMarkerLayout(){
+  if(!markerList)return;
+
+  const layout=markerListLayout(projectMarkers.length, markerList.clientWidth||0);
+
+  markerList.style.gridTemplateColumns=`repeat(${layout.columns},minmax(0,1fr))`;
+  if(markerList.classList)markerList.classList.toggle('marker-compact',layout.compact);
+}
+
 function renderMarkerList(){
   if(!markerList)return;
 
@@ -2675,6 +2741,7 @@ function renderMarkerList(){
     markerList.appendChild(row);
   }
 
+  applyMarkerLayout();
   updateMarkerBar();
 }
 
@@ -3585,6 +3652,7 @@ window.addEventListener('resize',()=>{
   if(map)map.invalidateSize();
   applyVideoPanelLayout();
   refreshMapPipSize();
+  applyMarkerLayout();          // 栏宽变了，标记点列表可能要重排
   if(mapPip)mapPip.invalidateSize(false);
 });
 

@@ -38,6 +38,18 @@ function makeEl(tag) {
     title: '',
     value: '',
     dataset: {},
+    clientWidth: 0,
+    classList: {
+      _set: new Set(),
+      add(c) { this._set.add(c) },
+      remove(c) { this._set.delete(c) },
+      contains(c) { return this._set.has(c) },
+      toggle(c, on) {
+        if (on === undefined) { this._set.has(c) ? this._set.delete(c) : this._set.add(c) }
+        else if (on) { this._set.add(c) } else { this._set.delete(c) }
+        return this._set.has(c);
+      },
+    },
     appendChild(c) { this.children.push(c); return c; },
     addEventListener() {}, removeEventListener() {},
     focus() {}, select() {}, click() {},
@@ -61,6 +73,9 @@ const el = {
 
 const code = `
 ${extractFn('formatTime')}
+${extractFn('nextMarkerName')}
+${extractFn('markerListLayout')}
+${extractFn('applyMarkerLayout')}
 ${extractFn('sortedMarkers')}
 ${extractFn('selectedMarkers')}
 ${extractFn('updateMarkerBar')}
@@ -73,6 +88,7 @@ ${extractFn('markersTsv')}
 async ${extractFn('deleteMarkers')}
 ${extractFn('jumpToMarker')}
 return {
+  nextMarkerName, markerListLayout, applyMarkerLayout,
   sortedMarkers, selectedMarkers, updateMarkerBar, renderMarkerList, pickedForExport,
   markerKmlFileName, buildMarkersKml, markersTsv, kmlEscape, deleteMarkers, jumpToMarker,
   getMarkers: () => projectMarkers,
@@ -284,8 +300,7 @@ console.log('\n=== 7) 点一行：地图跳 16 级 + 视频跳到那一帧 ===')
   chk(calls.opened.length === 0, '没有视频信息的点不会去打开视频');
 }
 
-console.log('\n=== 8) 一个都没勾就点导出：页面提示 ===');
-{
+console.log('\n=== 8) 一个都没勾就点导出：页面提示 ===');{
   const r = fresh([A, B, C]);
   calls.alerts.length = 0;
   chk(r.api.pickedForExport() === null, '返回 null（调用方不再往下走）');
@@ -294,6 +309,65 @@ console.log('\n=== 8) 一个都没勾就点导出：页面提示 ===');
   r.checked().add('a');
   const picked = r.api.pickedForExport();
   chk(Array.isArray(picked) && picked.length === 1 && picked[0].id === 'a', '勾了就返回勾选的点');
+}
+
+console.log('\n=== 9) 右键取点的默认名字：项目名-序号 ===');
+{
+  const r = fresh([
+    { id: 'a', name: '东莞2-1', lat: 23.03, lng: 112.46, created: '2026-10-05T01:00:00Z' },
+    { id: 'b', name: '东莞2-3', lat: 23.04, lng: 112.47, created: '2026-10-05T02:00:00Z' },
+    { id: 'x', name: '随手起的名字', lat: 23.05, lng: 112.48, created: '2026-10-05T03:00:00Z' },
+  ]);
+  chk(r.api.nextMarkerName() === '东莞2-4',
+    '取已有的最大序号 + 1（删过中间号也不会重号）', r.api.nextMarkerName());
+
+  const empty = fresh([]);
+  chk(empty.api.nextMarkerName() === '东莞2-1', '还没有点时从 1 开始', empty.api.nextMarkerName());
+
+  const other = fresh([{ id: 'a', name: '别的项目-9', lat: 23.03, lng: 112.46, created: '' }]);
+  chk(other.api.nextMarkerName() === '东莞2-1', '不把别的项目名的点算进来', other.api.nextMarkerName());
+}
+
+console.log('\n=== 10) 列表排布：少则一栏 / 多了分栏 / 挤不下只留名称 ===');
+{
+  const r = fresh([]);
+  const cases = [
+    [5, 500, 1, false, '5 个点：一栏（每栏 8 行够放）'],
+    [8, 500, 1, false, '8 个点：还是一栏'],
+    [9, 300, 2, true, '9 个点 + 300px 宽：一栏放不下 -> 降级只留名称、并成 2 栏'],
+    [20, 1000, 3, false, '20 个点 + 1000px 宽：3 栏，且不用降级（每栏约 333px）'],
+    [40, 1000, 5, true, '40 个点 + 1000px 宽：要 5 栏，带经纬度只放得下 3 栏 -> 降级后 5 栏'],
+    [0, 500, 1, false, '没有点时一栏'],
+    [5, 0, 1, false, '量不到宽度时退回一栏（不报错）'],
+  ];
+  for (const [count, width, columns, compact, label] of cases) {
+    const got = r.api.markerListLayout(count, width);
+    chk(got.columns === columns && got.compact === compact, label,
+      `count=${count} width=${width} -> ${got.columns} 栏 compact=${got.compact}`);
+  }
+
+  // 真的作用到 DOM 上：网格列数写进 style，密集模式加类
+  el.markerList.clientWidth = 500;
+  const few = fresh([A, B, C]);
+  el.markerList.children = [];
+  el.markerList.classList._set.clear();
+  few.api.renderMarkerList();
+  chk(el.markerList.style.gridTemplateColumns === 'repeat(1,minmax(0,1fr))',
+    '5 个点以内不写多栏', el.markerList.style.gridTemplateColumns);
+  chk(!el.markerList.classList.contains('marker-compact'), '不降级时不加 marker-compact');
+
+  el.markerList.clientWidth = 300;
+  const many = fresh(Array.from({ length: 20 }, (_, i) => ({
+    id: 'm' + i, name: '点 ' + i, lat: 23 + i / 1000, lng: 112 + i / 1000, created: '',
+  })));
+  el.markerList.children = [];
+  many.api.renderMarkerList();
+  chk(el.markerList.classList.contains('marker-compact'), '点多了 + 栏窄：加上 marker-compact');
+  chk(el.markerList.style.gridTemplateColumns === 'repeat(2,minmax(0,1fr))',
+    '并成 2 栏', el.markerList.style.gridTemplateColumns);
+
+  el.markerList.clientWidth = 0;
+  el.markerList.classList._set.clear();
 }
 
 console.log(ok ? '\n结果: 全部通过' : '\n结果: 有失败');
