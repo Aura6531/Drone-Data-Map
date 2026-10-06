@@ -409,10 +409,12 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   }
 
   const count = sb.els.get('photoLayerCount');
-  chk(count && /3 张/.test(String(count.textContent)) && /2 个点/.test(String(count.textContent)),
-    '照片计数写到位（3 张 -> 2 个点）', count ? String(count.textContent) : '-');
-  chk(count && /1 个点由多张合并/.test(String(count.textContent)),
-    '合并了多少个点也说清楚（用户要一眼看出合过）', count ? String(count.textContent) : '-');
+  const countExtra = sb.els.get('photoLayerCountExtra');
+  chk(count && /3 张 → 2 个点/.test(String(count.textContent)),
+    '照片计数写到位（3 张 → 2 个点）', count ? String(count.textContent) : '-');
+  chk(countExtra && /1 处合并/.test(String(countExtra.textContent)),
+    '合并了几处单独一段（窄窗口时它能整段让位，不挤掉主信息）',
+    countExtra ? String(countExtra.textContent) : '-');
 
   const btn = sb.els.get('photoLayerBtn');
   chk(btn && btn._classes.has('off'), '照片图层默认关（不挡航迹）');

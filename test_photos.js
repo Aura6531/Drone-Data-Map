@@ -605,6 +605,16 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   chk(html.includes("/api/project/photos?name="), '接了后端的照片接口');
   chk(html.includes("/photo?path="), '图片走后端 /photo（不用绝对路径直接喂浏览器）');
   chk(/id="photoLayerBtn"/.test(html), '有照片图层开关');
+  // 开关必须在「底图 / 天地图key」那一行里（用户要求放到那里），而不是另起一行
+  const toolsRow = html.slice(html.indexOf('card-tools map-tools'), html.indexOf('</div>', html.indexOf('id="photoLayerCountExtra"')));
+  chk(/id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow) && /id="photoLayerBtn"/.test(toolsRow),
+    '照片图层开关与底图 / 天地图key 在同一行（.card-tools.map-tools）');
+  chk((html.match(/id="photoLayerCount"/g) || []).length === 1, '计数只有一处（没留重复元素）');
+  chk(/max-width:1700px\)\{[\s\S]{0,200}#photoLayerCountExtra\{display:none\}/.test(html),
+    '窄窗口时「· N 处合并」整段让位（不挤掉主信息）');
+  chk(/max-width:1280px\)\{[\s\S]{0,200}#photoLayerCount\{display:none\}/.test(html),
+    '更窄时连张数也让位，只留按钮（按钮是「要点的」，优先保住）');
+  chk(!/photoLayerCount\.textContent=total\s*\?[^;]*(->)/.test(html), '计数用「→」而不是 "->"');
   chk(/id="photoCard"/.test(html), '有地图下方的展示区容器');
   chk(/id="photoGallery"/.test(html), '展示区里有图片区');
   chk(/id="photoJump"/.test(html), '展示区里有「跳视频」那块');

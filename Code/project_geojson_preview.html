@@ -438,13 +438,38 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    照片图层 + 地图下方展示区
    ============================================================ */
 
-/* 地图卡片标题行的第三块：照片图层开关。与上面两块的间距略大一点，
-   把它和「地名搜索」分开，免得看着像搜索的一部分。
+/* 地图卡片标题行最右端：照片图层开关。
    写成 span + inline-flex：这一块不是 .card-tools（那套类名有静态断言在数个数），
    靠 inline-flex 自己排成一行。
-   选择器写成 .card-tools.map-tools .photo-tools 是为了压过第 393 行那条同优先级的规则。 */
-.card-tools.map-tools .photo-tools{display:inline-flex;align-items:center;gap:6px;
-                                   padding-left:10px;margin-left:2px;border-left:1px solid #e2e8f0}
+   .map-tools 本身是「不换行、控件不收缩」，一行挤不下时子元素会溢出卡片右边缘。
+   所以这里覆盖成：允许整行换行、控件也允许收缩；宽的时候照片图层这一组仍被
+   margin-left:auto 推到最右端（用户要求的位置），窄的时候它整组落到下一行，
+   而不是被挤出卡片。 */
+.card-tools.map-tools{flex-wrap:wrap;justify-content:flex-start}
+.card-tools.map-tools>*{min-width:0}
+.card-tools.map-tools .photo-tools{display:inline-flex;align-items:center;gap:8px;
+                                   margin-left:auto;flex-wrap:wrap}
+/* 计数只占自己那一格的宽度，不许把底图/key 挤走；两段都 nowrap，
+   补充信息（合并数）窄窗口时整段让位（见下面的媒体查询）。 */
+.card-tools.map-tools .photo-tools #photoLayerCount,
+.card-tools.map-tools .photo-tools #photoLayerCountExtra{white-space:nowrap}
+.card-tools.map-tools .photo-tools #photoLayerBtn{flex:0 0 auto}
+/* 窗口窄到放不下时，按重要性依次让位，保证「照片图层」按钮始终和「天地图key」
+   在同一行、且不出卡片。
+   实测（无头 Chrome 量过）：这一行里「底图」标签 + 下拉框 + key 按钮要占 ~280px，
+   照片图层按钮 70px，两段计数约 180px；而窗口一窄，中间的卡片本身也跟着窄 ——
+   视口 1800 时卡片约 573px（三段都放得下）、1600 时约 479px（放不下完整计数）。
+   所以阈值卡在：视口 <=1700 先舍「· 97 处合并」，<=1280 再舍「244 张 → 147 个点」，
+   只留按钮（计数是「看一眼」的信息，按钮是「要点的」，后者优先）。
+   注意：这里判的是**视口**宽度、不是卡片宽度（CSS 拿不到父元素宽度，
+   容器查询在当前 Chromium 上也还不敢用）—— 所以卡片特别窄时，
+   这一组会整组落到第二行，而不会溢出卡片。 */
+@media(max-width:1700px){
+  .card-tools.map-tools .photo-tools #photoLayerCountExtra{display:none}
+}
+@media(max-width:1280px){
+  .card-tools.map-tools .photo-tools #photoLayerCount{display:none}
+}
 
 /* 照片点：画成 SVG 圆形，fill 走 CSS 变量（实测=蓝、位置不准=橙）。
    刻意不用 emoji 当点 —— emoji 的尺寸与基线随字体变，多张排在一起会歪。 */
@@ -641,7 +666,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <span class="photo-tools">
           <button id="photoLayerBtn" class="toggle-btn off" type="button" aria-pressed="false"
                   title="照片图层：显示 / 隐藏（同一目标点的多张照片在地图上合并成一个点）">照片图层</button>
-          <span id="photoLayerCount" class="photo-sub"></span>
+          <!-- 计数分两段：「244 张 → 147 个点」是主信息，必须一直看得见；
+               「· 97 处合并」是补充，窗口窄时让位（媒体查询里隐藏），
+               免得整串被卡掉半截、连主信息都读不全。 -->
+          <span id="photoLayerCount" class="photo-sub"></span><span id="photoLayerCountExtra"
+                class="photo-sub"></span>
         </span>
       </div>
     </div>
@@ -1004,6 +1033,7 @@ const hitDetail=document.getElementById('hitDetail');
 // 照片图层开关 + 地图下方的照片展示区（容器已写死在 HTML 里，这里只取引用）
 const photoLayerBtn=document.getElementById('photoLayerBtn');
 const photoLayerCount=document.getElementById('photoLayerCount');
+const photoLayerCountExtra=document.getElementById('photoLayerCountExtra');
 const photoCard=document.getElementById('photoCard');
 const photoTitle=document.getElementById('photoTitle');
 const photoSub=document.getElementById('photoSub');
@@ -3905,6 +3935,7 @@ function updatePhotoLayerUI(){
 
   if(!photoCounts){
     photoLayerCount.textContent='';
+    if(photoLayerCountExtra)photoLayerCountExtra.textContent='';
     return;
   }
 
@@ -3912,9 +3943,13 @@ function updatePhotoLayerUI(){
   const groups=Number(photoCounts.groups||0);
   const merged=Number(photoCounts.merged||0);
 
-  photoLayerCount.textContent=total
-    ? `${total} 张 -> ${groups} 个点${merged?`（${merged} 个点由多张合并）`:''}`
-    : '';
+  // 主信息：张数与目标点数。用「→」一眼看得懂，也不用解释。
+  photoLayerCount.textContent=total?`${total} 张 → ${groups} 个点`:'';
+  // 补充信息：合并了几处。单独一段是为了窄窗口能整段让位（见媒体查询），
+  // 不把它塞进主信息里，免得一行被卡掉半截、连主信息都读不全。
+  if(photoLayerCountExtra){
+    photoLayerCountExtra.textContent=(total&&merged)?`· ${merged} 处合并`:'';
+  }
 }
 
 function applyPhotoLayerVisibility(){
