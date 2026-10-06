@@ -3,6 +3,7 @@ import hashlib
 import io
 import math
 import os
+import sys
 import threading
 import ctypes
 import tkinter as tk
@@ -61,11 +62,49 @@ enable_windows_dpi_awareness()
 
 
 # ============================================================
-# 基础目录
+# 基础目录（打包成 exe 后不能再用 __file__ 推）
 # ============================================================
+#
+# 两种运行方式：
+#   1) 源码直接跑：代码在 Code\ 下，数据放在它的上一级（仓库根目录）
+#   2) 打包成 exe 后：__file__ 指向包内部（PyInstaller 单文件模式更是每次启动都变的
+#      【临时目录】）—— 数据必须改用 **exe 所在目录**，否则用户导入的数据、标记点
+#      会写进临时目录，一关程序就全没了。这是打包最容易翻车的一处。
+FROZEN = bool(getattr(sys, "frozen", False))
 
-CODE_DIR = Path(__file__).resolve().parent
-TEST_DIR = CODE_DIR.parent
+if FROZEN:
+    BASE_DIR = Path(sys.executable).resolve().parent
+    CODE_DIR = Path(getattr(sys, "_MEIPASS", str(BASE_DIR)))   # 只读资源（页面 / ffmpeg）
+else:
+    CODE_DIR = Path(__file__).resolve().parent
+    BASE_DIR = CODE_DIR.parent
+
+
+def _is_writable(path):
+    """能不能在这里建文件？装到 Program Files 这类只读目录时要兜底。"""
+
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+
+    except OSError:
+        return False
+
+
+if _is_writable(BASE_DIR):
+    DATA_DIR = BASE_DIR
+
+else:
+    # 兜底：数据落到用户目录（启动横幅里会打印实际位置）
+    DATA_DIR = Path(
+        os.environ.get("LOCALAPPDATA") or Path.home()
+    ) / "无人机巡查数据地图"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+TEST_DIR = DATA_DIR        # 旧名字：代码里到处在用，语义就是"数据根目录"
 
 PROJECT_DIR = TEST_DIR / "Project"
 
@@ -97,12 +136,15 @@ TIANDITU_TILE_SUBDOMAINS = 8
 # ------------------------------------------------------------
 
 TIANDITU_KEY = (os.environ.get("TIANDITU_KEY") or "").strip()
-TIANDITU_KEY_FILE = CODE_DIR / "tianditu_key.txt"
+# key 文件放在数据目录（打包后就是 exe 同级，安装向导的结束页写这里）。
+# 刻意**不做**"包内自带一份"的回退：那样安装目录里残留的旧文件会盖过用户填的，
+# 测试也没法构造"没有 key"的场景。
+TIANDITU_KEY_FILE = DATA_DIR / "tianditu_key.txt"
 TIANDITU_SEARCH_URL = "https://api.tianditu.gov.cn/v2/search"
 # 地名搜索的范围框（minLon,minLat,maxLon,maxLat）。用全国范围，
 # 这样搜索不受当前地图视野限制。
 TIANDITU_MAP_BOUND = "73,3,135,54"
-GEOCODE_CACHE_DIR = CODE_DIR / "geocode_cache"
+GEOCODE_CACHE_DIR = DATA_DIR / "geocode_cache"      # 可写目录（打包后包内是只读的）
 GEOCODE_CACHE_SECONDS = 30 * 24 * 60 * 60
 GEOCODE_MEMORY = {}
 GEOCODE_MEMORY_LOCK = threading.Lock()
@@ -173,6 +215,7 @@ DRONE_NOSE_PX = 24                     # 虚线起点＝机头；与箭头 size 
 # ------------------------------------------------------------
 
 VENDOR_DIR = TEST_DIR / "vendor"
+VENDOR_DIR_BUNDLED = CODE_DIR / "vendor"     # 打包时随包带一份，断网也能用
 
 VENDOR_CONTENT_TYPES = {
     ".js": "application/javascript; charset=utf-8",
@@ -874,6 +917,15 @@ def analyze_project_media(project_name):
 
 def find_ffprobe():
 
+    # 随包目录优先：打包后 ffmpeg 就在程序目录/包内，装了 exe 的机器不一定另装 ffmpeg
+    for bundled in (
+        DATA_DIR / "ffmpeg" / "ffprobe.exe",
+        CODE_DIR / "ffmpeg" / "ffprobe.exe",
+    ):
+
+        if bundled.exists():
+            return str(bundled)
+
     configured = shutil.which("ffprobe")
 
     if configured:
@@ -900,7 +952,15 @@ def find_ffprobe():
 
 
 def find_ffmpeg():
-    """找 ffmpeg：PATH 优先，其次 ffprobe 同目录，最后常见安装路径。"""
+    """找 ffmpeg：**随包目录优先**，其次 PATH，再 ffprobe 同目录，最后常见安装路径。"""
+
+    for bundled in (
+        DATA_DIR / "ffmpeg" / "ffmpeg.exe",
+        CODE_DIR / "ffmpeg" / "ffmpeg.exe",
+    ):
+
+        if bundled.exists():
+            return str(bundled)
 
     configured = shutil.which("ffmpeg")
 
@@ -5065,19 +5125,29 @@ class ProjectManagerHandler(
 
             name = path[len("/vendor/"):]
 
-            # 只允许目录下的单层文件名，挡掉路径穿越
+            # 允许单层文件名，或一层子目录（Leaflet 的 CSS 会引用 images/xxx.png）。
+            # 其余一律挡掉，防路径穿越。
             if (
                 not name
-                or "/" in name
-                or "\\" in name
                 or ".." in name
+                or "\\" in name
+                or not re.fullmatch(r"[A-Za-z0-9_.\-]+(/[A-Za-z0-9_.\-]+)?", name)
             ):
                 self.send_error(404, "Not found")
                 return
 
-            target = VENDOR_DIR / name
+            target = None
 
-            if not target.is_file():
+            # 数据目录里的 vendor 优先（用户可自行替换），其次包内自带的那份
+            for root in (VENDOR_DIR, VENDOR_DIR_BUNDLED):
+
+                candidate = root / name
+
+                if candidate.is_file():
+                    target = candidate
+                    break
+
+            if target is None:
                 # 前端检测到本地缺失会自动退回 CDN，所以这里安静地 404
                 self.send_error(404, "Not found")
                 return
@@ -5886,6 +5956,21 @@ class ProjectManagerHandler(
         path = urlparse(
             self.path
         ).path
+
+        # 优雅退出：托盘「退出」菜单、以及托盘不可用时的手动出口都用它。
+        # 只认本机（服务本来就只绑 127.0.0.1），并且用 POST 触发，避免被网页
+        # 上一个 <img> 之类的 GET 顺手点到。
+        if path == "/api/shutdown":
+
+            json_response(self, {"ok": True, "message": "正在退出……"})
+
+            # 不能在处理请求的线程里直接 shutdown（会把自己等死），丢给后台线程
+            def _later():
+                time.sleep(0.3)
+                SHUTDOWN_REQUEST.set()
+
+            threading.Thread(target=_later, daemon=True).start()
+            return
 
         if (
             path
@@ -6734,40 +6819,242 @@ def existing_server_hint(host, port, timeout=2):
 
 
 # ============================================================
+# 打包成 exe 之后的运行时外壳：端口自适应 / 单实例 / 自动开界面 / 托盘图标
+# ============================================================
+
+APP_TITLE = "无人机巡查数据地图"
+APP_PAGE = "project_geojson_preview.html"
+
+# 退出信号：托盘的「退出」菜单、/api/shutdown 都设它
+SHUTDOWN_REQUEST = threading.Event()
+
+
+def probe_running_server(host, port, timeout=2):
+    """这个端口上是不是已经有一个「我们自己的」服务在跑？—— 单实例判断用。"""
+
+    try:
+        with urllib.request.urlopen(
+            f"http://{host}:{port}/api/config",
+            timeout=timeout
+        ) as response:
+            body = response.read(4096).decode("utf-8", "replace")
+
+    except Exception:
+        return False
+
+    # 认指纹：这个接口会返回天地图与报告能力
+    return "tianditu" in body and "report" in body
+
+
+def pick_free_port(host, preferred, tries=12):
+    """从 preferred 起找一个能**独占**绑定的端口，返回 (端口, 偏移)。
+
+    **不要**设 SO_REUSEADDR：Windows 上它允许两个进程绑同一端口，
+    「页面是新的、接口是旧的」那种随机抢答就会回来。
+    """
+
+    import socket
+
+    for offset in range(tries):
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+
+            try:
+                probe.bind((host, preferred + offset))
+                return preferred + offset, offset
+
+            except OSError:
+                continue
+
+    return None, tries
+
+
+def open_app_window(url):
+    """用 Edge/Chrome 的「应用窗口」模式打开：没有地址栏，看着像桌面程序。
+
+    找不到就退回系统默认浏览器；都失败也不影响服务本身。返回用了哪个（给日志用）。
+    """
+
+    import webbrowser
+
+    program_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+    program_files_x86 = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+
+    candidates = [
+        Path(program_files_x86) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+        Path(program_files) / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+        Path(program_files) / "Google" / "Chrome" / "Application" / "chrome.exe",
+        Path(program_files_x86) / "Google" / "Chrome" / "Application" / "chrome.exe",
+    ]
+
+    if local_appdata:
+        candidates.append(
+            Path(local_appdata) / "Google" / "Chrome" / "Application" / "chrome.exe"
+        )
+
+    for browser in candidates:
+
+        if not browser.is_file():
+            continue
+
+        try:
+            subprocess.Popen([str(browser), f"--app={url}"])
+            return f"{browser.name} 应用窗口"
+
+        except OSError:
+            continue
+
+    try:
+        webbrowser.open(url)
+        return "系统默认浏览器"
+
+    except Exception:
+        return None
+
+
+def tray_icon_image():
+    """托盘图标：优先用随包的 UAVMap.ico，找不到就现画一个（保证托盘起得来）。"""
+
+    try:
+        from PIL import Image
+
+        for candidate in (
+            CODE_DIR / "UAVMap.ico",
+            DATA_DIR / "UAVMap.ico",
+            TEST_DIR / "packaging" / "UAVMap.ico",
+        ):
+
+            if candidate.is_file():
+
+                with Image.open(candidate) as opened:
+                    return opened.convert("RGBA").copy()
+
+        from PIL import ImageDraw
+
+        image = Image.new("RGBA", (64, 64), (37, 99, 235, 255))
+        ImageDraw.Draw(image).ellipse((16, 16, 48, 48), outline=(255, 255, 255, 255), width=6)
+
+        return image
+
+    except Exception:
+        return None
+
+
+def start_tray(open_callback, restart_callback, quit_callback):
+    """起托盘图标（打包后才启用）。返回 icon 对象，起不来就返回 None。"""
+
+    try:
+        import pystray
+    except Exception:
+        return None
+
+    image = tray_icon_image()
+
+    if image is None:
+        return None
+
+    def _open(icon, item):
+        open_callback()
+
+    def _folder(icon, item):
+
+        try:
+            os.startfile(str(DATA_DIR))     # Windows 专用：打开资源管理器
+
+        except Exception:
+            pass
+
+    def _restart(icon, item):
+        restart_callback()
+
+    def _quit(icon, item):
+        quit_callback()
+        icon.stop()
+
+    menu = pystray.Menu(
+        pystray.MenuItem("打开界面", _open, default=True),
+        pystray.MenuItem("打开数据目录", _folder),
+        pystray.MenuItem("重启服务", _restart),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("退出", _quit),
+    )
+
+    return pystray.Icon("UAVMap", image, APP_TITLE, menu)
+
+
+# ============================================================
 # 启动服务器
 # ============================================================
 
-if __name__ == "__main__":
+def setup_frozen_logging():
+    """打包后没有控制台：把输出重定向到数据目录的「运行日志.txt」，出问题好查。"""
+
+    if not FROZEN:
+        return None
+
+    try:
+        stream = (DATA_DIR / "运行日志.txt").open("a", encoding="utf-8", buffering=1)
+
+    except OSError:
+        return None
+
+    sys.stdout = stream
+    sys.stderr = stream
+
+    print()
+    print("=" * 60)
+    print("启动时间：", time.strftime("%Y-%m-%d %H:%M:%S"))
+
+    return stream
+
+
+def main():
 
     PROJECT_DIR.mkdir(
         parents=True,
         exist_ok=True
     )
 
-    HOST = "127.0.0.1"
+    host = "127.0.0.1"
 
-    # 端口默认 8000；想跑在别的端口（例如已经有旧服务占着 8000、想先另起一个）
-    # 就设环境变量 UAV_MAP_PORT。页面里所有请求都是相对路径，换端口不用改前端。
+    # 端口默认 8000；想固定用别的端口就设环境变量 UAV_MAP_PORT
+    # （页面里所有请求都是相对路径，换端口不用改前端）
     try:
-        PORT = int(os.environ.get("UAV_MAP_PORT") or 8000)
+        base_port = int(os.environ.get("UAV_MAP_PORT") or 8000)
 
     except ValueError:
-        PORT = 8000
+        base_port = 8000
 
-    # 绑端口之前先看有没有旧服务占着（绑上之后再问就问不出来了，两个都能绑成功）
-    port_hint = existing_server_hint(HOST, PORT)
+    # 已经有一个自己在跑 → 不重复起服务，直接把界面打开（连点两次快捷方式的情况）
+    if probe_running_server(host, base_port) and not os.environ.get("UAV_MAP_FORCE_NEW"):
+        print(f"{APP_TITLE}：{host}:{base_port} 上已经在运行，直接打开界面。")
 
-    server = ThreadingHTTPServer(
-        (
-            HOST,
-            PORT
-        ),
-        ProjectManagerHandler
-    )
+        if not os.environ.get("UAV_MAP_NO_BROWSER"):
+            open_app_window(f"http://{host}:{base_port}/{APP_PAGE}")
+
+        return
+
+    port, offset = pick_free_port(host, base_port)
+
+    if port is None:
+        print(f"端口 {base_port}~{base_port + 11} 都被占用了，服务起不来。")
+        return
+
+    if offset:
+        print(f"端口 {base_port} 被占用，改用 {port}。")
+
+    # 绑之前再看一眼有没有旧服务（绑上之后就问不出来了）
+    port_hint = existing_server_hint(host, port)
+
+    server = ThreadingHTTPServer((host, port), ProjectManagerHandler)
+
+    url = f"http://{host}:{port}/{APP_PAGE}"
+    state = {"server": server, "port": port}
 
     print()
     print("=" * 60)
-    print("无人机巡查项目管理")
+    print(APP_TITLE)
     print("=" * 60)
     print()
 
@@ -6779,19 +7066,118 @@ if __name__ == "__main__":
         ("GeoJSON 轨迹预览", "project_geojson_preview.html"),
         ("3D 轨迹预览", "project_geo3d_preview.html"),
     ):
-        print(f"{page_label}： http://{HOST}:{PORT}/{page_name}")
+        print(f"{page_label}： http://{host}:{port}/{page_name}")
 
     print()
-    print("按 Ctrl+C 停止服务器")
+    print(f"数据目录： {DATA_DIR}")
+    print(f"ffmpeg ： {find_ffmpeg() or '（没找到：抽帧与 4K 转码会失败）'}")
     print()
 
     if port_hint:
         print(port_hint)
         print()
 
+    def open_url():
+        where = open_app_window(url)
+        print(f"已用{where or '（没找到浏览器）'}打开界面。")
+
+    def restart():
+        old = state["server"]
+        print("重启服务……")
+
+        try:
+            old.shutdown()
+            old.server_close()
+
+        except Exception:
+            pass
+
+        fresh = ThreadingHTTPServer((host, state["port"]), ProjectManagerHandler)
+        state["server"] = fresh
+        threading.Thread(target=fresh.serve_forever, daemon=True).start()
+        print("服务已重启。")
+
+    def _quit_callback():
+        SHUTDOWN_REQUEST.set()
+
+    # 托盘要跑在**主线程**（Windows 的要求），所以服务放到后台线程里。
+    # - 源码直跑默认不起托盘（会打扰开发），UAV_MAP_TRAY=1 打开；
+    # - UAV_MAP_NO_TRAY=1 强制不起（受限桌面里创建托盘窗口会被系统拒掉，
+    #   那种环境下要么这里退让，要么整个进程被连带干掉）。
+    want_tray = (FROZEN or os.environ.get("UAV_MAP_TRAY")) and not os.environ.get("UAV_MAP_NO_TRAY")
+    icon = None
+
+    if want_tray:
+        icon = start_tray(open_url, restart, _quit_callback)
+
+    if icon is not None:
+
+        def _watch_quit():
+            SHUTDOWN_REQUEST.wait()
+
+            try:
+                state["server"].shutdown()
+
+            except Exception:
+                pass
+
+            try:
+                icon.stop()
+
+            except Exception:
+                pass
+
+        threading.Thread(target=state["server"].serve_forever, daemon=True).start()
+        threading.Thread(target=_watch_quit, daemon=True).start()
+
+        if not os.environ.get("UAV_MAP_NO_BROWSER"):
+            open_url()
+
+        print("已最小化到右下角托盘：右键图标可打开界面 / 打开数据目录 / 重启服务 / 退出。")
+        print()
+
+        try:
+            icon.run()
+
+        except Exception as e:
+            # 托盘起不来（受限桌面、权限不足……）**不能连带把程序弄死**：
+            # 退回前台服务，日志里写明怎么退出。
+            print(f"⚠ 托盘图标不可用（{e}）；已改为前台运行。")
+            print("   退出方式：托盘可用时点托盘菜单「退出」，否则关掉本进程或调 /api/shutdown。")
+            print()
+
+            try:
+                threading.Thread(
+                    target=state["server"].serve_forever,
+                    daemon=True
+                ).start()
+
+                SHUTDOWN_REQUEST.wait()
+
+            except KeyboardInterrupt:
+                pass
+
+            finally:
+                state["server"].server_close()
+
+            return
+
+        print("已退出。")
+        return
+
+    if FROZEN and not os.environ.get("UAV_MAP_NO_BROWSER"):
+        open_url()
+
+    print("按 Ctrl+C 停止服务器")
+    print()
+
+    threading.Thread(target=state["server"].serve_forever, daemon=True).start()
+
     try:
 
-        server.serve_forever()
+        # 等到「退出」信号（托盘菜单 / /api/shutdown / Ctrl+C）
+        while not SHUTDOWN_REQUEST.wait(0.4):
+            pass
 
     except KeyboardInterrupt:
 
@@ -6800,4 +7186,15 @@ if __name__ == "__main__":
 
     finally:
 
-        server.server_close()
+        try:
+            state["server"].shutdown()
+
+        except Exception:
+            pass
+
+        state["server"].server_close()
+
+
+if __name__ == "__main__":
+    setup_frozen_logging()
+    main()

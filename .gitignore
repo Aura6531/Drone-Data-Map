@@ -44,6 +44,18 @@ __pycache__/
 *.pyc
 *.log
 *.tmp
+
+# —— ⑥ 打包产物：都是可重新下载/重新生成的，绝不进仓库 ——
+# （2026-10-06 手滑把 build_libs 和 dist 提交过一次，见交接说明的教训记录）
+packaging/build_libs/
+packaging/dist/
+packaging/build/
+packaging/payload/
+packaging/_wheels/
+packaging/_tools/
+packaging/_tmp/
+packaging/installer/
+packaging/_debug_out.txt
 Thumbs.db
 desktop.ini
 
