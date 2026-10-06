@@ -203,8 +203,17 @@ def ground_target(meta, ground_elevation=None, prefer_lrf=True):
         return None
 
     lrf = meta.get("lrf") or {}
-    slant = lrf.get("distance") if prefer_lrf else None
-    target_abs = lrf.get("abs_alt") if prefer_lrf else None
+
+    # 只有测距状态正常才算"有激光数据"。
+    # 实测发现 LRFStatus 取值只有 Normal / TooFar 两种：
+    #   Normal = 有效回波（此时一定有斜距与目标点）
+    #   TooFar = 超出量程（没有斜距、没有目标点，但其它字段可能残留数值）
+    # 残留值不是一次有效测量，拿它当"当地地面高程"会算出错误的中心点，所以必须挡住。
+    lrf_status = (lrf.get("status") or "").strip()
+    lrf_valid = (lrf_status == "Normal") if lrf_status else bool(lrf.get("distance"))
+
+    slant = lrf.get("distance") if (prefer_lrf and lrf_valid) else None
+    target_abs = lrf.get("abs_alt") if (prefer_lrf and lrf_valid) else None
     drone_abs = meta.get("alt_absolute")
     relative = meta.get("alt_relative")
 
@@ -277,7 +286,12 @@ def haversine(a_lat, a_lon, b_lat, b_lon):
 def main():
     root = pathlib.Path(__file__).resolve().parent.parent
 
-    photos = sorted((root / "Data").glob("**/*.JPG")) + sorted((root / "Data").glob("**/*.jpg"))
+    # 注意：Windows 上 glob 不区分大小写，"*.JPG" 与 "*.jpg" 会匹配同一批文件，
+    # 两个模式相加会重复计算（这里曾经把 244 张算成 488 张）。用集合按绝对路径去重。
+    photos = sorted({
+        p.resolve()
+        for p in list((root / "Data").glob("**/*.JPG")) + list((root / "Data").glob("**/*.jpg"))
+    })
 
     if not photos:
         raise SystemExit("Data/ 下没有 JPG 可读")
