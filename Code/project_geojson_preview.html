@@ -1061,7 +1061,22 @@ function initMap(){
   try{
     if(!map)return;
 
-    const mark=()=>{lastUserMapAction=Date.now()};
+    const mark=()=>{
+      lastUserMapAction=Date.now();
+
+      // 记一笔「用户接管过地图」：宽限期一到，主动把跟随视野收回来一次。
+      // 只靠 followViewport 的安全区判断不够 —— 用户缩得比较远时，飞机仍在安全区内，
+      // 地图会一直停在他放的位置，表现就是「松手后不跟回来，等飞机飞出边界才动」。
+      followRestorePending=true;
+
+      if(followRestoreTimer)clearTimeout(followRestoreTimer);
+
+      // 定时兜底：视频暂停时没有 tick，仅靠 tick 驱动就永远收不回来
+      followRestoreTimer=setTimeout(()=>{
+        followRestoreTimer=null;
+        followViewport();
+      },FOLLOW_USER_GRACE+150);
+    };
     const container=(typeof map.getContainer==='function')?map.getContainer():null;
 
     if(container&&typeof container.addEventListener==='function'){
@@ -1844,6 +1859,8 @@ const FOLLOW_USER_GRACE=5000;    // 用户手动拖动/缩放后，暂停自动�
 
 // 用户最后一次直接操作地图的时间（跟随逻辑据此先把控制权还给用户）
 let lastUserMapAction=0;
+let followRestorePending=false;   // 用户接管过地图：宽限期一到就把跟随视野收回来一次
+let followRestoreTimer=null;
 
 // 取一段航迹上的点，抽稀到 maxSamples 个以内
 function trackLatLngs(track,fromIndex,toIndex,maxSamples){
@@ -1882,8 +1899,12 @@ function followViewport(){
   const drone=clip.droneLatLng;
   if(!drone)return;
 
-  // 用户刚动过地图：5 秒内不抢。他停手满 5 秒后，自动跟随再恢复。
+  // 用户刚动过地图：宽限期内不抢，让他安心看
   if(Date.now()-lastUserMapAction<FOLLOW_USER_GRACE)return;
+
+  // 宽限到了，而他接管过地图：这一次不看安全区，直接把跟随视野收回来
+  const restoring=followRestorePending;
+  if(restoring)followRestorePending=false;
 
   // 飞机固定在中心：只在地图中心偏得较多时平移，缩放不动
   if(mode==='center'){
@@ -1891,12 +1912,12 @@ function followViewport(){
     const p=map.latLngToContainerPoint(drone);
     const offX=Math.abs(p.x-size.x/2)/(size.x/2);
     const offY=Math.abs(p.y-size.y/2)/(size.y/2);
-    if(offX>0.25||offY>0.25)map.panTo(drone,{animate:true,duration:0.3});
+    if(restoring||offX>0.25||offY>0.25)map.panTo(drone,{animate:true,duration:0.3});
     return;
   }
 
   // fit 模式
-  if(Date.now()-(clip.lastFollowAt||0)<FOLLOW_MIN_INTERVAL)return;
+  if(!restoring&&Date.now()-(clip.lastFollowAt||0)<FOLLOW_MIN_INTERVAL)return;
 
   // 触发条件只看“必须始终可见”的两个点：飞机 + 目标点。
   // 不能把前方航迹也算进触发条件——那段窗口一直在前移，会永远顶着
@@ -1911,6 +1932,7 @@ function followViewport(){
   const inner=map.getBounds().pad(-FOLLOW_MARGIN);
 
   if(
+    !restoring&&
     inner.contains(coreBounds.getSouthWest())&&
     inner.contains(coreBounds.getNorthEast())
   ){

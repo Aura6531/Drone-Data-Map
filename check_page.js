@@ -827,7 +827,14 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
        && graceAt < followBody.indexOf('map.panTo(drone')
        && graceAt < followBody.indexOf('map.fitBounds(target'),
       '宽限期判断排在「居中平移」与「重设视野」之前（center 与 fit 两种模式都受保护）');
+    chk(/const restoring=followRestorePending;/.test(followBody),
+      '宽限到期后主动收回跟随视野（而不是只恢复安全区判断）');
+    chk(/if\(!restoring&&/.test(followBody) && followBody.indexOf('!restoring&&') < followBody.indexOf('inner.contains'),
+      '收回这一次跳过「装得下就一动不动」，否则缩远了永远不跟回来');
+    chk(/if\(restoring\|\|offX>0\.25/.test(followBody), 'center 模式同样会被收回视野');
   }
+  chk(/followRestoreTimer=setTimeout\(/.test(body),
+    '定时兜底：视频暂停时没有 tick，也能在宽限期后收回视野');
   chk(/async function pickFolder\(quiet\)/.test(fn), 'pickFolder 支持 quiet（自动弹出时取消不报错）');
   chk(/if\(pickFolderBtn\)pickFolderBtn\.addEventListener\('click',\(\)=>pickFolder\(\)\)/.test(body),
     '手动点「选文件夹」用箭头函数包一层（否则事件对象会被当成 quiet，提示被吃掉）');
