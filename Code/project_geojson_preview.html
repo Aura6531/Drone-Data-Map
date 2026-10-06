@@ -3663,10 +3663,29 @@ function photoFileTime(name){
   return Number.isFinite(t)?t:null;
 }
 
-// 组内第一张照片的文件名（后端 group_photos 已按变焦->广角->热成像排好，
-// 所以第一张就是「该用哪张当大图」的那张）
+// 组内当大图的那张：**可见光变焦 > 可见光广角 > 热成像**（用户 2026-10-07 定的规则）。
+// 后端 group_photos 已经按同一顺序排过，这里再自己挑一次是**防御**：
+// 万一后端顺序变了、或者数据是别处拼的，界面「有 V 就把 V 放最上面」这条也不会破。
+// 认不出的相机排最后；挑法稳定（同分时保留原顺序，取第一个）。
+const PHOTO_CAMERA_RANK={ZoomCamera:0,WideCamera:1,InfraredCamera:2};
+
+function photoCameraRank(m){
+  const name=String((m&&m.camera)||'');
+  const r=PHOTO_CAMERA_RANK[name];
+  return r===undefined?9:r;
+}
+
 function photoLeadMember(g){
-  return (g&&g.members&&g.members[0])||null;
+  const members=(g&&g.members)||[];
+  if(!members.length)return null;
+
+  let best=members[0];
+
+  for(const m of members){
+    if(photoCameraRank(m)<photoCameraRank(best))best=m;
+  }
+
+  return best;
 }
 
 // 组的时刻文本
@@ -4213,10 +4232,10 @@ function photoGalleryHtml(group){
   const members=Array.isArray(group.members)?group.members:[];
   if(!members.length)return '<div class="photo-empty">这一组没有可展示的照片。</div>';
 
-  // 后端已经按「变焦 -> 广角 -> 热成像」排好序了，这里不再重排：
-  // 前端再排一次，两边规则一旦漂移就会不一致。
-  const lead=members[0];
-  const rest=members.slice(1);
+  // 大图 = 可见光变焦 > 可见光广角 > 热成像（photoLeadMember 里定的规则），
+  // 其余按后端给的顺序当小图。
+  const lead=photoLeadMember(group);
+  const rest=members.filter(m=>m!==lead);
   const leadWarn=String(lead.accuracy||'')!=='实测';
 
   const leadCaption=
@@ -4264,6 +4283,29 @@ function photoGalleryHtml(group){
 //     原来 6 个 `DJI_20260924101516_0001_T.MP4` 会长到 205px、换 4 行，
 //     把上面的照片挤到只剩 130px；
 //   * 说明压成两行短句，不再逐条换行。
+// 候选排序：把「和这一组大图同一路」的那条提到最前面。
+// 大图本身就是按「可见光变焦 > 可见光广角 > 热成像」挑的，所以它对应的那路视频
+// 也该排第一 —— 否则会出现「大图是可见光，底下却写最接近的是热成像视频」这种矛盾
+// （用户 2026-10-07 指出的「点了也是优先跳转到它」）。
+// 同一路里若有多段（不同架次），保持它们原来的先后（原顺序 = 画面内/时间差更优的在前）。
+function orderMatchesForLead(matches,group){
+  const list=Array.isArray(matches)?matches:[];
+
+  if(list.length<2)return list;
+
+  const tag=streamTagOf(photoLeadName(group),/\.(JPG|JPEG|PNG)$/i);
+
+  if(!tag)return list;
+
+  const same=list.filter(m=>streamTagOf(m.relativePath,/\.(MP4|MOV)$/i)===tag);
+
+  if(!same.length)return list;
+
+  const other=list.filter(m=>streamTagOf(m.relativePath,/\.(MP4|MOV)$/i)!==tag);
+
+  return same.concat(other);
+}
+
 function photoJumpHtml(group,matches){
   if(!group)return '';
 
@@ -4392,6 +4434,12 @@ async function selectPhotoGroup(index){
 
     if(photoMatches)photoMatches.set(index,matches);
   }
+
+  // 把「和大图同一路」的那条排到最前（按钮顺序、以及下面那句「最接近」都跟着它）。
+  // 排完再缓存/使用同一个数组：按钮上的 data-photo-match 就是它的下标，
+  // 两边必须是同一个顺序。
+  matches=orderMatchesForLead(matches,group);
+  if(photoMatches)photoMatches.set(index,matches);
 
   if(photoSelected!==index)return;
 

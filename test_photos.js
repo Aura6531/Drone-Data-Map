@@ -47,12 +47,16 @@ function extractConst(name) {
 const PURE = [
   // 相机与文案
   'photoCameraLabel', 'photoCameraClass', 'photoTimeText', 'photoClockText',
-  'photoLeadMember', 'photoGroupTimeText', 'photoLeadName', 'photoShotText',
+  // 大图挑法（可见光变焦 > 可见光广角 > 热成像，用户 2026-10-07 定的规则）
+  'photoLeadMember', 'photoCameraRank',
+  'photoGroupTimeText', 'photoLeadName', 'photoShotText',
   'photoGroupLabel', 'hexToRgba',
   // 图片地址 / 前缀
   'photoThumbUrl', 'photoStreamPrefix', 'photoVideoFolderPath', 'streamTagOf',
   // 点某张照片时「该播哪一路」的选择（这条错过一次：点 _V 照片跳成了 _S 视频）
   'pickMatchForPhoto',
+  // 跳视频候选排序：把「和大图同一路」的提到最前
+  'orderMatchesForLead',
   // 时刻对齐
   'videoRealStartMs', 'photoFileTime', 'photoVideoStartSeconds', 'photoFrameAt',
   // 匹配与展示
@@ -83,6 +87,8 @@ const consts = {
   PHOTO_DRONE_NEAR_M: extractConst('PHOTO_DRONE_NEAR_M'),
   PHOTO_MATCH_LIMIT: extractConst('PHOTO_MATCH_LIMIT'),
   PHOTO_CAM_NAMES: extractConst('PHOTO_CAM_NAMES'),
+  // 大图的相机优先级（可见光变焦 > 可见光广角 > 热成像）
+  PHOTO_CAMERA_RANK: extractConst('PHOTO_CAMERA_RANK'),
   // 点照片跳视频时往前倒退多久起播（用户 2026-10-07：先用 3 秒试）
   PHOTO_PREROLL_SECONDS: extractConst('PHOTO_PREROLL_SECONDS'),
 };
@@ -801,6 +807,9 @@ console.log('\n=== 9) 点某张照片该播哪一路（这条错过一次：点 
   // 这条漏过一次，表现就是用户报的「点热成像照片，跳出来的是可见光视频」：
   // 大图没有名字 -> 流标识为空 -> 只能退回 matches[0]。
   // 实测：147 组里 26 组的大图就是热成像照片，其中 20 组会跳错。
+  // 注：从 2026-10-07 起大图先按「变焦 > 广角 > 热成像」挑（见 9b 节），
+  // 所以这一组（V 变焦 + T 热成像）的大图是那张 V；这组断言改成
+  // 「大图带的是它自己那张（也就是 V）的名字」。
   {
     const g = { members: [
       { name: 'DJI_20260924102325_0026_T.JPG', folder: 'D:\\d', camera: 'InfraredCamera', accuracy: '实测' },
@@ -814,17 +823,64 @@ console.log('\n=== 9) 点某张照片该播哪一路（这条错过一次：点 
       figs.map(f => (f.match(/class="([^"]*)"/) || [])[1] || f.slice(0, 40)).join(' | '));
 
     const leadName = (gh.match(/photo-lead-shot"[\s\S]{0,80}?data-photo-name="([^"]+)"/) || [])[1] || '';
-    chk(leadName === 'DJI_20260924102325_0026_T.JPG',
-      '大图带的是它自己那张的名字（热成像就是 _T）', leadName || '(缺)');
+    chk(leadName === 'DJI_20260924102325_0026_V.JPG',
+      '大图带的是它自己那张的名字（这一组按规则挑了可见光 V）', leadName || '(缺)');
 
-    // 把大图的名字喂给 pickMatchForPhoto：必须挑 _T，而不是候选里排第一的 _V
+    // 把大图的名字喂给 pickMatchForPhoto：必须挑同一路的 _V
     const Vc = { video: 'DJI_20260924095258_0001_V.MP4', relativePath: 'DJI_20260924095258_0001_V.MP4' };
     const Tc = { video: 'DJI_20260924095258_0001_T.MP4', relativePath: 'DJI_20260924095258_0001_T.MP4' };
-    chk(page.pickMatchForPhoto([Vc, Tc], leadName) === Tc,
-      '点大图（热成像）-> 挑 _T 视频（候选里 _V 排第一也不动摇）');
+    chk(page.pickMatchForPhoto([Tc, Vc], leadName) === Vc,
+      '点大图（可见光 V）-> 挑 _V 视频（候选里 _T 排第一也不动摇）');
     chk(page.pickMatchForPhoto([Vc, Tc], '') === Vc,
       '名字为空时确实会退化成第一条（这正是当初出错的路径，所以名字不能缺）');
   }
+}
+
+console.log('\n=== 9b) 大图挑法与跳转优先级：可见光变焦 > 可见光广角 > 热成像 ===');
+{
+  const mk = (camera, name) => ({ camera, name });
+  const T = mk('InfraredCamera', 'a_0020_T.JPG');
+  const W = mk('WideCamera', 'a_0020_V.JPG');
+  const Z = mk('ZoomCamera', 'a_0020_V.JPG');
+  const g = (...ms) => ({ members: ms });
+
+  chk(page.photoCameraRank(Z) < page.photoCameraRank(W), '变焦排在广角前面');
+  chk(page.photoCameraRank(W) < page.photoCameraRank(T), '广角排在热成像前面');
+  chk(page.photoCameraRank(mk('Unknown', 'x')) === 9, '认不出的相机排最后');
+
+  chk(page.photoLeadMember(g(T, Z)) === Z, '变焦 + 热成像 -> 大图取变焦（喂进来的顺序无关）');
+  chk(page.photoLeadMember(g(Z, T)) === Z, '顺序反过来也一样');
+  chk(page.photoLeadMember(g(T, W)) === W, '广角 + 热成像 -> 大图取广角');
+  chk(page.photoLeadMember(g(T, W, Z)) === Z, '三张都有 -> 大图取变焦');
+  chk(page.photoLeadMember(g(T)) === T, '只有热成像 -> 就只能用它');
+  chk(page.photoLeadMember({ members: [] }) === null, '空组返回 null');
+  chk(page.photoLeadMember(null) === null, '没有组也返回 null');
+
+  // 大图给了 V，照片墙里第一张（大图位）也得是它
+  const gh = page.photoGalleryHtml(g(T, Z));
+  const leadName = (gh.match(/photo-lead-shot"[\s\S]{0,80}?data-photo-name="([^"]+)"/) || [])[1] || '';
+  chk(leadName === Z.name, '照片墙的大图位就是 photoLeadMember 挑的那张', leadName || '(缺)');
+  chk(/photo-thumb" data-photo-name="a_0020_T\.JPG"/.test(gh), '另一张（热成像）当小图');
+
+  // 跳转候选：和大图同一路的排第一（否则会出现「大图可见光、最接近写热成像」）
+  const Vv = { video: 'x_V.MP4', relativePath: 'x_V.MP4' };
+  const Sv = { video: 'x_S.MP4', relativePath: 'x_S.MP4' };
+  const Tv = { video: 'x_T.MP4', relativePath: 'x_T.MP4' };
+  const ordered = page.orderMatchesForLead([Tv, Sv, Vv], g(T, Z));
+  chk(ordered[0] === Vv, '大图是 V -> 候选第一条是 V 视频',
+    ordered.map(m => m.relativePath).join(','));
+  chk(ordered[1] === Tv && ordered[2] === Sv, '其余保持原来的先后（画面内/时间差顺序不变）',
+    ordered.map(m => m.relativePath).join(','));
+  chk(page.orderMatchesForLead([Tv, Vv], g(T)).length === 2, '大图只有热成像时也照原样返回');
+  chk(page.orderMatchesForLead([Tv, Vv], g(T))[0] === Tv, '大图是 T -> 第一条仍是 T（没有 V 就不硬凑）');
+  chk(page.orderMatchesForLead([Tv], g(T, Z))[0] === Tv, '只有一条候选时原样返回');
+  chk(page.orderMatchesForLead([], g(T, Z)).length === 0, '空候选返回空');
+
+  const fn = extractFn('selectPhotoGroup');
+  chk(/matches=orderMatchesForLead\(matches,group\)/.test(fn),
+    '渲染前会把候选按「大图那一路」重排');
+  chk(/photoMatches\.set\(index,matches\)/.test(fn),
+    '排完再缓存 —— 按钮的 data-photo-match 下标必须和它同一个顺序');
 }
 
 console.log('\n=== 10) 点照片跳视频：倒退 3 秒起播 + 3-2-1 倒计时 + 到照片时刻自动暂停 ===');
