@@ -787,7 +787,8 @@ console.log('\n=== 删除项目 = 只清出项目列表，不删数据 ===');
   {
     const del = (html.match(/\.proj-del\{[^}]*\}/) || [''])[0];
     chk(/padding:0/.test(del), '× 的按钮内边距清零（全局 button 有 13px 22px，会把它挤扁）');
-    chk(/width:44px;height:52px/.test(del), '× 是 44x52，和下拉框（height:52px）同高');
+    chk(/width:44px;height:var\(--ctrl-h\)/.test(del),
+      '× 与下拉框同高（都走 --ctrl-h）', del.slice(0, 60));
     chk(/align-items:center/.test(del) && /justify-content:center/.test(del), '× 居中');
   }
 }
@@ -1370,8 +1371,8 @@ for (const f of ['fileMatchesFilter', 'filteredGeoFiles', 'buildFileFilters', 'u
 // 按钮文字必须禁止换行，否则窄栏里会被挤成「重新扫/描」两行
 chk(/\.card-tools button\{[^}]*white-space:nowrap/.test(html),
   '卡片头部按钮禁止文字换行（原来会被挤成两行）');
-chk(/\.card-tools button\{[^}]*height:32px;padding:0 10px;font-size:12px/.test(html),
-  '卡片头部按钮收紧到 12px/32px（全局 button 是 16px + 13px 22px）');
+chk(/\.card-tools button\{[^}]*height:var\(--ctrl-h\);padding:0 10px;font-size:12px/.test(html),
+  '卡片头部按钮收紧到 12px / --ctrl-h（全局 button 是 16px + 13px 22px）');
 chk(/<button id="refreshBtn" class="secondary">刷新<\/button>/.test(html),
   '「重新扫描」改叫「刷新」（更短，一行放得下）');
 chk(/<button id="loadAllBtn">加载全部轨迹<\/button>/.test(html),
@@ -1444,10 +1445,34 @@ chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
   chk(!/position:absolute/.test(st), '不再是绝对定位（那会让它单独占一行）');
   // 左栏所有按钮要一致：切换按钮和 .card-tools button 用同一套尺寸/字号
   const toolsBtn = (html.match(/\.card-tools button\{[^}]*\}/) || [''])[0];
-  const dim = (s) => (s.match(/height:(\d+)px/) || [])[1] + '/' + (s.match(/font-size:(\d+)px/) || [])[1];
+  const dim = (s) => String(s).replace(/\s+/g, ' ').match(/height:[^;]*/)[0] + '|'
+    + (String(s).match(/font-size:[^;]*/) || [''])[0];
   chk(dim(st) === dim(toolsBtn),
-    '切换按钮与卡片头按钮尺寸/字号一致（32px / 12px）',
+    '切换按钮与卡片头按钮尺寸/字号一致（都走 --ctrl-h）',
     `side-toggle=${dim(st)} card-tools=${dim(toolsBtn)}`);
+
+  // 全页控件统一高度：下拉框 / 输入框 / 按钮都走 --ctrl-h（用户 2026-10-07 要求）
+  {
+    const varDef = (html.match(/--ctrl-h:(\d+)px/) || [])[1];
+    chk(varDef === '36', '定义了统一的控件高度 --ctrl-h:36px', varDef || '(缺)');
+    const uses = (html.match(/height:var\(--ctrl-h\)/g) || []).length;
+    chk(uses >= 12, '下拉框 / 输入框 / 按钮都引用它（不再各写一个数）', uses + ' 处');
+
+    // 这四个下拉框 + 搜索框 + 同排按钮，逐条都得走变量
+    const want = [
+      ['选择项目（全局 select）', /select\{width:100%;height:var\(--ctrl-h\)/],
+      ['底图/日期/类型（.ctrl-select）', /\.follow-select,\.ctrl-select\{[^}]*height:var\(--ctrl-h\)/],
+      ['搜索框（.search-bar input）', /\.search-bar input\{height:var\(--ctrl-h\)/],
+      ['搜索地名按钮', /\.search-bar button\{height:var\(--ctrl-h\)/],
+      ['天地图key（.card-tools button）', /\.card-tools button\{[^}]*height:var\(--ctrl-h\)/],
+      ['加载全部照片', /\.photo-layer-btn\{min-height:var\(--ctrl-h\);height:var\(--ctrl-h\)/],
+      ['新建项目 / 导入数据', /\.proj-actions button\{[^}]*height:var\(--ctrl-h\)/],
+      ['加载全部轨迹 / 刷新 / 清空', /\.card-tools\.file-actions button\{[^}]*height:var\(--ctrl-h\)/],
+      ['检测字幕 / 生成 SRT / 生成 GeoJSON', /\.flow-actions button\{[^}]*height:var\(--ctrl-h\)/],
+      ['项目下拉框右边的 ×', /\.proj-del\{[^}]*height:var\(--ctrl-h\)/],
+    ];
+    for (const [name, re] of want) chk(re.test(html), name + ' 高度走 --ctrl-h');
+  }
 }
 // 左栏改成「两个页」共用一块地方：项目数据/轨迹文件 ↔ 标记点，由标签开关切换
 chk(/id="viewProject"/.test(html), '项目页包在 #viewProject 里');
@@ -1568,8 +1593,10 @@ chk(/\.map-tools button\.secondary\{height:36px/.test(html),
 chk(/\.search-bar\{[^}]*flex:1 1 auto/.test(html),
   '搜索区占满标题与「底图」之间的剩余宽度（宽度自适应，不再固定收窄）');
 chk(/\.search-bar input\{[^}]*min-width:120px/.test(html), '输入框最小宽度 120px（给右侧的底图/key 按钮腾位置）');
-chk(/\.search-bar input\{[^}]*height:36px/.test(html), '输入框高度收到 36px（原来整行时是 50px）');
-chk(/\.search-bar button\{height:36px/.test(html), '「搜索地名」按钮与输入框等高 36px');
+chk(/\.search-bar input\{[^}]*height:var\(--ctrl-h\)/.test(html),
+  '输入框高度走 --ctrl-h（原来整行时是 50px）');
+chk(/\.search-bar button\{height:var\(--ctrl-h\)/.test(html),
+  '「搜索地名」按钮与输入框等高（都走 --ctrl-h）');
 {
   // 地名搜索必须真的在标题行里，否则地图上方又会多占一行
   const head = html.slice(html.indexOf('<h2>轨迹地图</h2>'), html.indexOf('id="poiList"'));
