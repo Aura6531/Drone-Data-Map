@@ -810,6 +810,19 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/importScannedFolder\(scanned\.folder,paths\.length>1\)/.test(fn),
     '多选时走「安静模式」，不逐个弹提示');
   chk(/已导入 \$\{done\} 个文件夹/.test(fn), '多选时给一条汇总提示');
+  chk(/async function pickFolder\(quiet\)/.test(fn), 'pickFolder 支持 quiet（自动弹出时取消不报错）');
+  chk(/if\(pickFolderBtn\)pickFolderBtn\.addEventListener\('click',\(\)=>pickFolder\(\)\)/.test(body),
+    '手动点「选文件夹」用箭头函数包一层（否则事件对象会被当成 quiet，提示被吃掉）');
+
+  // 新建项目 -> 立刻弹文件夹选择框
+  const create = body.slice(body.indexOf('async function doCreateProject('),
+                            body.indexOf('if(createProjectBtn)'));
+  chk(/await pickFolder\(true\)/.test(create), '新建项目后自动弹出数据文件夹选择框');
+  chk(create.indexOf("jsonPost('/api/project/create'") >= 0
+     && create.indexOf("jsonPost('/api/project/create'") < create.indexOf('await pickFolder(true)'),
+    '先建好项目再弹选择框（顺序不能反）');
+  chk(create.indexOf('await pickFolder(true)') < create.indexOf('await runAutoPipeline()'),
+    '弹框选完再跑后续流程');
 
   const submit = body.slice(body.indexOf('async function importScannedFolder('),
                             body.indexOf('if(addFolderBtn)addFolderBtn.addEventListener'));

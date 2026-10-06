@@ -4716,6 +4716,10 @@ async function doCreateProject(name){
 
     show(projectNotice,`已创建项目 ${name}`);
 
+    // 建完项目立刻弹原生「选择数据文件夹」——新建项目之后十有八九就是导数据，省掉一次点击。
+    // quiet：这一步是自动弹的，用户取消时不该蹦「没有选择文件夹」的提示。
+    await pickFolder(true);
+
     // 建好就直接跑完整流程（不再有「全自动」开关）
     await runAutoPipeline();
   }catch(e){
@@ -4749,8 +4753,10 @@ if(newProjectModal)newProjectModal.addEventListener('click',e=>{
 });
 
 // 导入弹窗的两个入口与取消
-if(pickFolderBtn)pickFolderBtn.addEventListener('click',pickFolder);
-if(pickFilesBtn)pickFilesBtn.addEventListener('click',pickFiles);
+// 注意：这里必须包一层箭头函数 —— 直接传 pickFolder 的话，点击事件对象会被当成
+// pickFolder 的 quiet 参数（真值），把「没有选择文件夹」的提示误吞掉。
+if(pickFolderBtn)pickFolderBtn.addEventListener('click',()=>pickFolder());
+if(pickFilesBtn)pickFilesBtn.addEventListener('click',()=>pickFiles());
 if(importCancel)importCancel.addEventListener('click',closeImportDialog);
 if(importModal)importModal.addEventListener('click',e=>{
   if(e.target===importModal)closeImportDialog();
@@ -4799,7 +4805,7 @@ if(addFolderBtn)addFolderBtn.addEventListener('click',()=>{
   pickFolder();   // 没有弹窗时退回原来的直接选文件夹
 });
 
-async function pickFolder(){
+async function pickFolder(quiet){
   const old=addFolderBtn?addFolderBtn.textContent:'';
   if(addFolderBtn){addFolderBtn.disabled=true;addFolderBtn.textContent='请在弹窗里选择文件夹……'}
   closeImportDialog();
@@ -4810,7 +4816,7 @@ async function pickFolder(){
     // 可以一次选多个文件夹（Windows 原生对话框按住 Ctrl / Shift 多选）
     const paths=(picked&&picked.paths)||((picked&&picked.path)?[picked.path]:[]);
 
-    if(!paths.length){show(projectNotice,'没有选择文件夹。');return}
+    if(!paths.length){if(!quiet)show(projectNotice,'没有选择文件夹。');return}
 
     // 必须先把文件夹扫一遍再提交：add-folder 是原样存下这份数据、不会自己重扫，
     // 只传 path 的话条目里没有文件清单，后面的检测就看不到这些视频。
@@ -4836,7 +4842,7 @@ async function pickFolder(){
       show(projectNotice,'导入失败：'+failed[0],true);
     }
   }catch(e){
-    show(projectNotice,'选择文件夹未完成或被取消。',true);
+    if(!quiet)show(projectNotice,'选择文件夹未完成或被取消。',true);
   }finally{
     if(addFolderBtn){addFolderBtn.disabled=false;addFolderBtn.textContent=old}
   }
