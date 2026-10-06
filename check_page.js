@@ -1162,10 +1162,10 @@ console.log('\n=== 图例改成地图左下角的小浮层 ===');
   chk(Number((lg.match(/z-index:(\d+)/) || [0, 0])[1]) > 700,
     'z-index 高于 Leaflet 的 pane（popup 是 700）',
     (lg.match(/z-index:(\d+)/) || [])[1] || '');
-  chk(/font-size:11px/.test(lg), '字号 11px（原来 14px）');
+  chk(/font-size:9px/.test(lg), '字号 9px（14 -> 11 -> 9，用户要求再小 2 号）');
   chk(/max-height:46%/.test(lg) && /overflow:auto/.test(lg), '内容多了可滚动，不会盖满地图');
   chk(/\.legend:empty\{display:none\}/.test(html), '没有轨迹时整个框不显示');
-  chk(/\.legend-item\{[^}]*font-size:11px/.test(html), '每一项也是 11px');
+  chk(/\.legend-item\{[^}]*font-size:9px/.test(html), '每一项也是 9px（.legend-item 会覆盖容器的字号）');
   chk(/\.line\{width:18px;height:3px/.test(html), '色条缩小（原来 30x4）');
   // 图例不再单独占一行，所以「地图 -> 图例」的 DOM 关系变了
   chk(html.indexOf('id="legend"') < html.indexOf('id="hitDetail"'),
