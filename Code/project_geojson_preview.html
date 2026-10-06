@@ -422,10 +422,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .report-opt{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;
             font-size:13px;font-weight:400;line-height:1.6;color:#334155;cursor:pointer}
 .report-opt input{width:15px;height:15px;margin:3px 0 0;flex:0 0 auto}
-/* 报告地图底图那一行：文字 + 下拉 */
-.report-basemap{display:flex;align-items:center;gap:10px;margin:14px 0 0;
-                font-size:13px;font-weight:600;color:#334155}
-.report-basemap select{flex:1 1 auto;min-width:0;height:38px;font-size:13px}
+/* 报告地图底图那一行的小标题（下面是和尺寸选项一样的单选项） */
+.report-basemap-title{margin:16px 0 8px;font-size:13px;font-weight:600;color:#334155}
 </style>
 </head>
 <body>
@@ -698,14 +696,19 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       <input type="radio" name="reportImageMode" value="a4">
       <span><b>压缩至 320ppi</b>　约 2480px 宽 —— 打印清晰、体积友好</span>
     </label>
-    <div class="report-basemap">
-      <label for="reportBasemap">报告地图底图</label>
-      <select id="reportBasemap" class="ctrl-select">
-        <option value="street">街道图（天地图）</option>
-        <option value="satellite" selected>卫星图（天地图影像）　推荐</option>
-        <option value="osm">OpenStreetMap</option>
-      </select>
-    </div>
+    <div class="report-basemap-title">报告地图底图</div>
+    <label class="report-opt">
+      <input type="radio" name="reportBasemap" value="satellite" checked>
+      <span><b>卫星图（天地图影像）</b>　推荐 —— 影像底图上红十字、飞机箭头更好认</span>
+    </label>
+    <label class="report-opt">
+      <input type="radio" name="reportBasemap" value="street">
+      <span><b>街道图（天地图）</b>　矢量图 + 注记，路名清楚</span>
+    </label>
+    <label class="report-opt">
+      <input type="radio" name="reportBasemap" value="osm">
+      <span><b>OpenStreetMap</b>　天地图没配 key 或要用海外底图时</span>
+    </label>
     <div class="row mini-modal-actions">
       <button id="reportCancel" class="secondary">取消</button>
       <button id="reportOk">开始生成</button>
@@ -2802,7 +2805,7 @@ const markerReportBtn=document.getElementById('markerReportBtn');
 const reportStatus=document.getElementById('reportStatus');
 const reportModal=document.getElementById('reportModal');
 const reportModalHint=document.getElementById('reportModalHint');
-const reportBasemapSelect=document.getElementById('reportBasemap');
+const reportBasemapRadios=Array.from(document.querySelectorAll('input[name="reportBasemap"]'));
 const reportOkBtn=document.getElementById('reportOk');
 const reportCancel=document.getElementById('reportCancel');
 
@@ -2812,7 +2815,9 @@ const reportCancel=document.getElementById('reportCancel');
 const REPORT_DEFAULT_BASEMAP='satellite';
 
 function reportBasemapKind(){
-  return (reportBasemapSelect&&reportBasemapSelect.value)||REPORT_DEFAULT_BASEMAP;
+  const picked=reportBasemapRadios.find(input=>input.checked);
+
+  return (picked&&picked.value)||REPORT_DEFAULT_BASEMAP;
 }
 
 let markerChecked=new Set();   // 勾选中的标记点 id（重绘不丢）
@@ -3487,15 +3492,16 @@ if(reportOkBtn)reportOkBtn.addEventListener('click',()=>{
 });
 
 // 改底图选择时同步刷新那句说明
-if(reportBasemapSelect)reportBasemapSelect.addEventListener('change',()=>{
-  const list=pickedForExport()||[];
-  const count=list.length;
+function refreshReportBaseHint(){
+  const count=(pickedForExport()||[]).length;
 
   if(reportModalHint){
     reportModalHint.textContent=`只包含勾选的 ${count} 个点。`
       +`地图截图用下面选的底图（${basemapDisplayName(reportBasemapKind())}）。`;
   }
-});
+}
+
+reportBasemapRadios.forEach(input=>input.addEventListener('change',refreshReportBaseHint));
 
 if(reportCancel)reportCancel.addEventListener('click',closeReportModal);
 
