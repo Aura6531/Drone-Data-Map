@@ -63,3 +63,7 @@ _demo_pack/
 _demo_pack.zip
 
 packaging/_accept/
+
+# —— ⑦ 运行期缓存（数据目录里会生成，根目录也有） ——
+geocode_cache/
+packaging/*.zip.partial

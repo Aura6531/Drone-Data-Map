@@ -397,11 +397,19 @@ def run_wizard():
     tk.Label(step3, text="（不会开机自启；程序常驻右下角托盘，右键图标可退出）",
              fg="#666").pack(anchor="w", pady=(10, 0))
 
-    # ---- 安装中 ----
+    # ---- 安装 / 完成（同一页：装完就地变完成页，不再多弹一个框）----
     step4 = tk.Frame(body)
-    tk.Label(step4, text="正在安装……", anchor="w").pack(fill="x")
+
+    status_label = tk.Label(step4, text="正在安装……", anchor="w",
+                            font=("Microsoft YaHei UI", 11, "bold"))
+    status_label.pack(fill="x")
+
     bar = ttk.Progressbar(step4, length=px(480), maximum=100)
     bar.pack(fill="x", pady=px(10))
+
+    result_label = tk.Label(step4, text="", anchor="w", justify="left",
+                            wraplength=px(480), fg="#333")
+    result_label.pack(fill="x", pady=px(6))
 
     steps = [step1, step2, step3, step4]
     position = {"index": 0}
@@ -412,9 +420,10 @@ def run_wizard():
 
         steps[index].pack(fill="both", expand=True)
         position["index"] = index
-        back_btn.config(state="normal" if index > 0 and index < 3 else "disabled")
+        back_btn.config(state="normal" if index in (1, 2) else "disabled")
         next_btn.config(text="开始安装" if index == 2 else ("完成" if index == 3 else "下一步"))
         next_btn.config(state="normal")
+        cancel_btn.config(state="normal" if index < 3 else "disabled")
 
     def go_next():
         index = position["index"]
@@ -449,34 +458,46 @@ def run_wizard():
 
             try:
                 install(state["dir"], state["key"], state["desktop"], progress)
-                bar["value"] = 100
-                messagebox.showinfo(
-                    "完成",
-                    f"已安装到：\n{state['dir']}\n\n"
-                    + ("下次启动会自动带上你填的天地图 key。\n" if state["key"] else
-                       "还没填天地图 key：之后把 tk 放进该目录的 tianditu_key.txt 即可（存盘即生效）。\n")
-                    + "\n卸载：控制面板「程序和功能」，或目录里的「卸载.bat」（会保留 Data\\ 与 Project\\）。"
-                )
 
+                # 就地变完成页：标题 + 进度条收起 + 结果说明，按钮变「完成」
+                bar["value"] = 100
+                bar.pack_forget()
+                status_label.config(text="安装完成", fg="#137333")
+                result_label.config(text=(
+                    f"已安装到：{state['dir']}\n\n"
+                    + ("下次启动会自动带上你填的天地图 key。\n" if state["key"]
+                       else "还没填天地图 key：之后把 tk 放进该目录的 tianditu_key.txt 即可（存盘即生效）。\n")
+                    + "\n卸载：控制面板「程序和功能」，或目录里的「卸载.bat」\n（会保留 Data\\ 与 Project\\）"
+                    + ("\n\n点「完成」会自动启动程序。" if state["launch"] else "")
+                ))
                 next_btn.config(state="normal")
 
-                if state["launch"]:
-                    exe = Path(state["dir"]) / APP_EXE
-
-                    if exe.is_file():
-                        subprocess.Popen([str(exe)], cwd=str(Path(state["dir"])))
-
             except SystemExit as e:
+                status_label.config(text="安装失败", fg="#b00020")
+                result_label.config(text=str(e))
                 messagebox.showerror("安装失败", str(e))
                 next_btn.config(state="normal")
                 back_btn.config(state="normal")
 
             except Exception as e:
+                status_label.config(text="安装失败", fg="#b00020")
+                result_label.config(text=f"{type(e).__name__}: {e}")
                 messagebox.showerror("安装失败", f"{type(e).__name__}: {e}")
                 next_btn.config(state="normal")
                 back_btn.config(state="normal")
 
             return
+
+        # 完成：需要的话把程序拉起来，然后关掉向导
+        if state["launch"]:
+            exe = Path(state["dir"]) / APP_EXE
+
+            if exe.is_file():
+                try:
+                    subprocess.Popen([str(exe)], cwd=str(state["dir"]))
+
+                except OSError:
+                    pass
 
         root.destroy()
 
@@ -486,7 +507,8 @@ def run_wizard():
     back_btn.pack(side="left")
     next_btn = tk.Button(footer, text="下一步", width=12, command=go_next)
     next_btn.pack(side="right")
-    tk.Button(footer, text="取消", width=8, command=root.destroy).pack(side="right", padx=8)
+    cancel_btn = tk.Button(footer, text="取消", width=8, command=root.destroy)
+    cancel_btn.pack(side="right", padx=8)
 
     show(0)
     root.mainloop()

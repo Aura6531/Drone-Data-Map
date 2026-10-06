@@ -26,16 +26,27 @@ def main():
 
     print(f"  载荷来源：{SOURCE}")
 
-    if TARGET.exists():
-        TARGET.unlink()
-
     files = sorted(path for path in SOURCE.rglob("*") if path.is_file())
     started = time.time()
 
-    with zipfile.ZipFile(TARGET, "w", zipfile.ZIP_LZMA, compresslevel=6) as package:
+    # 先写临时文件、成功后再原子替换：
+    # 否则构建与安装/测试并行时，读的一方会读到写了一半的 zip（曾把载荷截断成 30MB）。
+    temporary = TARGET.with_suffix(".zip.partial")
 
-        for path in files:
-            package.write(path, path.relative_to(SOURCE).as_posix())
+    if temporary.exists():
+        temporary.unlink()
+
+    try:
+        with zipfile.ZipFile(temporary, "w", zipfile.ZIP_LZMA, compresslevel=6) as package:
+
+            for path in files:
+                package.write(path, path.relative_to(SOURCE).as_posix())
+
+        os.replace(temporary, TARGET)
+
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
     size = TARGET.stat().st_size / 1024**2
     raw = sum(path.stat().st_size for path in files) / 1024**2
