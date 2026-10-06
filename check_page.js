@@ -1825,6 +1825,29 @@ console.log('\n=== 报告里的地图截图：16:9 + 飞机与注视虚线 ===')
     '把飞机的位置与朝向一起传给 /api/mapsnapshot');
 }
 
+console.log('\n=== 左列底边对齐 + 滚动条不再出现「浅灰直角」 ===');
+{
+  chk((html.match(/class="card card-fill"/g) || []).length >= 2,
+    '轨迹文件卡片也带 card-fill（撑满左列，底边与中/右列对齐）',
+    String((html.match(/class="card card-fill"/g) || []).length) + ' 处');
+
+  chk(/@supports not selector\(::-webkit-scrollbar\)/.test(html),
+    '标准滚动条属性用 @supports 只留给 Firefox');
+
+  // 只数「声明」（带冒号）；注释里提到属性名不算
+  const widthHits = (html.match(/scrollbar-width:/g) || []).length;
+  chk(widthHits === 1,
+    'scrollbar-width 只声明一次（在 @supports 里）—— 直接写它会让 Chrome 忽略 webkit 规则、箭头又回来',
+    widthHits + ' 次');
+
+  chk(/::-webkit-scrollbar-button[^{]*\{display:none/.test(html),
+    '去掉滚动条两端的箭头按钮（那正是模块边界上的「浅灰直角」）');
+  chk(/::-webkit-scrollbar-track[^{]*\{background:transparent/.test(html),
+    '滚动条轨道透明，只留一条细圆角滑块');
+  chk(/::-webkit-scrollbar-thumb[^{]*\{background:#cbd5e1;border-radius:999px/.test(html),
+    '滑块是细圆角的');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));

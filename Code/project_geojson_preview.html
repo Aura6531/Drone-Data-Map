@@ -27,6 +27,29 @@ body{margin:0;background:#f3f5f7;color:#172033;font-family:"Microsoft YaHei","No
    minmax(0,1fr) 而不是 1fr：避免内容过高把行撑破。 */
 .layout{display:grid;grid-template-columns:380px minmax(0,1fr) minmax(0,1.12fr);grid-template-rows:minmax(0,1fr);gap:16px;padding:16px;height:100vh;box-sizing:border-box;align-items:stretch}
 .col{min-width:0;min-height:0;display:flex;flex-direction:column;gap:16px;overflow:auto}
+
+/* 滚动条：干掉那条「浅灰直角」。
+   .col 是 overflow:auto，内容一超出，Windows 的经典滚动条就会贴着列边缘出现 ——
+   一条浅灰轨道 + 两端的三角箭头按钮，看着就像模块边界上多出来一个直角
+   （左列内容短、不出滚动条，所以只有中/右列那几块有）。
+   现在：轨道透明、去掉箭头按钮、只留一条细圆角滑块。Firefox 走 scrollbar-width。 */
+/* 注意：**不要**在这里直接写 scrollbar-width / scrollbar-color —— Chrome 一旦看到这两个标准属性，
+   就会改用「标准滚动条」并**忽略 `::-webkit-scrollbar` 系列规则**（踩过：箭头按钮照样出现）。
+   所以标准属性只用 @supports 留给 Firefox，Chromium 走下面的 webkit 规则。 */
+@supports not selector(::-webkit-scrollbar){
+  .col,.file-list,.marker-list,.legend,.poi-list,html,body{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+}
+.col::-webkit-scrollbar,.file-list::-webkit-scrollbar,.marker-list::-webkit-scrollbar,.legend::-webkit-scrollbar,.poi-list::-webkit-scrollbar{width:8px;height:8px}
+.col::-webkit-scrollbar-track,.file-list::-webkit-scrollbar-track,.marker-list::-webkit-scrollbar-track,.legend::-webkit-scrollbar-track,.poi-list::-webkit-scrollbar-track,
+.col::-webkit-scrollbar-corner,.file-list::-webkit-scrollbar-corner,.marker-list::-webkit-scrollbar-corner,.legend::-webkit-scrollbar-corner,.poi-list::-webkit-scrollbar-corner{background:transparent}
+.col::-webkit-scrollbar-thumb,.file-list::-webkit-scrollbar-thumb,.marker-list::-webkit-scrollbar-thumb,.legend::-webkit-scrollbar-thumb,.poi-list::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+.col::-webkit-scrollbar-button,.file-list::-webkit-scrollbar-button,.marker-list::-webkit-scrollbar-button,.legend::-webkit-scrollbar-button,.poi-list::-webkit-scrollbar-button{display:none;width:0;height:0}
+
+/* 整页滚动条同理（窗口矮、左侧栏 overflow:visible 时会出现）—— 标准属性同样只给 Firefox */
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:10px;height:10px}
+html::-webkit-scrollbar-track,body::-webkit-scrollbar-track,html::-webkit-scrollbar-corner,body::-webkit-scrollbar-corner{background:transparent}
+html::-webkit-scrollbar-thumb,body::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width:0;height:0}
 /* 栏内卡片间距统一交给 flex 的 gap，卡片自带的 22px 下边距会叠加上去：
    非末尾卡片 -> 上面出现 22+16=38px 的大缝；
    末尾卡片   -> 下边距把卡片顶起来，整栏底部对不齐。
@@ -446,7 +469,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         </div>
       </section>
 
-      <section class="card">
+      <!-- card-fill：让这张卡撑满左列剩余高度，底边与中/右列对齐
+           （文件少的时候也不会短一截） -->
+      <section class="card card-fill">
         <!-- 不再写「数据准备」「3 · 检测与生成」这类标题：
              三个按钮自己说明了做什么，省下的字和高度都让给内容。
              新建/导入时会自动跑一遍，这里也可以单独点某一步。 -->
