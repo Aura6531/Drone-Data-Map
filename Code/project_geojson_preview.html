@@ -6559,43 +6559,73 @@ async function ensureProjectFolderPaths(){
   return projectFolderPaths;
 }
 
-// 某条航迹对应的视频文件完整路径
+// 某条航迹对应的**视频文件**完整路径（绝对路径）。
+// 照片跳视频要用它拼 /api/project/video 的请求。
+// 注意必须把 .geojson 换成 .mp4：航迹的 relative_path 是 .geojson，
+// 而所有视频类接口（/api/project/video、/api/project/telemetry）都要求 MP4。
+// （遥测那条链曾经直接用这个绝对路径去请求，既少了 name/folder_index、
+//   又带着 .geojson，所以永远取不到 —— 现在遥测走 ensureTrackTelemetry
+//   自己的参数拼装，这个函数只留给照片跳视频用。）
 async function trackVideoPath(t){
   const info=t&&t.fileInfo;
   if(!info||!info.relative_path)return null;
   const paths=await ensureProjectFolderPaths();
   const folder=paths&&paths[info.folder_index];
   if(!folder)return null;
-  return folder+'\\'+String(info.relative_path).replace(/\//g,'\\');
+  return folder+'\\'+videoPathFromGeojson(info.relative_path).replace(/\//g,'\\');
 }
 
-// 按需取某条航迹的遥测（带缓存；失败记 null，不反复重试）
-async function ensureTrackTelemetry(t){
-  const path=await trackVideoPath(t);
-  if(!path)return null;
+// 按需取某条航迹的遥测（带缓存；失败记 null，不反复重试）。
+//
+// 注意 /api/project/telemetry 要的是**三个**参数：name（项目名）+ folder_index +
+// path（**相对路径、且必须是 .mp4**）。早先这里只传了 path、而且传的是航迹自己的
+// .geojson 相对路径 —— 后端先报「缺少项目名称」，就算补上 name 也会报
+// 「指定文件不是 MP4/MOV 视频」。结果是遥测一条都取不到：
+//   * 照片的「目标点是否在画面内」全部退化成「看不见」；
+//   * 「按位置搜索飞行视频」的 A+B 检索永远走不到「画面内」那条分支，
+//     只能退回「无人机位置最近」。
+// 两条链都靠这个函数，所以修在这里（用 videoPathFromGeojson 换成 .mp4）。
 
-  const cached=telemetryByPath[path];
+// 遥测请求参数：单独抽出来是为了能直接断言（这条错过一次，代价是整块功能静默失效）。
+function telemetryQuery(info,projectName){
+  return {
+    name:String(projectName==null?'':projectName),
+    folder_index:String(info&&info.folder_index),
+    path:videoPathFromGeojson(info&&info.relative_path),
+  };
+}
+
+async function ensureTrackTelemetry(t){
+  const info=t&&t.fileInfo;
+  if(!info||!info.relative_path)return null;
+
+  const rel=videoPathFromGeojson(info.relative_path);
+  const key=info.folder_index+'|'+rel;
+
+  const cached=telemetryByPath[key];
   if(cached==='pending'){
     // 正在取：等它落地（最多约 3 秒），避免并发重复请求
-    for(let k=0;k<30&&telemetryByPath[path]==='pending';k++){
+    for(let k=0;k<30&&telemetryByPath[key]==='pending';k++){
       await new Promise(r=>setTimeout(r,100));
     }
-    const done=telemetryByPath[path];
+    const done=telemetryByPath[key];
     return done==='pending'?null:(done||null);
   }
   if(cached!==undefined)return cached;
 
-  telemetryByPath[path]='pending';
+  telemetryByPath[key]='pending';
   try{
-    const d=await api('/api/project/telemetry?path='+encodeURIComponent(path));
+    const q=new URLSearchParams(telemetryQuery(info,projectSelect.value));
+
+    const d=await api('/api/project/telemetry?'+q.toString());
     const ok=d&&d.times&&d.times.length?d:null;
-    telemetryByPath[path]=ok;
+    telemetryByPath[key]=ok;
     // 同时挂到航迹对象上：检索是同步函数，只能这样同步取到
     if(ok)t.telemetry=ok;
   }catch(e){
-    telemetryByPath[path]=null;
+    telemetryByPath[key]=null;
   }
-  return telemetryByPath[path];
+  return telemetryByPath[key];
 }
 
 // 同步取该航迹已缓存的遥测（没有就 null —— 检索退回坐标距离）

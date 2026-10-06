@@ -55,7 +55,8 @@ const PURE = [
   'videoRealStartMs', 'photoFileTime', 'photoVideoStartSeconds', 'photoFrameAt',
   // 匹配与展示
   'photoFrameMatch', 'photoMatchRank', 'photoGalleryHtml', 'photoJumpHtml',
-  'photoCardChips', 'photoTooltip', 'telemetryIndexOf'
+  'photoCardChips', 'photoTooltip', 'telemetryIndexOf', 'telemetryQuery',
+  'videoPathFromGeojson'
 ];
 
 // imagePointOfGround 是页面里「按位置检索」用的同一个反投影函数，这里连它的
@@ -569,7 +570,6 @@ console.log('\n=== 7) 真实数据：照片时刻真的能落到视频的那一�
 }
 
 console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
-
 {
   chk(html.includes("/api/project/photos?name="), '接了后端的照片接口');
   chk(html.includes("/photo?path="), '图片走后端 /photo（不用绝对路径直接喂浏览器）');
@@ -594,5 +594,86 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '展示区的位置就在地图下方、检索结果之前');
 }
 
-console.log(`\n结果: ${ok ? '全部通过' : '有失败项'}`);
-process.exit(ok ? 0 : 1);
+console.log('\n=== 9) 遥测请求必须带对参数（这条错了，画面内判定会 147/147 全空）===');
+(async () => {
+  // 真实的挫败场景：/api/project/telemetry 要 name + folder_index + path（相对路径、.mp4）。
+  // 早先 ensureTrackTelemetry 只传 path，而且传的是航迹自己的 .geojson 相对路径 ——
+  // 后端先回「缺少项目名称」，补上 name 后又回「指定文件不是 MP4/MOV 视频」。
+  // 遥测一条都取不到时，photoMatchesFor 会**全部**提前返回空（界面上就是
+  // 「没有找到时间对得上的视频」），A+B 检索也只剩「无人机位置最近」。
+  // 参数拼装抽在 telemetryQuery 里，所以断言直接对着它。
+  const fn = extractFn('ensureTrackTelemetry');
+  const qf = extractFn('telemetryQuery');
+
+  chk(/name:String\(projectName/.test(qf), '带了 name（项目名）');
+  chk(/folder_index:String\(info&&info\.folder_index\)/.test(qf), '带了 folder_index');
+  chk(/videoPathFromGeojson\(info&&info\.relative_path\)/.test(qf),
+    'path 走 videoPathFromGeojson 换成 .mp4（不能直接送 .geojson）');
+  chk(/telemetryQuery\(info,projectSelect\.value\)/.test(fn), '请求时用当前项目名拼参数');
+  chk(!/path=.*encodeURIComponent\(path\)/.test(fn), '不再用「拼好的绝对路径」当 path');
+
+  // 缓存键也要带上 folder_index：两个架次下可能有同名文件
+  chk(/const key=info\.folder_index\+'\|\'\+rel/.test(fn), '缓存键按「文件夹下标 + 相对路径」');
+  chk(/if\(ok\)t\.telemetry=ok/.test(fn), '取到后挂回航迹对象（检索是同步函数，只能这样取）');
+
+  // trackVideoPath 仍然要给照片跳视频用，且必须也是 .mp4
+  const tv = extractFn('trackVideoPath');
+  chk(/videoPathFromGeojson\(info\.relative_path\)/.test(tv),
+    'trackVideoPath 也把 .geojson 换成 .mp4（/api/project/video 同样只收 MP4）');
+
+  // 真实数据那一层现在能拿到遥测了，就该有「画面内」命中；
+  // 这条断言把「遥测取不到 -> 全都不是画面内」这种退化情形也挡住。
+  chk(/inFrame === true/.test(fs.readFileSync(__filename, 'utf8')),
+    '测试自身保留了「真实数据里必须判出画面内」的断言');
+
+  // 参数拼装抽出来单独测（光看源码文本不够：要能真的断言拼出来的东西）
+  const info = { folder_index: 1, relative_path: 'DJI_20260924101516_0001_V.geojson' };
+  const q = page.telemetryQuery(info, '东莞1');
+
+  chk(q.name === '东莞1', 'name = 项目名', q.name);
+  chk(q.folder_index === '1', 'folder_index 是字符串形式的下标', q.folder_index);
+  // 只有扩展名大小写不敏感：videoPathFromGeojson 统一产出小写 .mp4，
+  // Windows 路径不分大小写、后端也照 .lower() 判，所以这是对的。
+  chk(q.path.toLowerCase() === 'dji_20260924101516_0001_v.mp4',
+    'path = 相对路径且已换成 .mp4（后端只认 MP4/MOV）', q.path);
+  chk(!/^[A-Za-z]:/.test(q.path), 'path 是相对路径，不是绝对路径');
+  chk(String(page.telemetryQuery({ folder_index: 0, relative_path: 'a.3d.geojson' }, 'x').path).toLowerCase() === 'a.mp4',
+    '.3d.geojson 也能正确换成 .mp4');
+
+  // 真的去问一次运行中的服务：这条断言挡的是「参数对但接口实际会拒」这类问题。
+  // 服务没起时明确跳过，不算失败（测试不该依赖开发服务在跑）。
+  await (async () => {
+    const base = process.env.PHOTO_TEST_SERVER || 'http://127.0.0.1:8000';
+    let alive = false;
+    try {
+      const r = await fetch(base + '/api/project/list', { signal: AbortSignal.timeout(2000) });
+      alive = r.ok;
+    } catch (e) { alive = false }
+
+    if (!alive) {
+      console.log('  [SKIP] 开发服务没在跑，跳过真实接口验证（起服务后再跑就能验到）');
+      return;
+    }
+
+    const url = base + '/api/project/telemetry?' + new URLSearchParams(
+      page.telemetryQuery({ folder_index: 0, relative_path: 'DJI_20260924095258_0001_V.geojson' }, '东莞1')
+    ).toString();
+
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
+      const d = await r.json().catch(() => null);
+      chk(r.ok, '真实接口返回 200（参数确实是它要的那三个）',
+        r.ok ? '' : `HTTP ${r.status} ${d && d.error ? d.error : ''}`);
+      chk(!!(d && d.times && d.times.length), '返回里有 times（抽稀后的遥测）',
+        d && d.times ? `${d.times.length} 条, step=${d.step}` : '-');
+      chk(!!(d && d.step >= 1), '带上了 step（下标换算要用）', d ? String(d.step) : '-');
+    } catch (e) {
+      chk(false, '真实接口请求没抛异常', e.message);
+    }
+  })();
+})().then(() => {
+  // 最后一节是异步的（要问一次真实服务），收尾放进 then ——
+  // 否则 process.exit 会先跑，异步断言还没来得及判定。
+  console.log(`\n结果: ${ok ? '全部通过' : '有失败项'}`);
+  process.exit(ok ? 0 : 1);
+});
