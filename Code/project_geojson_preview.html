@@ -3184,16 +3184,33 @@ async function reportDroneAt(m){
   return {lat:c[1],lng:c[0],bearing:(bearing==null?0:bearing)};
 }
 
-// 取景用的缩放级：尽量 18；飞机离得远到塞不进这张图时才往下调。
-// （纯函数：给中心纬度与两点地面距离就能算，方便单测）
-function reportMapZoomFor(centerLat,distanceMeters){
-  const needHalf=Math.max(0,Number(distanceMeters)||0)/2*REPORT_MAP_MARGIN;
+// 把「某点相对另一点」的偏移拆成南北/东西的分量（米）
+function reportMetersOffset(center,point){
+  const latScale=111320;
+  const lngScale=111320*Math.cos(Number(center.lat)*Math.PI/180);
+
+  return {
+    north:(Number(point.lat)-Number(center.lat))*latScale,
+    east:(Number(point.lng)-Number(center.lng))*lngScale
+  };
+}
+
+// 取景缩放级：**目标点永远在正中**，飞机只是「尽量也在画面里」。
+// 所以按飞机相对目标点的南北/东西偏移算需要的半幅：塞得下就用 18 级（字看得清），
+// 塞不下才逐级降（下限 10）—— 降级只是为了别把飞机挤出画面。
+// （纯函数，方便单测）
+function reportMapZoomForOffset(centerLat,northMeters,eastMeters){
+  const needHalfHeight=Math.abs(Number(northMeters)||0)*REPORT_MAP_MARGIN;
+  const needHalfWidth=Math.abs(Number(eastMeters)||0)*REPORT_MAP_MARGIN;
 
   for(let zoom=REPORT_MAP_MAX_ZOOM;zoom>10;zoom--){
     const metersPerPixel=156543.03392
       *Math.cos(Number(centerLat)*Math.PI/180)/Math.pow(2,zoom);
 
-    if(REPORT_MAP_HEIGHT/2*metersPerPixel>=needHalf)return zoom;
+    if(REPORT_MAP_HEIGHT/2*metersPerPixel>=needHalfHeight
+      &&REPORT_MAP_WIDTH/2*metersPerPixel>=needHalfWidth){
+      return zoom;
+    }
   }
 
   return 10;
@@ -3205,35 +3222,26 @@ async function reportMapImageOf(m,basemap){
   try{
     const drone=await reportDroneAt(m);
 
-    let centerLat=m.lat;
-    let centerLng=m.lng;
+    // 取景中心**永远是目标点**（红十字最重要）；飞机只是尽量留在画面里，
+    // 它离得远了才降级 —— 降级只为了让飞机不掉出画面，不会把中心挪走。
     let zoom=REPORT_MAP_MAX_ZOOM;
 
-    if(drone&&map){
-      centerLat=(m.lat+drone.lat)/2;
-      centerLng=(m.lng+drone.lng)/2;
-
-      let distance=0;
-
-      try{
-        distance=map.distance({lat:m.lat,lng:m.lng},{lat:drone.lat,lng:drone.lng});
-      }catch(e){
-        distance=0;
-      }
-
-      zoom=reportMapZoomFor(centerLat,distance);
+    if(drone){
+      const offset=reportMetersOffset(m,drone);
+      zoom=reportMapZoomForOffset(m.lat,offset.north,offset.east);
     }
 
     const body={
-      lat:centerLat,
-      lng:centerLng,
+      lat:m.lat,
+      lng:m.lng,
       zoom,
       basemap,
       width:REPORT_MAP_WIDTH,
       height:REPORT_MAP_HEIGHT
     };
 
-    // 取景中心可能不是目标点（有飞机时取中点），所以红十字的位置单独给
+    // 目标点与取景中心现在是同一个点；仍然显式传一份，
+    // 以后若再改取景方式，红十字的位置不会跟着跑偏
     if(drone){
       body.target_lat=m.lat;
       body.target_lng=m.lng;

@@ -1793,21 +1793,24 @@ console.log('\n=== 报告里的地图截图：16:9 + 飞机与注视虚线 ===')
   chk(/bearingAt\(track\.coords,i\)/.test(body), '朝向用 bearingAt()');
   chk(/reportTrackCache\[want\]=track/.test(body),
     '没加载就现取这条视频的 GeoJSON 并缓存（不再依赖「已加载航迹」）');
-  chk(/const REPORT_MAP_MAX_ZOOM=18/.test(body),
-    '报告地图默认 18 级（16 级字太小）');
-  chk(/function reportMapZoomFor\(/.test(body),
-    'function reportMapZoomFor()：装不下才自动降级');
+  chk(/function reportMetersOffset\(/.test(body),
+    'function reportMetersOffset()：算飞机相对目标点的南北/东西偏移');
+  chk(/function reportMapZoomForOffset\(/.test(body),
+    'function reportMapZoomForOffset()：飞机快出画才降级');
   chk(/await reportDroneAt\(m\)/.test(body), 'reportDroneAt 改成异步（要能现取航迹）');
   chk(/async function reportTrackFor\(/.test(body), 'function reportTrackFor()');
   chk(/const gj=await fetchGeo\(f\)/.test(body),
     '航迹没加载就现取这条视频的 GeoJSON（不再依赖「已加载航迹」）');
   chk(/reportTrackCache\[want\]/.test(body), '取回来的航迹按视频路径缓存，一个点只取一次');
-  chk(/centerLat=\(m\.lat\+drone\.lat\)\/2/.test(body),
-    '有飞机时取「目标点与飞机的中点」做取景中心');
+  chk(/let zoom=REPORT_MAP_MAX_ZOOM;\s*\n\s*\n\s*if\(drone\)/.test(body),
+    '默认就是 18 级，只有飞机快出画才动缩放');
+  chk(/zoom=reportMapZoomForOffset\(m\.lat,offset\.north,offset\.east\)/.test(body),
+    '按飞机相对目标点的偏移选级');
+  chk(/lat:m\.lat,\s*\n\s*lng:m\.lng,/.test(body),
+    '取景中心永远是目标点（不再取两点中点）');
+  chk(!/\=\(m\.lat\+drone\.lat\)\/2/.test(body), '已经不再算中点了');
   chk(/body\.target_lat=m\.lat/.test(body),
-    '目标点单独传给后端（否则红十字会画到中点上去）');
-  chk(/zoom=reportMapZoomFor\(centerLat,distance\)/.test(body),
-    '缩放级来自 reportMapZoomFor');
+    '目标点仍然显式传给后端（红十字不跟着取景方式跑偏）');
   chk(/width:REPORT_MAP_WIDTH/.test(body) && /height:REPORT_MAP_HEIGHT/.test(body),
     '截图尺寸用常量（1600×640）');
   chk(/body\.drone_lat=drone\.lat/.test(body) && /body\.drone_bearing=drone\.bearing/.test(body),

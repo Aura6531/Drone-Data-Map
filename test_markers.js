@@ -538,33 +538,55 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
   chk(api.markerNameTaken('') === false, '空名字不算重名');
 }
 
-console.log('\n=== 13) 报告地图取景：默认 18 级，飞机离远了才降级 ===');
+console.log('\n=== 13) 报告地图取景：目标点居中 + 18 级，飞机快出画才降级 ===');
 {
+  const width = Number((html.match(/REPORT_MAP_WIDTH=(\d+)/) || [])[1]);
   const height = Number((html.match(/REPORT_MAP_HEIGHT=(\d+)/) || [])[1]);
   const maxZoom = Number((html.match(/REPORT_MAP_MAX_ZOOM=(\d+)/) || [])[1]);
   const margin = Number((html.match(/REPORT_MAP_MARGIN=([\d.]+)/) || [])[1]);
 
-  chk(maxZoom === 18, '默认取景就是 18 级（字看得清）', String(maxZoom));
-  chk(height > 0 && margin > 1, '从页面里读到画面高度与余量',
-    `高 ${height}px，余量 ×${margin}`);
+  chk(maxZoom === 18, '默认取景 18 级（字看得清）', String(maxZoom));
+  chk(width > 0 && height > 0 && margin > 1, '从页面里读到画面尺寸与余量',
+    `${width}×${height}px，余量 ×${margin}`);
 
-  const zoomFor = new Function(
-    'REPORT_MAP_HEIGHT', 'REPORT_MAP_MAX_ZOOM', 'REPORT_MAP_MARGIN',
-    `${extractFn('reportMapZoomFor')}\nreturn reportMapZoomFor;`
-  )(height, maxZoom, margin);
+  const build = new Function(
+    'REPORT_MAP_WIDTH', 'REPORT_MAP_HEIGHT', 'REPORT_MAP_MAX_ZOOM', 'REPORT_MAP_MARGIN',
+    `${extractFn('reportMetersOffset')}
+${extractFn('reportMapZoomForOffset')}
+return {reportMetersOffset, reportMapZoomForOffset};`
+  )(width, height, maxZoom, margin);
 
-  chk(zoomFor(23.05, 0) === 18, '距离 0（这条视频没有飞机）：18 级', String(zoomFor(23.05, 0)));
-  chk(zoomFor(23.05, 100) === 18, '飞机在 100m 内：仍是 18 级', String(zoomFor(23.05, 100)));
-  chk(zoomFor(23.05, 800) < 18, '飞机 800m：自动降级', String(zoomFor(23.05, 800)));
-  chk(zoomFor(23.05, 100000) === 10, '极远：退到下限 10 级就停', String(zoomFor(23.05, 100000)));
+  const offset = build.reportMetersOffset;
+  const zoomFor = build.reportMapZoomForOffset;
 
-  // 降级之后，目标点与飞机确实都还塞得进画面
-  for (const distance of [0, 100, 400, 800, 2000, 8000]) {
-    const zoom = zoomFor(23.05, distance);
+  // 偏移换算：正北 0.001° ≈ 111.3m，正东要按纬度收窄
+  const north = offset({ lat: 23.05, lng: 114 }, { lat: 23.051, lng: 114 });
+  const east = offset({ lat: 23.05, lng: 114 }, { lat: 23.05, lng: 114.001 });
+  chk(Math.abs(north.north - 111.32) < 0.5 && Math.abs(north.east) < 1e-6,
+    '正北偏移算成 north≈111m / east=0', JSON.stringify(north));
+  chk(east.east > 90 && east.east < 111 && Math.abs(east.north) < 1e-6,
+    '正东偏移按纬度收窄（23° 处 ≈ 102m）', JSON.stringify(east));
+
+  chk(zoomFor(23.05, 0, 0) === 18, '飞机就在目标点：18 级', String(zoomFor(23.05, 0, 0)));
+  chk(zoomFor(23.05, 100, 0) === 18, '飞机正北 100m：仍是 18 级（半高约 176m）',
+    String(zoomFor(23.05, 100, 0)));
+  chk(zoomFor(23.05, 0, 300) === 18, '飞机正东 300m：仍是 18 级（半宽约 440m）',
+    String(zoomFor(23.05, 0, 300)));
+  chk(zoomFor(23.05, 0, 400) === 17, '飞机正东 400m 超出半宽（440m）：降一级',
+    String(zoomFor(23.05, 0, 400)));
+  chk(zoomFor(23.05, -400, 0) === 16, '飞机正南 400m 超出半高（176m）：按需降到 16 级',
+    String(zoomFor(23.05, -400, 0)));
+  chk(zoomFor(23.05, 100000, 100000) === 10, '极远：退到下限 10 级就停',
+    String(zoomFor(23.05, 100000, 100000)));
+
+  // 降级之后，飞机在两个方向上确实都还塞得进画面
+  for (const [n, e] of [[0, 0], [100, 0], [0, 800], [400, -300], [2000, 1000], [8000, 6000]]) {
+    const zoom = zoomFor(23.05, n, e);
     const mpp = 156543.03392 * Math.cos(23.05 * Math.PI / 180) / Math.pow(2, zoom);
-    chk(height / 2 * mpp >= distance / 2 * margin - 1e-6,
-      `${distance}m 时用 ${zoom} 级：两点都装得下`,
-      `半高 ${(height / 2 * mpp).toFixed(0)}m >= 需要 ${(distance / 2 * margin).toFixed(0)}m`);
+    chk(height / 2 * mpp >= Math.abs(n) * margin - 1e-6
+      && width / 2 * mpp >= Math.abs(e) * margin - 1e-6,
+      `偏移 (${n}, ${e})m 时用 ${zoom} 级：飞机还在画面里`,
+      `半高 ${(height / 2 * mpp).toFixed(0)}m / 半宽 ${(width / 2 * mpp).toFixed(0)}m`);
   }
 }
 
