@@ -4495,6 +4495,16 @@ class ProjectManagerHandler(
         if (
             path
             ==
+            "/api/project/markers"
+        ):
+
+            # 保存标记点：整表覆盖（前端把当前列表整个提交上来）
+            self.save_markers()
+            return
+
+        if (
+            path
+            ==
             "/api/project/delete-geojson"
         ):
 
@@ -4974,6 +4984,84 @@ class ProjectManagerHandler(
     # ========================================================
     # 删除单个 GeoJSON 文件
     # ========================================================
+
+    # ========================================================
+    # 标记点（画面右键取点得到的点，随项目保存）
+    # ========================================================
+
+    def save_markers(self):
+        """整表覆盖保存某个项目的标记点。
+
+        存在 Project/<项目名>/project.json 的 markers 数组里 —— 跟着项目走，
+        关掉页面再打开仍在。读取不需要单独接口：/api/project/get 会带回整个项目，
+        里面就含 markers。
+
+        每个标记点的字段（前端负责填全）：
+            id / name / lat / lng / video / time / created
+        其中 video + time 是"点列表能跳回那一帧"的关键。
+        """
+
+        try:
+
+            data = self.read_json()
+
+            project_name = data.get("project_name")
+
+            markers = data.get("markers")
+
+            if not project_name:
+                raise ValueError("缺少项目名称。")
+
+            if markers is None or not isinstance(markers, list):
+                raise ValueError("markers 必须是数组。")
+
+            project = load_project(project_name)
+
+            cleaned = []
+
+            for item in markers:
+
+                if not isinstance(item, dict):
+                    continue
+
+                lat = item.get("lat")
+                lng = item.get("lng")
+
+                if lat is None or lng is None:
+                    continue
+
+                cleaned.append({
+                    "id": str(item.get("id") or ""),
+                    "name": str(item.get("name") or "标记"),
+                    "lat": float(lat),
+                    "lng": float(lng),
+                    "video": str(item.get("video") or ""),
+                    "time": float(item.get("time") or 0),
+                    "created": str(item.get("created") or "")
+                })
+
+            project["markers"] = cleaned
+
+            save_project(project_name, project)
+
+            json_response(
+                self,
+                {
+                    "success": True,
+                    "count": len(cleaned),
+                    "markers": cleaned
+                }
+            )
+
+        except Exception as e:
+
+            json_response(
+                self,
+                {
+                    "error": str(e)
+                },
+                400
+            )
 
     def delete_geojson(self):
         """把一个 GeoJSON 文件从项目里删掉（磁盘上的文件真的删除）。

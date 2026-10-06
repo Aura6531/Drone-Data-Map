@@ -1043,6 +1043,8 @@ async function loadProjects(){
     await scanGeoJSON();
     // 初次载入 / 重新载入后，把三个步骤按钮的状态对齐实际情况
     refreshFlowStates();
+    // 把项目里保存的标记点读回来画上
+    loadProjectMarkers();
   }catch(e){show(projectNotice,e.message,true)}
 }
 
@@ -2369,12 +2371,79 @@ function openVideoMarkDialog(latlng,info){
   videoMarkName.focus();
 }
 
+// 当前项目的标记点（从 project.json 的 markers 读进来 / 保存回去）
+let projectMarkers=[];
+
+async function saveProjectMarkers(){
+  const name=projectSelect.value;
+  if(!name)return;
+
+  try{
+    await jsonPost('/api/project/markers',{project_name:name,markers:projectMarkers});
+  }catch(e){
+    // 保存失败不阻塞取点，只在状态栏说一句
+    if(videoStatus)videoStatus.textContent='标记点保存失败：'+e.message;
+  }
+}
+
+// 把已保存的标记点画到地图上（重开页面 / 切换项目时调用）
+function drawProjectMarkers(){
+  if(!videoMarkLayer)ensureVideoMarkLayer();
+  if(!videoMarkLayer)return;
+
+  videoMarkLayer.clearLayers();
+
+  for(const m of projectMarkers){
+    addVideoMark(L.latLng(m.lat,m.lng),m.name);
+  }
+}
+
+// 从项目里读回标记点
+async function loadProjectMarkers(){
+  const name=projectSelect.value;
+
+  if(!name||name==='暂无项目'){projectMarkers=[];drawProjectMarkers();return}
+
+  try{
+    const d=await api('/api/project/get?name='+encodeURIComponent(name));
+    const list=(d&&d.project&&d.project.markers)||[];
+
+    projectMarkers=list.map(m=>({
+      id:String(m.id||''),
+      name:String(m.name||'标记'),
+      lat:Number(m.lat),
+      lng:Number(m.lng),
+      video:String(m.video||''),
+      time:Number(m.time||0),
+      created:String(m.created||'')
+    })).filter(m=>Number.isFinite(m.lat)&&Number.isFinite(m.lng));
+  }catch(e){
+    projectMarkers=[];
+  }
+
+  drawProjectMarkers();
+}
+
 function confirmVideoMark(){
   if(!pendingMark)return;
 
   const name=(videoMarkName.value||'').trim()||'标记';
 
   addVideoMark(pendingMark,name);
+
+  // 记进项目里（含视频与时间 —— 以后列表点它能跳回这一帧）
+  projectMarkers.push({
+    id:'m'+Date.now(),
+    name,
+    lat:pendingMark.lat,
+    lng:pendingMark.lng,
+    video:clip?clip.path:'',
+    time:videoPlayer?Number(videoPlayer.currentTime||0):0,
+    created:new Date().toISOString()
+  });
+
+  saveProjectMarkers();
+
   closeVideoMarkDialog();
   pendingMark=null;
 }
@@ -3814,6 +3883,8 @@ projectSelect.addEventListener('change',()=>{
   resetFlowButtons();
   scanGeoJSON();
   refreshFlowStates();
+  // 换项目了，标记点也跟着换
+  loadProjectMarkers();
 });
 placeSearchBtn.addEventListener('click',doPlaceSearch);
 placeInput.addEventListener('keydown',e=>{if(e.key==='Enter')doPlaceSearch()});
