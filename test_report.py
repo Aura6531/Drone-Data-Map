@@ -250,6 +250,24 @@ try:
     chk(line_hits > 10, "飞机到目标点之间画了注视虚线", f"{line_hits} 个灰色像素")
     chk(drone_img.tobytes() != plain_img.tobytes(), "带飞机的那张和纯地图那张不一样")
 
+    # 飞机箭头不能比网页版「压扁」：量蓝色像素的外接框
+    # 网页 SVG：翼展 28/40、机长 31/40（40 的 viewBox）-> 外接框比例约 0.90
+    blue_pixels = [
+        (x, y)
+        for x in range(640) for y in range(480)
+        if max(abs(a - b) for a, b in zip(drone_img.getpixel((x, y)), pm.DRONE_ARROW_FILL)) < 45
+    ]
+    chk(len(blue_pixels) > 50, "截图上找得到飞机箭头的蓝色像素", str(len(blue_pixels)))
+
+    xs = [p[0] for p in blue_pixels]
+    ys = [p[1] for p in blue_pixels]
+    arrow_w = max(xs) - min(xs) + 1
+    arrow_h = max(ys) - min(ys) + 1
+
+    chk(0.85 <= arrow_w / arrow_h <= 1.0,
+        "飞机箭头比例与网页版一致（宽/高约 0.90，不是被压扁的窄条）",
+        f"{arrow_w}×{arrow_h}px，比值 {arrow_w / arrow_h:.2f}")
+
     chk(pm.make_map_snapshot({
         "lat": target_lat, "lng": target_lng, "width": 400, "height": 300,
         "drone_lat": "坏值", "drone_lng": target_lng,
@@ -466,14 +484,22 @@ else:
     chk(max(table_widths) - min(table_widths) < 0.01,
         "三张表宽度一致", " / ".join(f"{w:.3f}cm" for w in table_widths))
     chk(abs(max(table_widths) - max(widths_cm)) < 0.01,
-        "表格宽度 = 插图宽度（边界对齐，不会一边缩 0.5mm）",
+        "表格宽度 = 插图宽度（边界对齐）",
         f"表 {max(table_widths):.4f}cm vs 图 {max(widths_cm):.4f}cm")
-    chk(abs(max(table_widths) - 16.0) < 0.01,
-        "而且都顶满正文宽 16.0cm", f"{max(table_widths):.4f}cm")
+    chk(abs(max(table_widths) - pm.REPORT_IMAGE_MAX_WIDTH_CM) < 0.01,
+        f"表格与插图都用 {pm.REPORT_IMAGE_MAX_WIDTH_CM}cm",
+        f"{max(table_widths):.4f}cm")
+    chk(max(table_widths) < 16.0 - 0.005,
+        "留了约 1mm 余量，不会被 Word 缩放后再居中（那正是左边缘差 1~2mm 的原因）",
+        f"{max(table_widths):.4f}cm < 16.0cm")
+    chk(xml.count('<w:tblInd w:type="dxa" w:w="0"/>') >= 3,
+        "三张表都显式写了缩进 0（挡掉默认的 -0.19cm 负缩进）",
+        str(xml.count('<w:tblInd w:type="dxa" w:w="0"/>')))
+    chk(xml.count('<w:jc w:val="center"/>') == 3,
+        "只有三行图注是段落居中；插图段落是左对齐（左边缘与表格同一条线）",
+        str(xml.count('<w:jc w:val="center"/>')) + " 处段落居中")
 
-    # 图与图注都居中（图铺满时看不出差别，回缩过的窄图与所有图注都靠它）
-    chk(xml.count('w:val="center"') >= 6,
-        "三张图 + 三行图注都设了居中", str(xml.count('w:val="center"')) + " 处")
+    # 图与图注：图左对齐（与表格同一条线），图注居中 —— 见上面的 jc 断言
 
     # 方形图（热成像 5:4）也按高度封顶，不会横向顶破页面
     square_width = pm.report_picture_width_cm(shots[-1].name) if shots else None

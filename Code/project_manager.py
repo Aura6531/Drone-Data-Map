@@ -144,15 +144,24 @@ REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM = 9.5
 REPORT_MAP_IMAGE_MAX_HEIGHT_CM = 6.6
 REPORT_IMAGE_MAX_HEIGHT_CM = REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM   # 兼容旧断言/调用
 
-# 正文宽 = 21 - 2.5 - 2.5 = 16.0cm。表格也是 16.0cm（顶满正文宽），
-# 所以插图必须用同一个数 —— 15.9 的话图会比表格每边各缩 0.5mm，边界对不齐（用户提过）。
-REPORT_IMAGE_MAX_WIDTH_CM = 16.0
+# 正文宽 = 21 - 2.5 - 2.5 = 16.0cm。表格与插图都**用同一个 15.9cm**：
+#   - 都用 16.0（=正文宽）时，Word 有时会把贴死的行内图略微缩一点再居中，
+#     左边缘就跟表格差出 1~2mm（用户实测过）；
+#   - 15.9 留 1mm 余量，不会被缩；表格也同步用 15.9，于是两者左边缘、右边缘都严格重合。
+# 关键还有一条：插图段落要**左对齐**（不是居中），居中的话 15.9 会两边各让 0.5mm。
+REPORT_IMAGE_MAX_WIDTH_CM = 15.9
 
 # 地图截图上画的飞机箭头 / 注视虚线，颜色与页面上的保持一致
 DRONE_ARROW_FILL = (30, 136, 229)      # #1e88e5
 LOOK_LINE_COLOR = (156, 163, 175)      # #9ca3af
-DRONE_ARROW_SIZE = 13
-DRONE_NOSE_PX = 14                     # 与前端 DRONE_NOSE_PX 对齐
+#
+# 尺寸：报告里的地图是 1600×640，印到 15.9cm 宽 —— 沿宽度方向约 100px/cm。
+# 若照网页图标的 34px 画，缩到纸上只有 3.4mm、在 Word 里看约 9px，比网页版小得多
+# （用户反馈「跟网页版不一样」）。所以按观感放大到 size=24：外接框约 39×44px
+# （纸上约 3.9×4.4mm），和红十字（半径 16）尺度相当，不喧宾夺主。
+DRONE_ARROW_SIZE = 24
+DRONE_NOSE_PX = 24                     # 虚线起点＝机头；与箭头 size 一致
+# 注：前端网页地图上的 DRONE_NOSE_PX=14 是配 34px 图标的，**不要**跟着改。
 
 # ------------------------------------------------------------
 # 本地第三方资源目录
@@ -3932,12 +3941,14 @@ def draw_drone_arrow(draw, center, bearing, size=DRONE_ARROW_SIZE):
             center[1] + dx * sin_a + dy * cos_a,
         )
 
-    # 局部坐标（机头朝上）：机尖 -> 右翼 -> 尾中缺口 -> 左翼
+    # 局部坐标（机头朝上），比例照抄网页上的 SVG：机尖 (20,3)、翼尖 (34,34)/(6,34)、
+    # 尾中缺口 (20,26)，中心 (20,20) —— 换算成相对 size 的比例就是 0.82 / 0.35。
+    # （之前用 0.62/0.5，画出来比网页版窄一截，像被压扁了）
     points = [
         place(0, -size),
-        place(size * 0.62, size * 0.9),
-        place(0, size * 0.5),
-        place(-size * 0.62, size * 0.9),
+        place(size * 0.82, size * 0.82),
+        place(0, size * 0.35),
+        place(-size * 0.82, size * 0.82),
     ]
 
     draw.polygon(
@@ -4446,7 +4457,8 @@ def add_report_picture(document, path, max_height_cm=REPORT_VIDEO_IMAGE_MAX_HEIG
     from docx.shared import Cm, Pt
 
     paragraph = document.add_paragraph()
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    # 左对齐（不是居中）：图与表格的左边缘必须是同一条线
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
     paragraph.paragraph_format.space_before = Pt(6)
     paragraph.paragraph_format.keep_with_next = True
 
@@ -4549,7 +4561,7 @@ def docx_point_field_table(document, point):
     table.style = "Table Grid"
     table.autofit = False
 
-    widths = (Cm(2.6), Cm(13.4))
+    widths = (Cm(2.6), Cm(13.3))       # 合计 15.9cm，与插图同宽
 
     for label, value in rows:
         cells = table.add_row().cells
@@ -4568,6 +4580,12 @@ def docx_point_field_table(document, point):
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     set_report_font(run, 10)
+
+    # 列宽要同时写进「表格网格」和单元格：只写单元格（tcW）的话，
+    # gridCol 还是 python-docx 建表时的默认等分（8.0+8.0=16.0cm），
+    # 不同阅读器取哪个值不一致 —— 表格边框就会比插图多出 1~2mm（用户实测过）。
+    for column, width in zip(table.columns, widths):
+        column.width = width
 
     set_docx_table_width(table, widths)
 
@@ -4622,6 +4640,17 @@ def set_docx_table_width(table, column_widths):
     total_twips = max(1, int(round(total_emu / 635)))   # 1 twip = 635 EMU
 
     tblPr = table._tbl.tblPr
+
+    # 显式写死缩进 0：不然某些表格样式/阅读器会默认给一个负缩进
+    # （Word 经典行为是 -0.19cm，好让单元格文字与正文对齐，边框却会凸到页边距外），
+    # 那样表格左边框就和插图对不齐了。
+    for existing in tblPr.findall(qn("w:tblInd")):
+        tblPr.remove(existing)
+
+    indent = OxmlElement("w:tblInd")
+    indent.set(qn("w:type"), "dxa")
+    indent.set(qn("w:w"), "0")
+    tblPr.append(indent)
 
     tblW = tblPr.find(qn("w:tblW"))
 
@@ -4746,9 +4775,10 @@ def build_docx_report(payload):
 
     columns = ["序号", "名称", "纬度（°N）", "经度（°E）", "所在位置", "视频文件", "视频时间"]
 
-    # 列宽写死 + 关掉自动伸缩：长文件名（下划线处 Word 不断行）容易把表撑出正文区
+    # 列宽写死 + 关掉自动伸缩：长文件名（下划线处 Word 不断行）容易把表撑出正文区。
+    # 合计 15.9cm —— 与插图同一个宽度，左边缘、右边缘才对得齐。
     column_widths = (
-        Cm(1.1), Cm(2.6), Cm(2.0), Cm(2.3), Cm(3.4), Cm(3.1), Cm(1.5)
+        Cm(1.1), Cm(2.6), Cm(2.0), Cm(2.3), Cm(3.4), Cm(3.1), Cm(1.4)
     )
 
     summary = document.add_table(rows=1, cols=len(columns))
