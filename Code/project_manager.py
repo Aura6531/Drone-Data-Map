@@ -5457,9 +5457,12 @@ class ProjectManagerHandler(
 
         # 照片缩略图 / 原图：/photo?path=<绝对路径>
         # 安全：只允许读「某个项目文件夹内」的图片（否则就成了任意文件读取）。
+        # 注意：parse_qs 在文件顶部已经 import 过了，这里**不要**再写一次
+        # 「from urllib.parse import parse_qs」—— 函数里出现这个 import，Python 会把
+        # parse_qs 当成整个 do_GET 的局部名；本函数里位置更靠前的那些分支
+        # （/api/project/telemetry、/api/project/geojson…）用到它时就会报
+        # UnboundLocalError: cannot access local variable 'parse_qs'（踩过一次）。
         if path == "/photo":
-
-            from urllib.parse import parse_qs
 
             try:
                 raw = (parse_qs(parsed.query).get("path") or [""])[0]
@@ -5529,9 +5532,8 @@ class ProjectManagerHandler(
 
         # 照片定位：把项目里各架次文件夹的 JPG 读出来、算中心点、按目标点合并成组。
         # 前端靠它画「照片图层」和地图下方那条展示区。
+        # 同样不要在函数里重复 import parse_qs（原因见上面 /photo 那段注释）。
         if path == "/api/project/photos":
-
-            from urllib.parse import parse_qs
 
             try:
                 name = (parse_qs(parsed.query).get("name") or [""])[0]

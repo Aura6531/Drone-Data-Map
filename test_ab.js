@@ -49,6 +49,9 @@ const src = [
   aspectSrc,
   diagSrc,
   extractFn('fovOf'),
+  // 抽稀后的遥测要按下标换算才能读（见 telemetryIndexOf 的注释）；
+  // 它是 imagePointOfGround / frameCenterLatLng 的依赖，必须一起抠出来。
+  extractFn('telemetryIndexOf'),
   extractFn('imagePointOfGround'),
   extractFn('framePositionText')
 ].join('\n');
@@ -58,7 +61,7 @@ const L = {
   latLng(a, b) { return (typeof a === 'object' && a !== null) ? a : { lat: Number(a), lng: Number(b) }; }
 };
 
-const api = new Function('L', src + '\nreturn {fovOf,imagePointOfGround,framePositionText};')(L);
+const api = new Function('L', src + '\nreturn {fovOf,telemetryIndexOf,imagePointOfGround,framePositionText};')(L);
 
 // ---- 固定姿态：无人机 23.0N / 114.0E，高 100 m，机头朝正北，俯角 45° ----
 // 俯角 45° + 高 100 m -> 画面中心正好落在正北 100 m 处（可闭式手算）
@@ -81,12 +84,14 @@ function groundAt(eastM, northM) {
 const track = { coords: [[DRONE.lng, DRONE.lat]], times: [0], feature: { properties: {} } };
 const tele = { alt: [ALT], yaw: [YAW], pitch: [PITCH], focal: [FOCAL], times: [0] };
 
-// 正向公式（与页面 groundPointForImage 完全一致），供互逆性测试生成地面点
-function forwardToGround(xImg, yImg) {
+// 正向公式（与页面 groundPointForImage 完全一致），供互逆性测试生成地面点。
+// yawDeg / pitchDeg 可覆盖（默认用那组固定姿态），供抽稀对齐测试按帧取姿态。
+function forwardToGround(xImg, yImg, yawDeg, pitchDeg) {
   const fov = api.fovOf(FOCAL);
   const tanH = Math.tan(fov[0] * Math.PI / 360);
   const tanV = Math.tan(fov[1] * Math.PI / 360);
-  const p = PITCH * Math.PI / 180, y = YAW * Math.PI / 180;
+  const p = (pitchDeg === undefined ? PITCH : pitchDeg) * Math.PI / 180;
+  const y = (yawDeg === undefined ? YAW : yawDeg) * Math.PI / 180;
   const f = [Math.cos(p) * Math.sin(y), Math.cos(p) * Math.cos(y), Math.sin(p)];
   const u = [-Math.sin(p) * Math.sin(y), -Math.sin(p) * Math.cos(y), Math.cos(p)];
   const r = [f[1] * u[2] - f[2] * u[1], f[2] * u[0] - f[0] * u[2], f[0] * u[1] - f[1] * u[0]];
@@ -132,6 +137,61 @@ console.log('\n=== 3) 相机背后 / 非法姿态应返回 null ===');
   chk(api.imagePointOfGround(track, tele, 99, groundAt(0, 100)) === null, '索引越界时返回 null');
   chk(api.imagePointOfGround(track, { alt: [0], yaw: [0], pitch: [-45], focal: [24] }, 0, groundAt(0, 100)) === null,
     '高度为 0 时返回 null');
+}
+
+console.log('\n=== 3b) 抽稀遥测的下标换算（这块错位的代价是「画面内」整片误判）===');
+{
+  // 真实遥测是按 TELEMETRY_STEP=3 抽稀的：航迹 3.6 万点、遥测 1.2 万条。
+  // 按时间对齐是首选（SRT 里个别记录缺经纬度会让采样间隔不严格均匀）
+  const t = { times: [0, 0.033, 0.067, 0.1, 5, 5.033] };
+  const tele = { step: 3, times: [0, 0.1, 5.033], alt: [1, 2, 3], yaw: [10, 20, 30], pitch: [-45, -45, -45], focal: [24, 24, 24] };
+
+  chk(api.telemetryIndexOf(t, tele, 0) === 0, '第 0 点(t=0) -> 遥测 0');
+  chk(api.telemetryIndexOf(t, tele, 3) === 1, '第 3 点(t=0.1) -> 遥测 1');
+  chk(api.telemetryIndexOf(t, tele, 5) === 2, '第 5 点(t=5.033) -> 遥测 2');
+  chk(api.telemetryIndexOf({ times: [-99] }, tele, 0) === 0, '早于首条 -> 夹到 0（不越界）');
+  chk(api.telemetryIndexOf({ times: [999] }, tele, 0) === 2, '晚于末条 -> 夹到最后一条');
+  // 遥测里没有 times 时退回 step 整除（老后端 / 测试桩）
+  chk(api.telemetryIndexOf({ times: [0, 1, 2, 3] }, { step: 3 }, 3) === 1, '没有 tele.times 时按 step 整除');
+  chk(api.telemetryIndexOf({ times: [0, 1] }, {}, 1) === 1, 'step 也没有时退化为原下标');
+
+  // 端到端：同一个航迹点下标，遥测抽稀与不抽稀算出的画面坐标必须一致。
+  // yaw 用采样点上的真实姿态（抽稀留的是第 0/3/6 帧，这两套在这些点上完全相同）。
+  const yawAt = (k) => YAW + k * 5;
+  // 注意坐标顺序：GeoJSON / 页面里都是 [经度, 纬度]，不是 L.latLng 对象。
+  // 写成 L.latLng(...) 的话 c[0] 是 undefined，反投影会静默返回 null（踩过一次）。
+  const coords = Array(9).fill([DRONE.lng, DRONE.lat]);
+  const times = Array.from({ length: 9 }, (_, k) => k / 30);
+  const full = {
+    alt: Array(9).fill(ALT), yaw: Array.from({ length: 9 }, (_, k) => yawAt(k)),
+    pitch: Array(9).fill(PITCH), focal: Array(9).fill(FOCAL), times: times.slice()
+  };
+  const thin = { step: 3, alt: [], yaw: [], pitch: [], focal: [], times: [] };
+  for (let k = 0; k < 9; k += 3) {
+    thin.alt.push(full.alt[k]); thin.yaw.push(full.yaw[k]);
+    thin.pitch.push(full.pitch[k]); thin.focal.push(full.focal[k]); thin.times.push(times[k]);
+  }
+  const tr = { coords, times };
+
+  let worst = 0;
+  let detail = '';
+  for (const i of [0, 3, 6]) {
+    // 目标点用「该帧画面里偏一点的那个地面点」算出 —— 不能取正中，
+    // 正中正好在飞机正下方，反投影会因 tf≈0 判成「在相机平面附近」返回 null。
+    // 两套遥测在采样帧上姿态完全相同，所以这个点对两者都成立。
+    const c = forwardToGround(0.3, 0.3, full.yaw[i]);
+    const a = api.imagePointOfGround(tr, full, i, c);
+    const b = api.imagePointOfGround(tr, thin, i, c);
+    if (!a || !b) {
+      worst = Infinity;
+      detail = `i=${i} 有 null（目标点 ${c && c.lat.toFixed(6)}）`
+        + ` 全量=${a ? 'ok' : 'null'} 抽稀=${b ? 'ok' : 'null'}`;
+      break;
+    }
+    worst = Math.max(worst, Math.abs(a.xImg - b.xImg), Math.abs(a.yImg - b.yImg));
+    detail = `i=${i} 全量(${a.xImg.toFixed(6)},${a.yImg.toFixed(6)}) 抽稀(${b.xImg.toFixed(6)},${b.yImg.toFixed(6)})`;
+  }
+  chk(worst === 0, '采样点上：抽稀遥测与全量遥测算出的画面坐标完全一致', detail);
 }
 
 console.log('\n=== 4) 正/反投影互为逆运算（关键）===');

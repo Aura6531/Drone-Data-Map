@@ -7,7 +7,7 @@
 //   这个坑在本项目里真实踩过：文档里的两行命令实际只覆盖了 12 套里的 2 套。
 //
 // 用法：
-//   node run_tests.js                # 12 套（不含需要联网的那套）
+//   node run_tests.js                # 15 套（不含需要联网的那套）
 //   node run_tests.js --with-net     # 额外跑 test_tdt_tiles.py（会请求天地图瓦片）
 //   node run_tests.js --list         # 只列清单，不执行
 //
@@ -34,6 +34,7 @@ const NODE_SUITES = [
   'test_nearest.js',    // 按位置检索（用真实 GeoJSON）
   'test_ab.js',         // A+B 检索的数学基础（正/反投影互逆）
   'test_markers.js',    // 标记点列表（排序/勾选/删除/KML/复制/跳转）
+  'test_photos.js',     // 照片图层（一组一点 / ⚠ 角标 / 展示区 / 点照片跳视频）
 ];
 const PY_SUITES = [
   'check_py.py',        // 后端静态断言

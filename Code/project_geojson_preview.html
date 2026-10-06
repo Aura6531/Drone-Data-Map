@@ -433,6 +433,100 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .report-opt input{width:15px;height:15px;margin:3px 0 0;flex:0 0 auto}
 /* 报告地图底图那一行的小标题（下面是和尺寸选项一样的单选项） */
 .report-basemap-title{margin:16px 0 8px;font-size:13px;font-weight:600;color:#334155}
+
+/* ============================================================
+   照片图层 + 地图下方展示区
+   ============================================================ */
+
+/* 地图卡片标题行的第三块：照片图层开关。与上面两块的间距略大一点，
+   把它和「地名搜索」分开，免得看着像搜索的一部分。
+   写成 span + inline-flex：这一块不是 .card-tools（那套类名有静态断言在数个数），
+   靠 inline-flex 自己排成一行。
+   选择器写成 .card-tools.map-tools .photo-tools 是为了压过第 393 行那条同优先级的规则。 */
+.card-tools.map-tools .photo-tools{display:inline-flex;align-items:center;gap:6px;
+                                   padding-left:10px;margin-left:2px;border-left:1px solid #e2e8f0}
+
+/* 照片点：画成 SVG 圆形，fill 走 CSS 变量（实测=蓝、位置不准=橙）。
+   刻意不用 emoji 当点 —— emoji 的尺寸与基线随字体变，多张排在一起会歪。 */
+.photo-div-icon{background:none;border:none}
+.photo-dot-svg{display:block;overflow:visible;filter:drop-shadow(0 1px 2px rgba(15,23,42,.45))}
+.photo-div-icon .photo-dot{fill:var(--photo-dot,#1d4ed8);stroke:#fff;stroke-width:2}
+.photo-div-icon.photo-warn .photo-dot{fill:#f59e0b}
+
+/* 「非实测」角标：⚠ 贴在点的右上角。
+   不加圆底、不加描边 —— 就是用户说的「贴个角标」，多了反而像另一个标记。
+   text-anchor:middle + dominant-baseline 让它在 20×20 的图标里居中；
+   字形取 SVG 里的文本基元（U+26A0 不带 U+FE0F），避免彩色 emoji 字体把它画成
+   一张方图、位置因字体而异。颜色用深琥珀，压在浅色影像底图上也能看清。 */
+.photo-div-icon .photo-warn-mark{
+  font-family:"Segoe UI Symbol","Noto Sans Symbols 2",sans-serif;
+  font-size:13px;font-weight:700;fill:#b45309;stroke:#fff;stroke-width:3;
+  paint-order:stroke;text-anchor:middle;dominant-baseline:central}
+
+/* 当前选中的照片点：外面加一圈琥珀色光晕，和展示区里那张大图呼应 */
+.photo-div-icon.photo-active .photo-dot{stroke:#f59e0b;stroke-width:3}
+
+/* ---- 地图下方的照片展示区 ---- */
+/* 点地图上一个照片点，就在这一块里把该组的全部成员一起放出来。
+   放在地图下面（不在左右两栏里）：宽度够，变焦大图能看得清，
+   而且和 .below-map 里已有的检索结果同一套视觉语言。 */
+.photo-card{display:none;margin-top:12px;padding:13px 15px;border-radius:12px;
+            background:#fff;border:1px solid #cbd5e1;box-shadow:0 4px 14px rgba(15,23,42,.07)}
+.photo-head{display:flex;align-items:baseline;gap:8px 14px;flex-wrap:wrap;margin-bottom:10px}
+.photo-title{font-size:15px;font-weight:700;color:#0f172a}
+.photo-sub{font-size:12px;color:#64748b}
+.photo-sub.warn{color:#b45309;font-weight:600}
+.photo-head-tools{margin-left:auto;display:flex;gap:6px;align-items:center}
+
+/* 点信息：一行小标签，和 .hit-chips 同一套做法 */
+.photo-chips{display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:10px}
+.photo-chip{font-size:12px;line-height:1.35;background:#f1f5f9;border:1px solid #e2e8f0;
+            border-radius:6px;padding:3px 9px;white-space:nowrap}
+.photo-chip .k{color:#64748b;margin-right:5px}
+.photo-chip .v{font-weight:700;color:#0f172a}
+
+/* 大图 + 小图并排。
+   大图用 flex:3 1 340px：宽的时候占大部分，窄的时候（中栏不宽）会先收缩，
+   到 340px 以下自动换行，小图区接着占满整行。
+   不给整个画廊写死高度 —— 大图高度由图片自己的比例决定（16:9 或 5:4），
+   热成像那张不会被拉变形；只有极端高比例时才用 max-height 兜底。 */
+.photo-gallery{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.photo-lead{flex:3 1 340px;min-width:0}
+.photo-thumbs{flex:1 1 220px;display:flex;flex-wrap:wrap;gap:10px;min-width:0}
+
+.photo-shot{margin:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#0f172a}
+.photo-shot img{display:block;width:100%;height:auto;max-height:26vh;object-fit:contain}
+.photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
+.photo-lead .photo-shot img{max-height:46vh}
+.photo-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
+           background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
+/* 相机标签上色：变焦 / 广角 / 热成像一眼分清（和大图上那个「大图」标记同色系） */
+.photo-cap b{color:#0f172a}
+.photo-cap .cam{font-weight:700;border-radius:999px;padding:1px 8px;font-size:11px}
+.photo-cap .cam-zoom{background:#dbeafe;color:#1d4ed8}
+.photo-cap .cam-wide{background:#dcfce7;color:#15803d}
+.photo-cap .cam-thermal{background:#fee2e2;color:#b91c1c}
+.photo-cap .warn{color:#b45309;font-weight:700}
+.photo-cap .big{background:#f59e0b;color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700}
+
+/* 小图那一列：整块可点（点一下跳视频），所以给个明确的可点手感 */
+.photo-thumb{cursor:pointer;transition:border-color .15s ease,box-shadow .15s ease}
+.photo-thumb:hover{border-color:#2563eb;box-shadow:0 2px 10px rgba(37,99,235,.22)}
+.photo-thumb img{max-height:18vh}
+
+/* 「用这张照片时刻跳视频」：每组一条，按钮排一行 */
+.photo-jump{margin-top:11px;padding-top:10px;border-top:1px dashed #e2e8f0}
+.photo-jump-title{font-size:12px;color:#64748b;margin-bottom:7px}
+.photo-jump-title b{color:#0f172a}
+.photo-jump-row{display:flex;flex-wrap:wrap;gap:6px}
+.photo-jump-btn{height:32px;padding:0 12px;font-size:12px;font-weight:700;border-radius:8px;
+                background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;cursor:pointer}
+.photo-jump-btn:hover{border-color:#2563eb;background:#dbeafe}
+.photo-jump-note{margin-top:7px;font-size:12px;line-height:1.6;color:#64748b}
+.photo-jump-note .warn{color:#b45309;font-weight:600}
+
+/* 展示区没内容时的说明 */
+.photo-empty{font-size:13px;color:#94a3b8;line-height:1.7;padding:2px 0}
 </style>
 </head>
 <body>
@@ -540,6 +634,15 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         </select>
         <button id="keyBtn" class="key-btn" type="button"
                 title="天地图 key：还没申请下来也能先用系统；拿到后在这里补填，存盘即生效">天地图key</button>
+        <!-- 照片图层：和轨迹一样是「显不显示」的开关。
+             用 toggle-btn 那套（开=蓝底、关=灰白），和视频面板上的开关一致。
+             外层用 span 而不是 div：静态断言只认 .card-tools 这个类名，
+             这里再包一个 div 会让「三张卡片各一个控件组」的计数变成 4。 -->
+        <span class="photo-tools">
+          <button id="photoLayerBtn" class="toggle-btn off" type="button" aria-pressed="false"
+                  title="照片图层：显示 / 隐藏（同一目标点的多张照片在地图上合并成一个点）">照片图层</button>
+          <span id="photoLayerCount" class="photo-sub"></span>
+        </span>
       </div>
     </div>
 
@@ -568,6 +671,27 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     </div>
     <!-- 底图瓦片之类的次要提示：小字放地图下面，不占地图上方那一大块 -->
     <div id="tileHint" class="tile-hint" style="display:none"></div>
+
+    <!-- 照片展示区：点地图上任意一个照片点，就把该「目标点」的全部照片
+         （变焦 / 广角 / 热成像）一起放到这里 —— 变焦那张当大图，其余小图并排。
+         放在地图下面而不是左右两栏：宽度够，大图能看清；也不会占走地图高度。 -->
+    <section id="photoCard" class="photo-card">
+      <!-- 两个按钮始终存在、靠 disabled 与文案表达状态：
+           比每次渲染重建 DOM 少一类「监听器泄漏」的坑（标记点列表踩过）。 -->
+      <div class="photo-head">
+        <div id="photoTitle" class="photo-title">照片</div>
+        <div id="photoSub" class="photo-sub"></div>
+        <div class="photo-head-tools">
+          <button id="photoMapBtn" class="secondary" type="button"
+                  title="地图定位到该照片点（展示区打开、地图被移开时用）">地图定位</button>
+          <button id="photoCloseBtn" class="secondary" type="button"
+                  title="收起照片展示区（照片图层不受影响）">收起</button>
+        </div>
+      </div>
+      <div id="photoChips" class="photo-chips"></div>
+      <div id="photoGallery" class="photo-gallery"></div>
+      <div id="photoJump" class="photo-jump" style="display:none"></div>
+    </section>
 
     <!-- 地图下面：次要内容，整体缩小 -->
     <div class="below-map">
@@ -877,6 +1001,17 @@ const resultFlyBtn=document.getElementById('resultFlyBtn');
 const searchNearbyBtn=document.getElementById('searchNearbyBtn');
 const clearProbeBtn=document.getElementById('clearProbeBtn');
 const hitDetail=document.getElementById('hitDetail');
+// 照片图层开关 + 地图下方的照片展示区（容器已写死在 HTML 里，这里只取引用）
+const photoLayerBtn=document.getElementById('photoLayerBtn');
+const photoLayerCount=document.getElementById('photoLayerCount');
+const photoCard=document.getElementById('photoCard');
+const photoTitle=document.getElementById('photoTitle');
+const photoSub=document.getElementById('photoSub');
+const photoChips=document.getElementById('photoChips');
+const photoGallery=document.getElementById('photoGallery');
+const photoJump=document.getElementById('photoJump');
+const photoMapBtn=document.getElementById('photoMapBtn');
+const photoCloseBtn=document.getElementById('photoCloseBtn');
 
 // 「播放此处视频 / 地图定位到该点」是操作条里的常驻按钮（不再每次重建 DOM），
 // 所以检索结果存这里，按钮只负责用。inline onclick 每次渲染都生成一份，
@@ -908,6 +1043,22 @@ let probeText='';         // 当前选点说明（地名等）
 let highlightLayers=[];   // 检索结果高亮图层
 let allLoaded=false;      // 是否已加载全部轨迹
 const NEARBY_WARN_METERS=3000;
+
+// ------------------------------------------------------------
+// 照片图层与「地图下方的照片展示区」的状态。
+//
+// 这些变量必须在脚本靠前的位置声明：函数声明会提升，顶层那些
+// applyXxxVisibility() 完全可能先跑到，而 let/const 有暂时性死区，
+// 读未初始化的变量会抛 ReferenceError 并中断整个顶层脚本（本项目踩过一次）。
+// ------------------------------------------------------------
+let photoLayer=null;          // 照片点的 Leaflet 图层组（删掉重建，不逐个 remove）
+let photoGroups=[];           // 后端 /api/project/photos 返回的组（一组 = 一个目标点）
+let photoCounts=null;         // 后端给的统计（photos / groups / inaccurate …）
+let photoSelected=-1;         // 展示区里当前这组的索引（-1 = 没选）
+let photoLayerOn=false;       // 照片图层开关（默认关，按需打开 —— 不挡航迹）
+let photoActiveMarker=null;   // 当前选中的那个照片点（高亮用）
+let photoIndex=null;          // Map<"文件夹|时刻", 组的索引>，点某个标记时反查用
+let photoMatches=null;        // Map<组索引, 匹配到的视频>，按组缓存
 
 // ------------------------------------------------------------
 // 各功能的开关状态。
@@ -1344,6 +1495,8 @@ async function loadProjects(){
     refreshFlowStates();
     // 把项目里保存的标记点读回来画上
     loadProjectMarkers();
+    // 照片图层跟项目走：换项目后要重新取当前项目的照片
+    loadProjectPhotos();
   }catch(e){show(projectNotice,e.message,true)}
 }
 
@@ -3232,6 +3385,905 @@ function pickedForExport(){
   return list;
 }
 
+/* ============================================================
+   照片图层 + 地图下方的照片展示区（点照片跳视频）
+   ------------------------------------------------------------
+   数据来源：GET /api/project/photos?name=<项目>（后端 photo_meta.py 算好的
+   「镜头中心点对应的地面位置」），图片本体走 GET /photo?path=<绝对路径>。
+
+   三条需求（用户 2026-10-06 定的）就在这里落地：
+     ① 同一目标点的多张照片 —— T 热成像 / V 可见光广角 / S 变焦 ——
+        在地图上**合并成一个点**；不是「实测」的贴一个 ⚠ 角标，
+        而不是换一种颜色的点；
+     ② 点这个点 -> 在地图**下方**的展示区里把**全部成员一起**放出来，
+        变焦那张当大图，其余小图并排；
+     ③ 点照片能**跳到视频**（时空关联）：用照片时刻换算到视频的播放时刻，
+        再把「照片的地面目标点是否落在该帧画面内」当作交叉验证 ——
+        这样跳准没跳准，用户自己就能看出来，不用盲信。
+
+   关于时刻对齐（重要，界面上也必须说清楚）：
+     照片时刻直接取文件名里的 DJI_YYYYMMDDHHMMSS（本地时间，实测与文件
+     mtime 只差 2~3 秒）；视频 SRT 里的时间是**相对视频开头**的 0 秒起算，
+     所以要先知道「视频是什么时候开始的」。做法同样取视频文件名的
+     DJI_YYYYMMDDHHMMSS，并与 SRT 实测时长互校 —— 本机两个视频：
+     09:52:58 开录、SRT 到 1228.7 s，mtime 10:13:28，正好对上（误差 2 秒）。
+     因此时刻对齐是**可信**的，置信度按「分钟以内 / 数分钟」在界面上分级标注。
+   ============================================================ */
+
+// 跳到某个照片点时的缩放级别（比检索定位略紧一点：照片点本来就更密）
+const PHOTO_ZOOM=17;
+
+// 时刻比较的容差窗口（秒）。实测同一次飞行里照片与视频是同一块表、
+// 开录时刻又由文件名给出，正常都在几十秒内命中；给足 10 分钟只是为了
+// 容忍用户改过文件名或补拍的情况，超出的候选会按时间缺口从大到小排到后面。
+const PHOTO_MATCH_MAX_GAP=600;
+
+// 「无人机位置一致性」的宽松阈值（米）：用来挡掉「时间对上了但空间差得离谱」
+// 的候选（那是时刻推算本身错了的信号）。
+const PHOTO_DRONE_NEAR_M=1500;
+
+// 候选最多列几个：够判断就行，多了把展示区挤得没边
+const PHOTO_MATCH_LIMIT=12;
+
+// 后端给的是 ImageSource（WideCamera / ZoomCamera / InfraredCamera）。
+// 展示顺序由后端的 group_photos() 定死（变焦 -> 广角 -> 热成像），
+// 前端不再排一遍 —— 两边各排一次，规则一旦漂移就会出现「大图不是变焦」这种错。
+const PHOTO_CAM_NAMES={ZoomCamera:'变焦',WideCamera:'广角',InfraredCamera:'热成像'};
+
+// 相机名（ImageSource）-> 中文短名。未知的（更早的机型可能给别的值）原样显示，
+// 不猜 —— 猜错了反而误导。
+function photoCameraLabel(camera){
+  const key=String(camera||'');
+  return PHOTO_CAM_NAMES[key]||key||'照片';
+}
+
+// 相机名 -> caption 上那个彩色小标签的类名
+function photoCameraClass(camera){
+  const key=String(camera||'');
+  if(key==='ZoomCamera')return 'cam cam-zoom';
+  if(key==='WideCamera')return 'cam cam-wide';
+  if(key==='InfraredCamera')return 'cam cam-thermal';
+  return 'cam';
+}
+
+// 文件名里的时刻 -> 可读文本：「2026-09-24 09:53:48」
+function photoTimeText(name){
+  const m=String(name||'').match(/(\d{8})(\d{6})/);
+  if(!m)return '';
+  const d=m[1];
+  const t=m[2];
+  return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)} ${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)}`;
+}
+
+// 文件名里的时刻 -> 只到秒的钟点「09:53:48」（展示区的标题用）
+function photoClockText(name){
+  const m=String(name||'').match(/\d{8}(\d{6})/);
+  if(!m)return '';
+  const t=m[1];
+  return `${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)}`;
+}
+
+// 「20260924_095348」-> 秒级时间戳（本地时间）；拆不出来回 null。
+//
+// 为什么用 Date(y,m,d,...) 这种参数形式：它按**本地时区**解释，
+// 正好和 SRT/文件名采用的本地时间一致（new Date("2026-09-24T09:53:48")
+// 在部分浏览器里会按 UTC 解释，跨时区差 8 小时，那就彻底对不上了）。
+// 另外 Date 构造器会把 13 月这类越界值悄悄往后滚，所以先自己校验一遍月份。
+function photoFileTime(name){
+  const m=String(name||'').match(/(20\d{2})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})/);
+  if(!m)return null;
+
+  const month=Number(m[2]);
+  const day=Number(m[3]);
+  if(month<1||month>12||day<1||day>31)return null;
+
+  const t=new Date(Number(m[1]),month-1,day,
+                  Number(m[4]),Number(m[5]),Number(m[6])).getTime();
+  return Number.isFinite(t)?t:null;
+}
+
+// 组内第一张照片的文件名（后端 group_photos 已按变焦->广角->热成像排好，
+// 所以第一张就是「该用哪张当大图」的那张）
+function photoLeadMember(g){
+  return (g&&g.members&&g.members[0])||null;
+}
+
+// 组的时刻文本
+function photoGroupTimeText(g){
+  const lead=photoLeadMember(g);
+  return photoTimeText(lead&&lead.name);
+}
+
+function photoLeadName(g){
+  const lead=photoLeadMember(g);
+  return (lead&&lead.name)||'';
+}
+
+// 组的标题：时间 + 该目标点的「变焦/广角/热成像」构成
+function photoShotText(g){
+  const names=(g&&g.members||[]).map(m=>photoCameraLabel(m.camera));
+  return names.join(' + ')||'照片';
+}
+
+// 展示区的标题：单个点就写它，多个点依次排列，省得算一堆两两距离
+function photoGroupLabel(gs,index){
+  if(gs.length<=1)return '地图下方的照片展示区';
+  return `照片展示区 · 第 ${index+1} / ${gs.length} 个目标点`;
+}
+
+// 十六进制颜色 -> rgba()。照片点的光晕色由 JS 定，CSS 里没法从一个变量推另一个。
+function hexToRgba(hex,alpha){
+  const h=String(hex||'').replace('#','');
+  if(h.length!==6)return `rgba(37,99,235,${alpha})`;
+  const n=parseInt(h,16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${alpha})`;
+}
+
+// 一张照片的图片地址。path 必须用后端允许的绝对路径（/photo 会校验
+// 它是否落在某个项目文件夹里，越界一律挡掉）。
+function photoThumbUrl(folder,name){
+  return '/photo?path='+encodeURIComponent(String(folder||'')+'\\'+String(name||''));
+}
+
+// 某条航迹 / 组文件夹的「视频流前缀」：去掉 .JPG 和最后那段 _T / _V / _S，
+// 得到 DJI_20260924095348_0002。同一时刻的 T/V/S 三张会归到同一个前缀。
+function photoStreamPrefix(name,extPattern){
+  return String(name||'')
+    .replace(extPattern||/\.(JPG|JPEG|PNG)$/i,'')
+    .replace(/_[A-Za-z]+$/,'');
+}
+
+// 照片所属视频的路径，用 ASCII 分隔符拼（和页面上其它地方一致），
+// 后端自己会按 Windows 路径处理。
+function photoVideoFolderPath(g,index){
+  if(!projectFolderPaths||index==null||index<0)return '';
+  return String(projectFolderPaths[index]||'');
+}
+
+// ------------------------------------------------------------
+// 时刻对齐：视频第一条轨迹点的「绝对时刻」
+// ------------------------------------------------------------
+
+// 从一个视频文件名（DJI_20260924095258_0001_S.MP4）取开录时刻（毫秒）。
+// 取不到返回 null —— 这种情况这个视频不参与照片跳转（宁可不跳，也不猜）。
+function videoRealStartMs(relativePath){
+  const base=String(relativePath||'').split(/[\\/]/).pop();
+  const m=base.match(/(20\d{2})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})/);
+  if(!m)return null;
+
+  const month=Number(m[2]);
+  const day=Number(m[3]);
+  if(month<1||month>12||day<1||day>31)return null;
+
+  return new Date(Number(m[1]),month-1,day,
+                 Number(m[4]),Number(m[5]),Number(m[6])).getTime();
+}
+
+// 一条已加载航迹 -> 一段可以按「真实时刻」比较的视频。
+// realStartMs 取不到时返回 null（不参与匹配）。
+function photoClipOf(track){
+  const info=track&&track.fileInfo;
+  if(!info||!info.relative_path)return null;
+
+  const times=track.times||[];
+  if(!times.length)return null;
+
+  const realStartMs=videoRealStartMs(info.relative_path);
+  if(realStartMs==null)return null;
+
+  // 首尾两条记录的视频内时刻，换算成真实时刻 —— SRT 的首条可能是 0.5 s 之类，
+  // 不要假设它一定是 0。
+  const ms0=realStartMs+Number(times[0])*1000;
+  const msEnd=realStartMs+Number(times[times.length-1])*1000;
+
+  return {
+    track,
+    info,
+    realStartMs,
+    ms0:Number.isFinite(ms0)?ms0:realStartMs,
+    msEnd:Number.isFinite(msEnd)?msEnd:realStartMs
+  };
+}
+
+// 把视频内的「绝对时刻（毫秒）」换算成播放器的进度（秒）。
+// 进度 = 该时刻 - 视频开录时刻；再减掉首条记录的时刻，得到与首帧一致的基准。
+function photoVideoStartSeconds(clip,ms){
+  if(!clip||!Number.isFinite(ms))return 0;
+
+  const times=clip.track&&clip.track.times||[];
+  const t0=times.length?Number(times[0]):0;
+  const raw=(ms-clip.realStartMs)/1000;
+
+  return Math.max(0,raw-(Number.isFinite(t0)?t0:0));
+}
+
+// 视频内的某个进度落在第几条记录上。
+// 用「按时间二分 + 丢一帧必然相邻」的做法，避免为一次匹配把几万条记录遍历一遍。
+// 轨迹点与时间是同一来源、逐个对应的，所以下标可以直接对应。
+function photoFrameAt(track,time){
+  const times=(track&&track.times)||[];
+  if(!times.length)return -1;
+
+  const n=times.length;
+  const last=Number(times[n-1]);
+
+  // 超出末尾：末尾那帧就是最近的
+  if(Number.isFinite(last)&&time>=last)return n-1;
+
+  let lo=0;
+  let hi=n-1;
+
+  while(hi-lo>1){
+    const mid=(lo+hi)>>1;
+    const v=Number(times[mid]);
+
+    if(!Number.isFinite(v)||v<=time)lo=mid;
+    else hi=mid;
+  }
+
+  const a=Number(times[lo]);
+  const b=Number(times[hi]);
+  const da=Number.isFinite(a)?Math.abs(a-time):Infinity;
+  const db=Number.isFinite(b)?Math.abs(b-time):Infinity;
+
+  return da<=db?lo:hi;
+}
+
+// ------------------------------------------------------------
+// 匹配：照片 -> 视频帧
+// ------------------------------------------------------------
+
+// 一组照片 vs 一段视频：找到最合适的那一帧，并把「为什么这么判」一起带出来。
+// 返回 null 表示这段视频跟这组照片没关系（没有可比记录 / 时间缺口太大）。
+function photoFrameMatch(clip,group){
+  const track=clip&&clip.track;
+  const targetTime=photoFileTime(photoLeadName(group));
+  if(!track||targetTime==null)return null;
+
+  const times=track.times||[];
+  if(!times.length)return null;
+
+  // 照片时刻 -> 视频内的进度
+  const gapToStart=(targetTime-clip.ms0)/1000;
+  const gapToEnd=(targetTime-clip.msEnd)/1000;
+
+  // 照片落在视频时间范围之外：只有够近才留作候选，并标成「超出范围」
+  if (gapToStart<0||gapToEnd>0){
+    const out=gapToStart<0?-gapToStart:gapToEnd;
+    if(out>PHOTO_MATCH_MAX_GAP)return null;
+  }
+
+  // 注意单位：photoFrameAt 要的是「视频内秒数」（首帧 0 秒起算），
+  // 而 gapToStart 就是「照片时刻 - 视频首帧时刻」的秒数，正好是它。
+  // 别写成 targetTime-clip.realStartMs —— 那是毫秒，直接传进去会被
+  // 当成「远在末尾之后」，photoFrameAt 于是返回最后一帧（踩过这个坑）。
+  const i=photoFrameAt(track,gapToStart);
+  if(i<0)return null;
+
+  const frameTime=Number(times[i]);
+  if(!Number.isFinite(frameTime))return null;
+
+  const frameMs=clip.realStartMs+frameTime*1000;
+  const gapSeconds=(frameMs-targetTime)/1000;
+
+  // 照片里的飞机位置（同一时刻的坐标，照片自己带）
+  const lead=photoLeadMember(group);
+  const drone=lead&&Number.isFinite(Number(lead.drone_lat))&&Number.isFinite(Number(lead.drone_lon))
+    ?L.latLng(Number(lead.drone_lat),Number(lead.drone_lon))
+    :null;
+
+  const coords=track.coords||[];
+  const c=coords[i];
+  const pointLatLng=Array.isArray(c)&&c.length>=2
+    ?L.latLng(Number(c[1]),Number(c[0]))
+    :null;
+
+  // 空间一致性：那一刻飞机在哪儿、照片里的飞机在哪儿
+  const droneDistance=(drone&&pointLatLng)?map.distance(drone,pointLatLng):null;
+
+  // 交叉验证：照片的那个地面目标点，在这一帧的画面里吗？
+  // 判据与「按位置检索」完全同一套（imagePointOfGround），所以两者的
+  // 「看得见」含义一致，不会出现一个说在画面里、另一个说不在。
+  const tele=track.telemetry||null;
+  const target=Number.isFinite(Number(group.lat))&&Number.isFinite(Number(group.lon))
+    ?L.latLng(Number(group.lat),Number(group.lon))
+    :null;
+  const imagePoint=(tele&&target)?imagePointOfGround(track,tele,i,target):null;
+
+  return {
+    clip,
+    index:i,
+    time:frameTime,
+    gapSeconds,
+    droneDistance,
+    inFrame:!!(imagePoint&&imagePoint.visible),
+    xImg:imagePoint?imagePoint.xImg:null,
+    yImg:imagePoint?imagePoint.yImg:null
+  };
+}
+
+// 候选排序。优先「照片目标点在画面内」—— 那是时空都对上了的硬证据；
+// 同一档里再按时间缺口、空间距离。
+function photoMatchRank(a,b){
+  const af=a.inFrame?0:1;
+  const bf=b.inFrame?0:1;
+  if(af!==bf)return af-bf;
+
+  const ag=Math.abs(a.gapSeconds);
+  const bg=Math.abs(b.gapSeconds);
+  if(Math.abs(ag-bg)>0.5)return ag-bg;
+
+  const ad=Number.isFinite(a.droneDistance)?a.droneDistance:Infinity;
+  const bd=Number.isFinite(b.droneDistance)?b.droneDistance:Infinity;
+  if(Math.abs(ad-bd)>1)return ad-bd;
+
+  return 0;
+}
+
+// 所有已加载航迹里，跟这组照片有关的候选帧（已排序、已截断）
+function photoMatchesFor(group){
+  if(!group)return [];
+
+  const targetTime=photoFileTime(photoLeadName(group));
+  if(targetTime==null)return [];
+
+  // 这一帧的画面里看不看得见地面目标？—— 决定它是「实锤」还是「只是时间近」。
+  // 用采样代替逐帧：一帧一帧算要几万次反投影，而 4 秒内姿态几乎不变。
+  function inFrameVotes(track,centerIndex,tele,target){
+    if(!tele||!target)return null;
+
+    const from=Math.max(0,centerIndex-60);
+    const to=Math.min((track.times||[]).length-1,centerIndex+60);
+    if(to<from)return null;
+
+    const step=Math.max(1,Math.ceil((to-from+1)/5));
+    let total=0;
+    let hits=0;
+
+    for(let i=from;i<=to;i+=step){
+      const p=imagePointOfGround(track,tele,i,target);
+      if(!p)continue;
+
+      total++;
+      if(p.visible)hits++;
+    }
+
+    return total?hits*2>=total:null;
+  }
+
+  const out=[];
+
+  for(const track of loadedTracks){
+    const clip=photoClipOf(track);
+    if(!clip)continue;
+
+    // 遥测没预取到就现取一次；这个函数是 async，外面等得到结果
+    if(!track.telemetry)continue;
+
+    const target=Number.isFinite(Number(group.lat))&&Number.isFinite(Number(group.lon))
+      ?L.latLng(Number(group.lat),Number(group.lon))
+      :null;
+
+    const m=photoFrameMatch(clip,group);
+    if(!m)continue;
+
+    const votes=inFrameVotes(track,m.index,track.telemetry,target);
+
+    // 遥测缺失时 votes 是 null：这时不把「画面内」当硬条件，
+    // 否则会凭空丢掉本来对得上的候选。
+    out.push({
+      video:track.video||clip.info.relative_path,
+      relativePath:String(clip.info.relative_path),
+      folderIndex:clip.info.folder_index,
+      folder:photoVideoFolderPath(group,clip.info.folder_index),
+      stream:streamLabelOf(clip.info.relative_path),
+      index:m.index,
+      time:m.time,
+      gapSeconds:m.gapSeconds,
+      startSeconds:photoVideoStartSeconds(clip,photoFileTime(photoLeadName(group))),
+      droneDistance:m.droneDistance,
+      inFrame:votes===true,
+      inFrameKnown:votes!==null,
+      xImg:m.xImg,
+      yImg:m.yImg
+    });
+  }
+
+  // 空间上差得离谱的直接丢掉（时刻推算错位的信号），
+  // 但「画面内」的候选无论距离都留下 —— 那是强证据。
+  const kept=out.filter(m=>m.inFrame||!Number.isFinite(m.droneDistance)
+                           ||m.droneDistance<=PHOTO_DRONE_NEAR_M);
+
+  kept.sort(photoMatchRank);
+
+  // 时间缺口超过容差的排到最后并保留（用户能看出「远」），但只留前几个
+  return kept.slice(0,PHOTO_MATCH_LIMIT);
+}
+
+// ------------------------------------------------------------
+// 地图图层：一组一个点
+// ------------------------------------------------------------
+
+// 照片点的图标。实测=蓝点；位置不准=橙点 + 右上角 ⚠。
+// 用 SVG 而不是 DOM 圆点：⚠ 要压在圆的右上角、还要不受字体度量影响。
+function photoIcon(group,active){
+  if(!leafletReady()||typeof L.divIcon!=='function')return null;
+
+  const warn=group&&group.accuracy&&group.accuracy!=='实测';
+  const activeNow=active!==undefined?active:false;
+
+  const cls='photo-div-icon'+(warn?' photo-warn':'')+(activeNow?' photo-active':'');
+
+  // 光晕用内联颜色 + 外层 SVG 的 CSS 变量：选中时光圈要和点本身的颜色一致，
+  // 而颜色是由「实不实测」在 JS 里决定的，CSS 里没法从一个变量推另一个。
+  const dotColor=warn?'#f59e0b':'#1d4ed8';
+
+  return L.divIcon({
+    className:cls,
+    iconSize:[20,20],
+    iconAnchor:[10,10],
+    tooltipAnchor:[0,-11],
+    html:`<svg class="photo-dot-svg" width="20" height="20" viewBox="0 0 20 20" style="--photo-dot:${dotColor}">`
+        +`<circle class="photo-dot" cx="10" cy="10" r="6"/>`
+        +`</svg>`
+        +(warn?'<span class="photo-warn-mark">⚠</span>':'')
+  });
+}
+
+// 悬停提示：这一段能省掉「必须点开才知道里面是什么」的来回
+function photoTooltip(group){
+  if(!group)return '';
+
+  const lines=[
+    `${photoGroupTimeText(group)}　${photoShotText(group)}`,
+    `目标点 ${Number(group.lat).toFixed(6)}, ${Number(group.lon).toFixed(6)}`,
+    group.accuracy==='实测'?'位置：实测（激光测距解算）':'位置：位置不准（平地假设估算）'
+  ];
+
+  if(group.count>1)lines.push(`共 ${group.count} 张，点击在下方一起展示`);
+  else lines.push('点击在下方展示');
+
+  return lines.join('\n');
+}
+
+// 重建照片图层。全部推倒重来（而不是逐个 remove）：
+// 分组是按「同架次 + 同一秒」，重扫之后分组本身可能变，增量更新反而更容易错。
+function renderPhotoLayer(){
+  if(!map||!leafletReady())return;
+
+  if(photoLayer){
+    try{map.removeLayer(photoLayer)}catch(e){}
+    photoLayer=null;
+  }
+
+  photoActiveMarker=null;
+
+  if(!photoLayerOn)return;
+
+  photoLayer=L.layerGroup();
+
+  photoGroups.forEach((group,index)=>{
+    if(!Number.isFinite(Number(group.lat))||!Number.isFinite(Number(group.lon)))return;
+
+    const marker=L.marker([Number(group.lat),Number(group.lon)],{
+      icon:photoIcon(group),
+      // 照片点比航迹小一些，zIndexOffset 为负 -> 压在航迹下面，
+      // 免得一片照片点把航迹线全盖住（照片是要和航迹对照着看的）
+      zIndexOffset:-200
+    });
+
+    // 照片点的点击不要冒泡到地图 —— 地图的 click 是「选点检索」，
+    // 点照片点不该顺手改掉用户的选点。
+    marker.on('click',e=>{
+      if(e&&e.originalEvent&&typeof L!=='undefined'&&L.DomEvent)L.DomEvent.stopPropagation(e);
+      selectPhotoGroup(index);
+    });
+
+    marker.bindTooltip(photoTooltip(group),{direction:'top',offset:[0,-10]});
+    marker.photoGroupIndex=index;
+    marker.addTo(photoLayer);
+  });
+
+  photoLayer.addTo(map);
+}
+
+// 图层开关 + 计数文字的同步
+function updatePhotoLayerUI(){
+  if(photoLayerBtn){
+    photoLayerBtn.classList.toggle('off',!photoLayerOn);
+    photoLayerBtn.setAttribute('aria-pressed',photoLayerOn?'true':'false');
+  }
+
+  if(!photoLayerCount)return;
+
+  if(!photoCounts){
+    photoLayerCount.textContent='';
+    return;
+  }
+
+  const total=Number(photoCounts.photos||0);
+  const groups=Number(photoCounts.groups||0);
+  const merged=Number(photoCounts.merged||0);
+
+  photoLayerCount.textContent=total
+    ? `${total} 张 -> ${groups} 个点${merged?`（${merged} 个点由多张合并）`:''}`
+    : '';
+}
+
+function applyPhotoLayerVisibility(){
+  updatePhotoLayerUI();
+  renderPhotoLayer();
+}
+
+function setPhotoLayer(on){
+  photoLayerOn=!!on;
+  applyPhotoLayerVisibility();
+}
+
+// 重新加载当前项目的照片（换项目、导入新数据之后都要走一次）。
+async function loadProjectPhotos(){
+  const name=projectSelect&&projectSelect.value;
+
+  // 换项目时口径要清干净：照片点、展示区、缓存的匹配结果都不再属于新项目
+  photoGroups=[];
+  photoCounts=null;
+  photoIndex=null;
+  photoMatches=null;
+  photoSelected=-1;
+  closePhotoCard();
+
+  if(!name||name==='暂无项目'){
+    applyPhotoLayerVisibility();
+    return;
+  }
+
+  try{
+    const d=await api('/api/project/photos?name='+encodeURIComponent(name));
+
+    photoGroups=Array.isArray(d&&d.groups)?d.groups:[];
+    photoCounts=(d&&d.counts)||null;
+    photoMatches=new Map();
+
+    // 点某个标记时反查组：用「文件夹 + 时刻」当键
+    photoIndex=new Map();
+    photoGroups.forEach((g,i)=>photoIndex.set(`${g.folder}|${g.stamp}`,i));
+
+    applyPhotoLayerVisibility();
+  }catch(e){
+    photoCounts=null;
+    applyPhotoLayerVisibility();
+
+    // 照片是附加功能：接口挂了不该打断轨迹/视频这条主线，
+    // 所以只在计数位置写一句原因，不弹红框。
+    if(photoLayerCount)photoLayerCount.textContent='照片读取失败：'+e.message;
+  }
+}
+
+// 清掉照片图层与展示区（点「清空」时用；数据留着，再开开关就能显示）
+function clearProjectPhotos(){
+  photoSelected=-1;
+  photoActiveMarker=null;
+
+  if(photoLayer){
+    try{photoLayer.remove()}catch(e){}
+  }
+
+  closePhotoCard();
+}
+
+// ------------------------------------------------------------
+// 地图下方的展示区
+// ------------------------------------------------------------
+
+// 一组照片 -> HTML（大图优先变焦，其余小图并排）。
+// 单独抽出来是为了能脱离 DOM 直接测：只吃数据、只吐字符串。
+function photoGalleryHtml(group){
+  if(!group)return '';
+
+  const members=Array.isArray(group.members)?group.members:[];
+  if(!members.length)return '<div class="photo-empty">这一组没有可展示的照片。</div>';
+
+  // 后端已经按「变焦 -> 广角 -> 热成像」排好序了，这里不再重排：
+  // 前端再排一次，两边规则一旦漂移就会不一致。
+  const lead=members[0];
+  const rest=members.slice(1);
+  const leadWarn=String(lead.accuracy||'')!=='实测';
+
+  const leadCaption=
+    `<figcaption class="photo-cap">`
+    +`<span class="big">大图</span>`
+    +`<span class="${photoCameraClass(lead.camera)}">${esc(photoCameraLabel(lead.camera))}</span>`
+    +`<b>${esc(lead.name)}</b>`
+    +(leadWarn?`<span class="warn">⚠ ${esc(lead.accuracy)}</span>`:'')
+    +`</figcaption>`;
+
+  const leadFigure=
+    `<figure class="photo-shot photo-lead-shot" title="点击跳到对应的视频时刻">`
+    +`<img src="${esc(photoThumbUrl(lead.folder,lead.name))}" alt="${esc(photoCameraLabel(lead.camera))}照片">`
+    +leadCaption
+    +`</figure>`;
+
+  const thumbs=rest.map(m=>{
+    const warn=String(m.accuracy||'')!=='实测';
+
+    return `<figure class="photo-shot photo-thumb" data-photo-name="${esc(m.name)}" title="点击跳到这张照片对应的视频时刻">`
+      +`<img src="${esc(photoThumbUrl(m.folder,m.name))}" alt="${esc(photoCameraLabel(m.camera))}照片">`
+      +`<figcaption class="photo-cap">`
+      +`<span class="${photoCameraClass(m.camera)}">${esc(photoCameraLabel(m.camera))}</span>`
+      +`<b>${esc(m.name)}</b>`
+      +(warn?`<span class="warn">⚠</span>`:'')
+      +`</figcaption>`
+      +`</figure>`;
+  }).join('');
+
+  return `<div class="photo-lead">${leadFigure}</div>`
+    +(rest.length?`<div class="photo-thumbs">${thumbs}</div>`:'');
+}
+
+// 匹配结果 -> 「跳视频」那一块的 HTML。
+// 同样抽成纯函数：编号按钮、置信度文案、跳不到的说明都在这里定死，
+// 只有「点按钮」那一步需要 DOM。
+function photoJumpHtml(group,matches){
+  if(!group)return '';
+
+  const timeText=photoGroupTimeText(group);
+  const list=Array.isArray(matches)?matches:[];
+
+  if(!list.length){
+    return `<div class="photo-jump-title">跳视频：这张照片拍于 <b>${esc(timeText)}</b></div>`
+      +`<div class="photo-jump-note">没有找到时间对得上的视频。常见原因：`
+      +`该架次的视频还没加载到地图（先点左栏的「加载全部」）、`
+      +`视频文件名里没有可识别的时间、或者这段飞行当时没有录像。</div>`;
+  }
+
+  const buttons=list.map((m,i)=>`<button class="photo-jump-btn" type="button" data-photo-match="${i}">`
+    +`▶ ${i+1}. ${esc(m.video)}</button>`).join('');
+
+  const best=list[0];
+
+  let confidence='';
+  if(best.inFrame){
+    confidence='<b>照片的地面目标点在该帧画面内</b> —— 时空都对上了，这是最可信的一种。';
+  }else if(Math.abs(best.gapSeconds)<=60){
+    confidence='时刻对得上（分钟以内）。这一帧里没有直接看到照片的目标点，可能是姿态/变焦不同，属正常。';
+  }else{
+    confidence='时间差偏大，对齐只能算**参考** —— 建议按画面自行核对。';
+  }
+
+  const notes=list.filter(m=>m.inFrameKnown&&!m.inFrame).length;
+
+  return `<div class="photo-jump-title">点一下跳到视频的对应时刻`
+    +`（照片拍于 <b>${esc(timeText)}</b>，按文件名时刻对齐）</div>`
+    +`<div class="photo-jump-row">${buttons}</div>`
+    +`<div class="photo-jump-note">最接近的一段：<b>${esc(best.video)}</b>`
+    +`　时间差 <b>${best.gapSeconds>=0?'+':''}${best.gapSeconds.toFixed(1)} 秒</b>`
+    +(best.droneDistance!=null?`　当时飞机位置相距 <b>${Math.round(best.droneDistance)} 米</b>`:'')
+    +`<br>${confidence}`
+    +(notes?`<br>下面这 ${notes} 段的「画面内」判定为否，只是时间上近，别当同一处看。`:'')
+    +`</div>`;
+}
+
+// 展示区里那张「点信息」小标签行
+function photoCardChips(group){
+  if(!group)return '';
+
+  const lead=photoLeadMember(group);
+  const warn=String(group.accuracy||'')!=='实测';
+  const note=lead&&lead.accuracy_note?String(lead.accuracy_note):'';
+
+  const chip=(k,v)=>`<span class="photo-chip"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></span>`;
+
+  return chip('目标点',`${Number(group.lat).toFixed(6)}, ${Number(group.lon).toFixed(6)}`)
+    +chip('拍摄时刻',photoTimeText(lead&&lead.name))
+    +chip('照片',`${group.count} 张（${photoShotText(group)}）`)
+    +chip('距离',lead&&lead.distance!=null?`${lead.distance} m`:'-')
+    +chip('俯角',lead&&lead.depression!=null?`${lead.depression}°`:'-')
+    +(warn?`<span class="photo-chip"><span class="k">定位质量</span><span class="v">⚠ ${esc(group.accuracy)}${note?'（'+esc(note)+'）':''}</span></span>`:'');
+}
+
+// 打开（或切换）展示区
+async function selectPhotoGroup(index){
+  if(index<0||index>=photoGroups.length){
+    closePhotoCard();
+    return;
+  }
+
+  photoSelected=index;
+
+  const group=photoGroups[index];
+
+  if(photoCard){
+    photoTitle.textContent=`照片 ${photoClockText(photoLeadName(group))||''}　${photoShotText(group)}`;
+    photoSub.textContent=`${photoGroupLabel(photoGroups,index)}`
+      +(group.accuracy!=='实测'?`　⚠ ${group.accuracy}`:'');
+    photoSub.className='photo-sub'+(group.accuracy!=='实测'?' warn':'');
+
+    photoChips.innerHTML=photoCardChips(group);
+    photoGallery.innerHTML=photoGalleryHtml(group);
+
+    // 大图 / 小图统一：点一下就按这张照片的时刻跳视频
+    photoGallery.querySelectorAll('.photo-shot').forEach(fig=>{
+      fig.addEventListener('click',()=>openPhotoVideo(group,fig.dataset.photoName||''));
+    });
+
+    photoJump.innerHTML='<div class="photo-jump-title">正在查找对应的视频……</div>';
+    photoJump.style.display='block';
+
+    photoCard.style.display='block';
+  }
+
+  // 地图上把这个点标出来，并把视野带过去（已经看得见就不动地图，
+  // 免得用户刚缩放好又被拽走）
+  highlightPhotoMarker(index);
+
+  // 地图容器变高了，Leaflet 缓存的尺寸随之失效，必须让它重算
+  refreshMapSizeSoon();
+
+  // 视频列表 / 遥测可能还没加载 —— 这里按需补齐。
+  // 只补「当前筛选出来的那些」，和「加载全部」按钮的口径保持一致。
+  try{
+    await ensureAllLoaded();
+  }catch(e){}
+
+  try{
+    // 遥测是「画面内」判定的前提，等它落地（已缓存的会直接命中）
+    await Promise.all(loadedTracks.map(t=>ensureTrackTelemetry(t).catch(()=>null)));
+  }catch(e){}
+
+  // 异步期间用户可能已经切到别的组了，这时不要再覆盖界面
+  if(photoSelected!==index)return;
+
+  let matches=photoMatches&&photoMatches.get(index);
+
+  if(!matches){
+    try{
+      matches=photoMatchesFor(group);
+    }catch(e){
+      matches=[];
+    }
+
+    if(photoMatches)photoMatches.set(index,matches);
+  }
+
+  if(photoSelected!==index)return;
+
+  if(photoCard){
+    photoJump.innerHTML=photoJumpHtml(group,matches);
+
+    photoJump.querySelectorAll('[data-photo-match]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const m=matches[Number(btn.dataset.photoMatch)];
+        if(m)jumpToPhotoVideo(m);
+      });
+    });
+  }
+}
+
+// 高亮当前照片点。原来那个点的图标要换回来，不能留下上一处的高亮。
+function highlightPhotoMarker(index){
+  if(!map||!photoLayer)return;
+
+  if(photoActiveMarker){
+    const old=photoActiveMarker;
+    const oldGroup=photoGroups[old.photoGroupIndex];
+    if(oldGroup&&typeof old.setIcon==='function')old.setIcon(photoIcon(oldGroup,false));
+    photoActiveMarker=null;
+  }
+
+  if(index<0)return;
+
+  let found=null;
+
+  photoLayer.eachLayer(marker=>{
+    if(found)return;
+    if(marker.photoGroupIndex===index)found=marker;
+  });
+
+  if(!found)return;
+
+  const group=photoGroups[index];
+  found.setIcon(photoIcon(group,true));
+  photoActiveMarker=found;
+}
+
+function closePhotoCard(){
+  photoSelected=-1;
+
+  if(photoCard)photoCard.style.display='none';
+  if(photoGallery)photoGallery.innerHTML='';
+  if(photoChips)photoChips.innerHTML='';
+  if(photoJump){
+    photoJump.innerHTML='';
+    photoJump.style.display='none';
+  }
+
+  if(photoActiveMarker){
+    const group=photoGroups[photoActiveMarker.photoGroupIndex];
+    if(group&&typeof photoActiveMarker.setIcon==='function')photoActiveMarker.setIcon(photoIcon(group,false));
+    photoActiveMarker=null;
+  }
+}
+
+// 「地图定位」：只带视野，不改选中的组
+function flyToPhotoGroup(){
+  if(!map||photoSelected<0||photoSelected>=photoGroups.length)return;
+
+  const g=photoGroups[photoSelected];
+  map.setView([Number(g.lat),Number(g.lon)],PHOTO_ZOOM,{animate:true});
+}
+
+// ------------------------------------------------------------
+// 点照片 -> 跳视频
+// ------------------------------------------------------------
+
+// 真正去播：走的还是「轨迹气泡」那条链路（openVideoFromPopup），
+// 所以转码兜底、2 倍速、地图跟随这些既有行为全都一致。
+function jumpToPhotoVideo(m){
+  if(!m||!map)return;
+
+  const encoded=encodeURIComponent(JSON.stringify({
+    folder_index:m.folderIndex,
+    relative_path:m.relativePath,
+    video_start:m.startSeconds,
+    video_end:0,
+    video:m.video
+  }));
+
+  openVideoFromPopup(encoded);
+
+  if(videoInfo){
+    videoInfo.textContent=`已跳到 ${formatTime(m.startSeconds)}（照片拍摄时刻 ${photoGroupTimeText(
+      photoGroups[photoSelected]||{})}　差 ${m.gapSeconds>=0?'+':''}${m.gapSeconds.toFixed(1)} 秒）`;
+  }
+}
+
+// 点展示区里的某张照片时，按**这张**照片的时刻跳（同组内 T/V 是同秒拍的，
+// 所以结果通常和用组时刻一样；将来若有不同秒的成员，这里也不会跳错）。
+function openPhotoVideo(group,name){
+  if(!group)return;
+
+  const target=String(name||'');
+
+  const matches=photoMatches&&photoMatches.get(photoSelected);
+
+  // 先按文件名前缀找同名的那一条（视频和照片是同一个 DJI 编号，
+  // 只是扩展名与 _T/_V/_S 后缀不同）
+  if(Array.isArray(matches)&&matches.length){
+    let best=null;
+
+    for(const m of matches){
+      if(target&&photoStreamPrefix(m.relativePath,/\.(MP4|MOV)$/i)
+         ===photoStreamPrefix(target)){
+        best=m;
+        break;
+      }
+    }
+
+    jumpToPhotoVideo(best||matches[0]);
+    return;
+  }
+
+  // 还没匹配（异步还没回来）：按这一组重新算一次再跳，
+  // 不用让用户等界面刷新完再点第二遍。
+  try{
+    const fresh=photoMatchesFor(group);
+    if(fresh.length){
+      if(photoMatches)photoMatches.set(photoSelected,fresh);
+      jumpToPhotoVideo(fresh[0]);
+      return;
+    }
+  }catch(e){}
+
+  if(videoInfo)videoInfo.textContent='这张照片暂时没有找到对应的视频片段。';
+}
+
+// 开关 / 收起 / 定位 —— 只挂一次监听（和标记点列表同一套做法）
+if(photoLayerBtn)photoLayerBtn.addEventListener('click',()=>setPhotoLayer(!photoLayerOn));
+// 用 ?. ：这两个按钮在卡片内部，理论上传进来的事件对象一定带 stopPropagation，
+// 但不能因为这个可选项把整块功能拖崩（曾经就这么崩过一次）。
+if(photoCloseBtn)photoCloseBtn.addEventListener('click',event=>{event?.stopPropagation?.();closePhotoCard()});
+if(photoMapBtn)photoMapBtn.addEventListener('click',event=>{event?.stopPropagation?.();flyToPhotoGroup()});
+
 // 导出文件名：标记点_<项目名>_<日期>.kml
 function markerKmlFileName(){
   const d=new Date();
@@ -4789,6 +5841,9 @@ clearBtn.addEventListener('click',()=>{
   if(videoMarkLayer)videoMarkLayer.clearLayers();
   initMap();layerGroup.clearLayers();loadedTracks=[];allLoaded=false;
   clearProbe();clearHighlight();hideDroneMarker();hideNearbyResult();legend.innerHTML='';stats.innerHTML='';
+  // 照片图层跟着一起收：只收展示区与高亮，数据和开关状态留着 ——
+  // 照片图层那个开关是独立的，用户点「清空」不该把开关也按掉。
+  closePhotoCard();
   document.querySelectorAll('.file-item').forEach(x=>x.classList.remove('active'));
 });
 refreshBtn.addEventListener('click',scanGeoJSON);
@@ -4957,6 +6012,8 @@ async function runAutoPipeline(){
     setFlow('④ 重新扫描并全部加载到地图……');
     await scanGeoJSON();
     await loadAll();
+    // 这一步可能刚导入了新的架次照片，照片图层跟着刷一次
+    await loadProjectPhotos();
 
     const lines=[
       `项目：${name}`,
@@ -5096,6 +6153,10 @@ async function importScannedFolder(folder,quiet){
   if(!folder){if(!quiet)show(projectNotice,'没有选择数据。');return}
 
   const r=await jsonPost('/api/project/add-folder',{project_name:name,folder});
+
+  // 项目里多了一个数据文件夹，文件夹下标可能变了 —— 之前缓存的路径表作废，
+  // 否则照片跳视频时算出来的视频路径会指到别的文件夹去。
+  projectFolderPaths=null;
 
   if(!quiet){
     await scanGeoJSON();
@@ -5295,11 +6356,16 @@ if(makeGeoBtn)makeGeoBtn.addEventListener('click',async()=>{
 projectSelect.addEventListener('change',()=>{
   if(map){layerGroup.clearLayers();legend.innerHTML='';stats.innerHTML=''}
   loadedTracks=[];allLoaded=false;clearProbe();clearHighlight();hideDroneMarker();hideNearbyResult();
+  // 换项目：文件夹路径、航迹遥测、照片（组与匹配结果）全部作废
+  projectFolderPaths=null;
+  clearProjectPhotos();
   resetFlowButtons();
   scanGeoJSON();
   refreshFlowStates();
   // 换项目了，标记点也跟着换
   loadProjectMarkers();
+  // 照片图层也跟着换（scanGeoJSON 不会管它，这里单独来一次）
+  loadProjectPhotos();
 });
 placeSearchBtn.addEventListener('click',doPlaceSearch);
 placeInput.addEventListener('keydown',e=>{if(e.key==='Enter')doPlaceSearch()});
@@ -5544,6 +6610,57 @@ function prefetchTrackTelemetry(){
   }
 }
 
+// —— 航迹点下标 -> 遥测下标 ——
+// 两者**长度不一样**：GeoJSON 的坐标/时间是逐帧的（30fps，3.6 万条），
+// 而遥测按 TELEMETRY_STEP=3 抽稀到 10Hz（1.2 万条，step 字段写在返回里）。
+// 所以拿航迹点下标直接读 tele.alt[i]，读到的其实是「第 3i 帧」的姿态 ——
+// 偏差随下标线性放大，中段能差到 180°（真实踩过：画面内判定几乎全错）。
+//
+// 首选按**时间**对齐：track.times[i] 是那一帧的视频内秒数，
+// 在 tele.times 里二分找最接近的一条 —— 抽稀是按「每条记录」计数而不是按时间，
+// SRT 里个别记录缺经纬度会掉，间隔因此不是严格均匀的，按时间找才稳。
+// tele.times 不在时退回 step 整除（测试用的极简遥测桩就走这条）。
+function telemetryIndexOf(t,tele,i){
+  if(!tele||i==null||i<0)return -1;
+
+  const times=t&&t.times;
+  const tt=tele.times;
+
+  if(Array.isArray(times)&&Array.isArray(tt)&&tt.length){
+    const want=Number(times[i]);
+
+    if(Number.isFinite(want)){
+      // 末尾/开头直接夹住，避免下面二分越界
+      if(want<=Number(tt[0]))return 0;
+
+      const n=tt.length;
+      if(want>=Number(tt[n-1]))return n-1;
+
+      let lo=0;
+      let hi=n-1;
+
+      while(hi-lo>1){
+        const mid=(lo+hi)>>1;
+        const v=Number(tt[mid]);
+
+        if(!Number.isFinite(v)||v<=want)lo=mid;
+        else hi=mid;
+      }
+
+      const da=Math.abs(Number(tt[lo])-want);
+      const db=Math.abs(Number(tt[hi])-want);
+
+      return da<=db?lo:hi;
+    }
+  }
+
+  const step=Number(tele.step);
+
+  if(!Number.isFinite(step)||step<1)return i;
+
+  return Math.floor(i/step);
+}
+
 // —— 画面中心点对应的地面位置（A 的排序依据、B 的基准）——
 function frameCenterLatLng(t,tele,i){
   if(!t||!tele||i==null||i<0)return null;
@@ -5552,11 +6669,14 @@ function frameCenterLatLng(t,tele,i){
   const c=coords[i];
   if(!Array.isArray(c)||c.length<2)return null;
 
+  const k=telemetryIndexOf(t,tele,i);
+  if(k<0)return null;
+
   const drone=L.latLng(Number(c[1]),Number(c[0]));
-  const alt=Number(tele.alt?.[i]);
-  const yaw=Number(tele.yaw?.[i]);
-  const pitch=Number(tele.pitch?.[i]);
-  const focal=Number(tele.focal?.[i]);
+  const alt=Number(tele.alt?.[k]);
+  const yaw=Number(tele.yaw?.[k]);
+  const pitch=Number(tele.pitch?.[k]);
+  const focal=Number(tele.focal?.[k]);
 
   if(!Number.isFinite(alt)||alt<=0)return null;
   if(!Number.isFinite(yaw))return null;
@@ -5580,11 +6700,14 @@ function imagePointOfGround(t,tele,i,latlng){
   const c=coords[i];
   if(!Array.isArray(c)||c.length<2)return null;
 
+  const k=telemetryIndexOf(t,tele,i);
+  if(k<0)return null;
+
   const drone=L.latLng(Number(c[1]),Number(c[0]));
-  const alt=Number(tele.alt?.[i]);
-  const yaw=Number(tele.yaw?.[i]);
-  const pitch=Number(tele.pitch?.[i]);
-  const focal=Number(tele.focal?.[i]);
+  const alt=Number(tele.alt?.[k]);
+  const yaw=Number(tele.yaw?.[k]);
+  const pitch=Number(tele.pitch?.[k]);
+  const focal=Number(tele.focal?.[k]);
 
   if(!Number.isFinite(alt)||alt<=0)return null;
   if(!Number.isFinite(yaw)||!Number.isFinite(pitch))return null;

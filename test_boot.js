@@ -19,10 +19,12 @@ let ok = true;
 const chk = (c, label, extra = '') => { ok &&= !!c; console.log(`  ${c ? '[OK]' : '[FAIL]'} ${label}${extra ? ' -> ' + extra : ''}`); };
 
 // ---------- DOM 桩 ----------
-function makeElement(id) {
+function makeElement(id, tag) {
   const classes = new Set();
   const el = {
     id,
+    tagName: tag || 'div',
+    children: [],
     style: {},
     dataset: {},
     options: [],
@@ -39,8 +41,23 @@ function makeElement(id) {
       toggle: (c, on) => { if (on === undefined) on = !classes.has(c); on ? classes.add(c) : classes.delete(c); },
     },
     _classes: classes,
-    addEventListener() {}, removeEventListener() {},
-    appendChild() {}, removeChild() {}, insertAdjacentHTML() {},
+    addEventListener(type, fn) { (this._listeners[type] ||= []).push(fn) },
+    removeEventListener() {},
+    // 触发这个元素上挂的监听（照片图层那块要真的点一下才算跑到）
+    _fire(type, ev) {
+      for (const fn of (this._listeners[type] || [])) fn(ev === undefined ? { type } : ev);
+    },
+    _listeners: {},
+    // 浏览器里 <select> 追加第一个 option 会自动选中它；桩也必须这样，
+    // 否则 projectSelect.value 一直是空串，scanGeoJSON 直接返回，
+    // 「载入项目 -> 取照片」这条链根本走不到（踩过）。
+    appendChild(child) {
+      this.children.push(child);
+      if (this.tagName === 'select' && !this.value && child && child.value !== undefined) {
+        this.value = child.value;
+      }
+    },
+    removeChild() {}, insertAdjacentHTML() {},
     querySelector() { return null }, querySelectorAll() { return [] },
     setAttribute() {}, getAttribute() { return null }, removeAttribute() {},
     getBoundingClientRect: () => ({ width: 100, height: 100, left: 0, top: 0, right: 100, bottom: 100 }),
@@ -56,6 +73,9 @@ function makeElement(id) {
 // 这样才能模拟「Leaflet 晚到」：先以 L 不存在跑顶层，再把 L 放上去继续跑轮询。
 function makeLStub(calls) {
   const mapStub = {
+    _isMap: true,
+    _layers: [],
+    addLayer(l) { this._layers.push(l); return this },
     setView() { return this }, on() { return this }, off() { return this },
     setMaxZoom() {}, getZoom() { return 9 }, setZoom() {}, zoomIn() {}, zoomOut() {},
     removeLayer() {}, addLayer() {}, hasLayer() { return false },
@@ -63,36 +83,67 @@ function makeLStub(calls) {
     getCenter: () => ({ lat: 23, lng: 114, distanceTo: () => 0 }),
     distance: () => 0,
   };
-  const layerStub = () => ({
-    addTo() { return this }, on() { return this }, off() { return this },
-    bringToBack() { return this }, bringToFront() { return this },
-    setLatLngs() { return this }, setStyle() {}, bindPopup() { return this },
-    getElement() { return null }, getLatLng() { return { lat: 23, lng: 114 } },
-    setLatLng() { return this }, remove() {}, setIcon() {},
-  });
+  // 图层桩：把自己收到的子图层记下来（_added / _layers），
+  // 这样测试能验证「照片点真的建出来并加进地图了」，而不只是「没抛异常」。
+  const layerStub = function layerStub() {
+    const self = {
+      _added: [],
+      _layers: [],
+      addTo(target) { if (target && typeof target.addLayer === 'function') target.addLayer(this); return this },
+      addLayer(l) { this._layers.push(l); return this },
+      clearLayers() { this._layers.length = 0; this._added.length = 0; return this },
+      eachLayer(fn) { for (const l of this._layers) fn(l) },
+      // on() 要真的把处理函数记下来：照片点的点击测试靠 _fire 触发它。
+      // 只 `return this` 的话「点了照片点会不会打开展示区」就永远测不到。
+      on(type, fn) { if (typeof fn === 'function') (this._listeners[type] ||= []).push(fn); return this },
+      off() { return this },
+      bringToBack() { return this }, bringToFront() { return this },
+      setLatLngs() { return this }, setStyle() {}, bindPopup() { return this },
+      bindTooltip() { return this }, unbindTooltip() { return this },
+      getElement() { return null }, getLatLng() { return { lat: 23, lng: 114 } },
+      setLatLng() { return this }, remove() {}, setIcon() {},
+      addEventListener(type, fn) { (this._listeners[type] ||= []).push(fn) },
+      _listeners: {},
+      _fire(type, ev) { for (const fn of (this._listeners[type] || [])) fn(ev === undefined ? { type } : ev) },
+    };
+    // featureGroup/layerGroup 都靠 addTo 记录；marker 也走同一条路
+    self.addTo = (target) => {
+      if (target && target._added) target._added.push(self);
+      if (target && typeof target.addLayer === 'function') target.addLayer(self);
+      return self;
+    };
+    return self;
+  };
   return {
     map: () => mapStub,
     tileLayer: layerStub, polyline: layerStub, polygon: layerStub,
-    marker: layerStub, featureGroup: layerStub, layerGroup: layerStub,
+    featureGroup: layerStub, layerGroup: layerStub,
+    // 所有 marker 都收进 calls.markers —— 不依赖图层桩的内部结构，
+    // 直接看「建了几个、上面挂了什么」最可靠。
+    marker: (...args) => { const m = layerStub(...args); calls.markers.push(m); return m },
     geoJSON: layerStub,
     divIcon: () => { calls.divIcon++; return {} },
     icon: () => ({}),
     latLng: (a, b, c) => ({ lat: a, lng: b, alt: c }),
     latLngBounds: () => ({ pad() { return this }, getCenter: () => ({ lat: 23, lng: 114 }), isValid: () => true, extend() { return this } }),
     control: { layers: () => ({ addTo() { return this } }) },
+    DomEvent: { stopPropagation() {} },
   };
 }
 
 function buildSandbox(withLeaflet) {
   const els = new Map();
+  // 几个标签名会影响行为的元素：<select> 追加第一个 option 会自动选中它，
+  // 桩里必须照做（否则 projectSelect.value 恒为空，载入项目那条链直接断）。
+  const TAGS = { projectSelect: 'select', filterDate: 'select', filterType: 'select', baseMap: 'select', followMode: 'select' };
   const document = {
     body: makeElement('body'),
     head: makeElement('head'),
     getElementById(id) {
-      if (!els.has(id)) els.set(id, makeElement(id));
+      if (!els.has(id)) els.set(id, makeElement(id, TAGS[id] || 'div'));
       return els.get(id);
     },
-    createElement(tag) { return makeElement(tag) },
+    createElement(tag) { return makeElement(tag, String(tag).toLowerCase()) },
     querySelector() { return null },
     querySelectorAll() { return [] },
     addEventListener() {},
@@ -100,7 +151,7 @@ function buildSandbox(withLeaflet) {
 
   const timers = [];
   const windowListeners = {};
-  const calls = { divIcon: 0 };
+  const calls = { divIcon: 0, mapStub: null, markers: [] };
   const sandbox = {
     document,
     els,
@@ -128,8 +179,11 @@ function buildSandbox(withLeaflet) {
   };
 
   // Leaflet 通过 globalThis 提供，方便模拟「晚到」
-  if (withLeaflet) globalThis.L = makeLStub(calls);
-  else delete globalThis.L;
+  if (withLeaflet) {
+    const stub = makeLStub(calls);
+    calls.mapStub = stub.map();
+    globalThis.L = stub;
+  } else delete globalThis.L;
 
   return sandbox;
 }
@@ -287,5 +341,138 @@ chk(/window\.addEventListener\('unhandledrejection'/.test(body), '注册了未�
 chk(body.indexOf("window.addEventListener('error'") < body.indexOf('const projectSelect='),
   '监听注册在脚本最前面（后续任何异常都能捕获）');
 
-console.log('\n结果:', ok ? '全部通过' : '有失败项');
-process.exit(ok ? 0 : 1);
+console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
+(async () => {
+  // 场景 1 的沙箱里 fetch 一律 reject，照片那块只能走到「读取失败」分支。
+  // 这里换一个能应答的 fetch，把「载入项目 -> 照片计数 -> 打开图层 -> 点一个照片点」
+  // 这条链真的走一遍 —— 顶层脚本不抛异常只说明初始化没崩，不说明功能通。
+  const sb = buildSandbox(true);
+  const svgHolder = [];
+  const PHOTO = {
+    groups: [
+      { stamp: '20260924_095348', folder: 'D:\\数据\\架次1', lat: 23.0415, lon: 114.1064,
+        accuracy: '实测', count: 2, lead: 'WideCamera',
+        members: [
+          { name: 'DJI_20260924095348_0002_V.JPG', folder: 'D:\\数据\\架次1', camera: 'WideCamera',
+            accuracy: '实测', accuracy_note: '', lat: 23.0415, lon: 114.1064,
+            distance: 178.6, depression: 29.4, gimbal_yaw: 166.7, relative_alt: 97.2,
+            drone_lat: 23.043, drone_lon: 114.106 },
+          { name: 'DJI_20260924095348_0002_T.JPG', folder: 'D:\\数据\\架次1', camera: 'InfraredCamera',
+            accuracy: '实测', accuracy_note: '', lat: 23.0415, lon: 114.1064,
+            distance: 178.6, depression: 29.4, gimbal_yaw: 166.7, relative_alt: 97.2,
+            drone_lat: 23.043, drone_lon: 114.106 }
+        ] },
+      { stamp: '20260924_102746', folder: 'D:\\数据\\架次1', lat: 23.05, lon: 114.11,
+        accuracy: '位置不准', count: 1, lead: 'WideCamera',
+        members: [
+          { name: 'DJI_20260924102746_0034_T.JPG', folder: 'D:\\数据\\架次1', camera: 'InfraredCamera',
+            accuracy: '位置不准', accuracy_note: '该张没有激光数据，中心点按平地假设估算',
+            lat: 23.05, lon: 114.11, distance: 171.5, depression: 19.8, gimbal_yaw: 200,
+            relative_alt: 97, drone_lat: 23.06, drone_lon: 114.11 }
+        ] }
+    ],
+    counts: { groups: 2, photos: 3, with_target: 3, inaccurate: 1, merged: 1 }
+  };
+
+  sb.fetch = (url) => {
+    const u = String(url);
+    (sb.debugFetches ||= []).push(u);
+    const json = (o) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(o)) });
+
+    if (u.includes('/api/project/list')) return json({ projects: [{ name: '测试项目' }] });
+    if (u.includes('/api/project/get')) return json({ project: { folders: [{ path: 'D:\\数据\\架次1' }] } });
+    if (u.includes('/api/project/photos')) return json(PHOTO);
+    if (u.includes('/api/project/geojson-list')) return json({ files: [] });
+
+    return json({});
+  };
+
+  // divIcon 的 html 参数里带着照片点/⚠ 角标，顺手收下来验证
+  const realDivIcon = globalThis.L.divIcon;
+  globalThis.L.divIcon = (opts) => { svgHolder.push(String((opts && opts.html) || '')); return realDivIcon(opts) };
+
+  let threw = null;
+  try {
+    new Function('__env',
+      'const {' + Object.keys(sb).filter((k) => !['els', 'timers', 'calls'].includes(k)).join(',') + '} = __env;\n' + body
+    )(sb);
+  } catch (e) { threw = e }
+
+  chk(!threw, '带照片接口的顶层脚本执行不抛异常', threw ? threw.message : '');
+
+
+  // 排空定时器（等待 fetch 链），再把挂起的 Promise 多跑几轮 —— leafletWait 轮询
+  // 与「载入项目 -> 取照片」都是异步的，一次 drainTimers 不一定够。
+  for (let round = 0; round < 5; round++) {
+    drainTimers(sb, 200);
+    await new Promise((r) => setImmediate(r));
+  }
+
+  const count = sb.els.get('photoLayerCount');
+  chk(count && /3 张/.test(String(count.textContent)) && /2 个点/.test(String(count.textContent)),
+    '照片计数写到位（3 张 -> 2 个点）', count ? String(count.textContent) : '-');
+  chk(count && /1 个点由多张合并/.test(String(count.textContent)),
+    '合并了多少个点也说清楚（用户要一眼看出合过）', count ? String(count.textContent) : '-');
+
+  const btn = sb.els.get('photoLayerBtn');
+  chk(btn && btn._classes.has('off'), '照片图层默认关（不挡航迹）');
+  chk(btn && String(btn.getAttribute ? '' : '') === '', '开关按钮取得到');
+
+  // 点一下开关：应该建出两个照片点
+  const before = svgHolder.length;
+  let toggleErr = null;
+  if (btn) { try { btn._fire('click') } catch (e) { toggleErr = e } }
+  const made = svgHolder.length - before;
+  chk(!toggleErr, '点开关不抛异常', toggleErr ? toggleErr.message : '');
+  chk(made >= 2, '打开后为每个照片点建了图标', made + ' 个');
+  chk(!btn || !btn._classes.has('off'), '开关的 off 类被摘掉了（看着是「开」）');
+  chk(btn && String(btn.getAttribute('aria-pressed')) !== 'false' || !btn, 'aria-pressed 跟着变');
+
+  const iconHtml = svgHolder.slice(before).join('\n');
+  chk(/photo-dot/.test(iconHtml), '照片点用 SVG 圆点画');
+  chk(/photo-warn-mark/.test(iconHtml), '「位置不准」那个点贴了 ⚠ 角标');
+  chk((iconHtml.match(/photo-warn-mark/g) || []).length === 1,
+    '只有那一个「位置不准」的贴角标（实测的不贴）',
+    String((iconHtml.match(/photo-warn-mark/g) || []).length) + ' 个');
+  chk(/--photo-dot:#f59e0b/.test(iconHtml), '带角标那个点本身是橙色');
+  chk(/--photo-dot:#1d4ed8/.test(iconHtml), '实测那个点是蓝色');
+
+  // 点第一个照片点：展示区应被打开，并把该组全部成员放出来
+  const card = sb.els.get('photoCard');
+  const gallery = sb.els.get('photoGallery');
+
+  // 开关那一下新建的图标个数，就是照片点的个数（每个点一个 divIcon）
+  chk(made === 2, '两个照片点 = 两次 divIcon（一组一个点）', made + ' 个');
+
+  // 照片点：从 calls.markers 里按「挂没挂点击处理」筛出来。
+  // 不依赖图层桩的内部结构 —— 数「建了几个、上面挂了什么」最可靠。
+  const markers = sb.calls.markers.filter((m) => m._listeners && m._listeners.click);
+  chk(markers.length === 2, '两个照片点都挂了点击处理', markers.length + ' 个');
+
+  const marker = markers[0];
+  chk(!!marker, '照片点确实建出来了（不是只建了图标）');
+
+  if (marker) {
+    marker._fire('click', { originalEvent: {} });
+    chk(card && card.style.display === 'block', '点照片点后地图下方的展示区打开了');
+    const html2 = gallery ? String(gallery.innerHTML) : '';
+    chk(/DJI_20260924095348_0002_V\.JPG/.test(html2), '展示区里放出了该组的可见光那张');
+    chk(/DJI_20260924095348_0002_T\.JPG/.test(html2), '同组的红外那张也一起放出来了');
+    chk(/photo-lead/.test(html2), '两张按「大图 + 小图」排版');
+    chk(/\/photo\?path=/.test(html2), '图片走后端 /photo 接口');
+    chk(/正在查找对应的视频/.test(String(sb.els.get('photoJump').innerHTML)),
+      '展示区里那块「跳视频」先给出「正在查找」而不是空白');
+
+    // 收起
+    const closeBtn = sb.els.get('photoCloseBtn');
+    if (closeBtn) closeBtn._fire('click', {});
+    chk(card && card.style.display === 'none', '收起按钮把展示区收起来了');
+  }
+
+  globalThis.L.divIcon = realDivIcon;
+})().then(() => {
+  // 照片那段是异步的（要等 fetch 链），所以收尾放进 then ——
+  // 否则 process.exit 会先跑，异步断言还没来得及判定。
+  console.log('\n结果:', ok ? '全部通过' : '有失败项');
+  process.exit(ok ? 0 : 1);
+});

@@ -31,10 +31,11 @@ python packaging/fetch_deps.py
 ## 验一遍（改完必须做）
 
 ```bash
-node run_tests.js          # 14 套，任何一套失败就非零退出
+node run_tests.js          # 15 套，任何一套失败就非零退出
 ```
 
-**任何改动都要让它保持 14/14。**
+**任何改动都要让它保持 15/15** —— 其中 `test_report.py` 那套里 3 条失败是
+测试数据依赖（见 `docs/待办与后续.md`），换了 `Data/` 之后数会变。
 
 另外几件容易踩的：
 

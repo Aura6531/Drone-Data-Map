@@ -1,0 +1,598 @@
+// 照片图层 + 展示区 + 「点照片跳视频」的验证。
+//
+// 分两层：
+//   A. 纯函数层（文件名时刻解析、相机标签、画廊拼 HTML、匹配排序）—— 用真值表断言；
+//   B. 真实数据层 —— 读 Data/ 下真实的 GeoJSON + SRT 遥测 + 后端的 /api/project/photos，
+//      验证「照片时刻 -> 视频帧」这条链路真的能找到那一帧，而且时空都对得上。
+//
+// 页面里的函数直接从 HTML 里抠出来跑（和 test_filelist.js / test_nearest.js 同一套做法），
+// 这样测的就是页面上真正在用的那份代码，不会出现「测试里一份、页面里另一份」。
+//
+// 路径按脚本所在目录推导；可用 argv[2] 覆盖 HTML 路径。
+
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = __dirname;
+const HTML = process.argv[2] || path.join(ROOT, 'Code', 'project_geojson_preview.html');
+const html = fs.readFileSync(HTML, 'utf8');
+
+let ok = true;
+const chk = (c, label, extra = '') => {
+  ok &&= !!c;
+  console.log(`  ${c ? '[OK]' : '[FAIL]'} ${label}${extra ? ' -> ' + extra : ''}`);
+};
+
+// ------------------------------------------------------------
+// 从页面里抠函数（按花括号配平截取）
+// ------------------------------------------------------------
+function extractFn(name) {
+  const start = html.indexOf('function ' + name + '(');
+  if (start < 0) throw new Error('页面里找不到 function ' + name + '()');
+  let depth = 0;
+  for (let j = html.indexOf('{', start); j < html.length; j++) {
+    if (html[j] === '{') depth++;
+    else if (html[j] === '}') { depth--; if (depth === 0) return html.slice(start, j + 1); }
+  }
+  throw new Error('函数没配平：' + name);
+}
+
+// 顶层 const 取值（写成 `const X=...;` 一行的那种）
+function extractConst(name) {
+  const m = html.match(new RegExp('const\\s+' + name + '\\s*=\\s*([^;\\n]+);'));
+  if (!m) throw new Error('页面里找不到 const ' + name);
+  return m[1];
+}
+
+const PURE = [
+  // 相机与文案
+  'photoCameraLabel', 'photoCameraClass', 'photoTimeText', 'photoClockText',
+  'photoLeadMember', 'photoGroupTimeText', 'photoLeadName', 'photoShotText',
+  'photoGroupLabel', 'hexToRgba',
+  // 图片地址 / 前缀
+  'photoThumbUrl', 'photoStreamPrefix', 'photoVideoFolderPath',
+  // 时刻对齐
+  'videoRealStartMs', 'photoFileTime', 'photoVideoStartSeconds', 'photoFrameAt',
+  // 匹配与展示
+  'photoFrameMatch', 'photoMatchRank', 'photoGalleryHtml', 'photoJumpHtml',
+  'photoCardChips', 'photoTooltip', 'telemetryIndexOf'
+];
+
+// imagePointOfGround 是页面里「按位置检索」用的同一个反投影函数，这里连它的
+// 依赖（fovOf / BASE_FOCAL / 画幅常量）一起抠出来 —— 照片的「画面内」判定
+// 与检索必须完全同源，所以不另写一份简化版。
+//
+// 顺带把「画面中心对应的地面点」那套（offsetLatLng / centerGroundLatLng /
+// groundCenterDistance）也抠出来：真实数据那一层要用它造一个确定的目标点。
+const GEO = ['imagePointOfGround', 'fovOf', 'offsetLatLng', 'centerGroundLatLng',
+             'groundCenterDistance'];
+
+const consts = {
+  FRAME_ASPECT: extractConst('FRAME_ASPECT'),
+  FULLFRAME_DIAGONAL: extractConst('FULLFRAME_DIAGONAL'),
+  BASE_FOCAL: extractConst('BASE_FOCAL'),
+  GROUND_MIN_PITCH: extractConst('GROUND_MIN_PITCH'),
+  PHOTO_ZOOM: extractConst('PHOTO_ZOOM'),
+  PHOTO_MATCH_MAX_GAP: extractConst('PHOTO_MATCH_MAX_GAP'),
+  PHOTO_DRONE_NEAR_M: extractConst('PHOTO_DRONE_NEAR_M'),
+  PHOTO_MATCH_LIMIT: extractConst('PHOTO_MATCH_LIMIT'),
+  PHOTO_CAM_NAMES: extractConst('PHOTO_CAM_NAMES'),
+};
+
+const src = [
+  ...Object.entries(consts).map(([k, v]) => `const ${k}=${v};`),
+  extractFn('streamLabelOf'),
+  extractFn('esc'),
+  extractFn('formatTime'),
+  ...PURE.map(extractFn),
+  ...GEO.map(extractFn),
+  // 测试用的桩：L 只用到 latLng，map 只用到 distance（球面近似足够断言用）
+  `const L={latLng:(a,b)=>({lat:a,lng:b})};`,
+  `const map={distance:(a,b)=>{const R=6371000;const p1=a.lat*Math.PI/180,p2=b.lat*Math.PI/180;`
+  + `const dp=p2-p1,dl=(b.lng-a.lng)*Math.PI/180;`
+  + `const h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;`
+  + `return 2*R*Math.asin(Math.sqrt(h));}};`,
+  `let projectFolderPaths=null;`,
+  `let loadedTracks=[];`,
+  // 真实数据那一层用：第 i 帧「画面中心对应的地面点」。
+  // 这正是照片解算在做的事（ground_target 与 centerGroundLatLng 是同一套公式），
+  // 所以拿它当目标点回投影，理应落在画面中心。
+  `function centerGroundPointForTest(track,tele,i){`
+  + `const c=(track.coords||[])[i];`
+  + `if(!Array.isArray(c)||c.length<2)return null;`
+  + `const alt=Number(tele.alt&&tele.alt[i]);`
+  + `const yaw=Number(tele.yaw&&tele.yaw[i]);`
+  + `const pitch=Number(tele.pitch&&tele.pitch[i]);`
+  + `if(!Number.isFinite(alt)||alt<=0)return null;`
+  + `if(!Number.isFinite(yaw)||!Number.isFinite(pitch)||pitch>=0)return null;`
+  + `return centerGroundLatLng(L.latLng(Number(c[1]),Number(c[0])),yaw,pitch,alt);}`,
+  `return {${[...PURE, ...GEO].join(',')},centerGroundPointForTest,setFolders:v=>{projectFolderPaths=v},getFolders:()=>projectFolderPaths};`
+].join('\n');
+
+const page = new Function(src)();
+
+console.log('=== 1) 文件名里的时刻（时刻对齐的地基）===');
+
+{
+  const t = page.photoFileTime('DJI_20260924095348_0002_V.JPG');
+  const ref = new Date(2026, 8, 24, 9, 53, 48).getTime();
+  chk(t === ref, '照片名 -> 本地时间戳与 Date(2026,8,24,9,53,48) 一致', new Date(t).toString().slice(0, 24));
+
+  chk(page.photoFileTime('DJI_20260924101542_0004_T.JPG') === new Date(2026, 8, 24, 10, 15, 42).getTime(),
+    '带 _T 后缀的热成像照片同样能解析');
+  chk(page.photoFileTime('随便一个名字.jpg') === null, '拆不出时刻 -> null（不猜）');
+  chk(page.photoFileTime('DJI_20261332095348_0001_V.JPG') === null, '月份越界（13 月）-> null（不让 Date 悄悄滚到下一年）');
+  chk(page.photoFileTime('DJI_20260932095348_0001_V.JPG') === null, '日期越界（32 日）-> null');
+
+  const v = page.videoRealStartMs('DJI_20260924095258_0001_S.MP4');
+  chk(v === new Date(2026, 8, 24, 9, 52, 58).getTime(),
+    '视频名 -> 开录时刻（相对时间要对到真实时刻，全靠它）', new Date(v).toLocaleString('zh-CN'));
+  chk(page.videoRealStartMs('没有时间戳的视频.mp4') === null, '视频名里没时刻 -> null（该视频不参与匹配）');
+
+  // 与实测互校：SRT 时长 1228.694 s、mtime 10:13:28，开录 09:52:58 —— 差值应为 3 秒以内
+  const srtEnd = new Date(2026, 8, 24, 10, 13, 28).getTime();
+  const srtSpan = 1228.694 * 1000;
+  chk(Math.abs((v + srtSpan) - srtEnd) / 1000 <= 5,
+    '文件名开录时刻 + SRT 时长 与文件 mtime 互校在 5 秒内',
+    `差 ${((srtEnd - (v + srtSpan)) / 1000).toFixed(1)} 秒`);
+}
+
+console.log('\n=== 2) 照片时刻 -> 视频播放进度 ===');
+
+{
+  const clip = {
+    realStartMs: new Date(2026, 8, 24, 9, 52, 58).getTime(),
+    track: { times: [0, 0.033, 0.067, 1, 2, 60, 600, 1228.694] }
+  };
+
+  const photoMs = new Date(2026, 8, 24, 9, 53, 48).getTime();   // 开录后 50 秒
+  const s = page.photoVideoStartSeconds(clip, photoMs);
+  chk(Math.abs(s - 50) < 0.001, '开录后 50 秒的照片 -> 进度 50.0 s', s.toFixed(3));
+
+  chk(page.photoVideoStartSeconds(clip, clip.realStartMs) === 0, '照片时刻 == 开录时刻 -> 0（不为负）');
+  chk(page.photoVideoStartSeconds(clip, clip.realStartMs - 60000) === 0,
+    '照片早于开录 -> 夹到 0（播放器不接受负数）');
+
+  // 首条记录不是 0 的情况：基准要跟着首条走，否则第一帧会偏
+  const late = { realStartMs: clip.realStartMs, track: { times: [0.5, 1, 2] } };
+  chk(Math.abs(page.photoVideoStartSeconds(late, clip.realStartMs + 1000) - 0.5) < 1e-9,
+    '首条记录 0.5 s 时，进度基准也跟着首条（1.0 s -> 0.5 s）');
+}
+
+console.log('\n=== 3) 按时刻找帧（二分）===');
+
+{
+  const track = { times: [0, 1, 2, 3, 4, 5] };
+
+  chk(page.photoFrameAt(track, 2) === 2, '正好命中第 2 秒 -> 下标 2');
+  chk(page.photoFrameAt(track, 2.4) === 2, '2.4 s -> 取更近的 2 s（下标 2）');
+  chk(page.photoFrameAt(track, 2.6) === 3, '2.6 s -> 取更近的 3 s（下标 3）');
+  chk(page.photoFrameAt(track, -5) === 0, '早于首帧 -> 下标 0');
+  chk(page.photoFrameAt(track, 999) === 5, '晚于末帧 -> 最后一个下标');
+  chk(page.photoFrameAt({ times: [] }, 1) === -1, '没有记录 -> -1');
+
+  // 逐点比对二分结果与线性扫描：几万点的那条链路不能靠运气
+  const big = [];
+  for (let i = 0; i < 3000; i++) big.push(i * 0.4);
+  let mismatch = -1;
+  for (let t = -1; t < 1205; t += 7.3) {
+    let best = 0;
+    for (let i = 1; i < big.length; i++) {
+      if (Math.abs(big[i] - t) < Math.abs(big[best] - t)) best = i;
+    }
+    if (page.photoFrameAt({ times: big }, t) !== best) { mismatch = t; break; }
+  }
+  chk(mismatch < 0, '二分结果与线性扫描完全一致（3000 点 × 165 个时刻）',
+    mismatch < 0 ? '' : '首个不一致 t=' + mismatch);
+}
+
+console.log('\n=== 3b) 航迹点下标 -> 遥测下标（抽稀对齐）===');
+
+{
+  // 第一条路：按**时间**对齐（真实遥测）。抽稀是按记录计数，SRT 里个别记录缺经纬度
+  // 会掉，间隔并不严格均匀，所以按 tele.times 二分找最接近的那条才稳。
+  const track = { times: [0, 0.033, 0.067, 0.1, 10, 10.5, 20] };
+  const tele = { step: 3, times: [0, 0.1, 10.5, 20], alt: [1, 2, 3, 4] };
+
+  chk(page.telemetryIndexOf(track, tele, 0) === 0, '按时间：第 0 点(t=0) -> 遥测 0');
+  chk(page.telemetryIndexOf(track, tele, 3) === 1, '按时间：第 3 点(t=0.1) -> 遥测 1');
+  chk(page.telemetryIndexOf(track, tele, 5) === 2, '按时间：第 5 点(t=10.5) -> 遥测 2');
+  chk(page.telemetryIndexOf(track, tele, 6) === 3, '按时间：末尾点 -> 最后一条遥测');
+  chk(page.telemetryIndexOf({ times: [-99] }, tele, 0) === 0, '按时间：早于首条 -> 夹到 0');
+
+  // 第二条路：遥测里没有 times 时退回 step 整除（测试桩 / 老后端）
+  chk(page.telemetryIndexOf({ times: [0, 1, 2, 3] }, { step: 3 }, 0) === 0, '退回 step：第 0 点 -> 0');
+  chk(page.telemetryIndexOf({ times: [0, 1, 2, 3] }, { step: 3 }, 3) === 1, '退回 step：第 3 点 -> 1');
+  chk(page.telemetryIndexOf({ times: [0, 1] }, { step: 1 }, 1) === 1, 'step=1 时退化为原下标');
+  chk(page.telemetryIndexOf({ times: [0, 1] }, {}, 1) === 1, 'step 缺失时也退化为原下标（老后端不上报 step）');
+
+  // 端到端：同一帧、同一目标点，用抽稀遥测与用全量遥测算出的画面坐标必须一致。
+  // 这条断言失败就说明下标映射又错位了 —— 画面内判定会整片误判。
+  const coords = Array(9).fill([114.0, 23.0]);
+  const times = Array.from({ length: 9 }, (_, k) => k / 30);
+  const full = {
+    alt: Array(9).fill(100), yaw: Array.from({ length: 9 }, (_, k) => k * 3),
+    pitch: Array(9).fill(-45), focal: Array(9).fill(24), times: times.slice()
+  };
+  // 抽稀成 step=3 的形式（每 3 帧留一条），但 times 保留真实时刻
+  const thin = { step: 3, alt: [], yaw: [], pitch: [], focal: [], times: [] };
+  for (let k = 0; k < 9; k += 3) {
+    thin.alt.push(full.alt[k]); thin.yaw.push(full.yaw[k]);
+    thin.pitch.push(full.pitch[k]); thin.focal.push(full.focal[k]); thin.times.push(times[k]);
+  }
+
+  const trackFull = { coords, times };
+  const target = { lat: 23.0 + 100 / 110540, lng: 114.0 };
+
+  let same = true;
+  let detail = '';
+  for (const i of [0, 3, 6]) {
+    const a = page.imagePointOfGround(trackFull, full, i, target);
+    // 抽稀遥测里没有第 i 帧，映射过去的是最接近的采样帧 —— 这两者本来就该一致
+    const b = page.imagePointOfGround(trackFull, thin, i, target);
+    if (!a || !b || Math.abs(a.xImg - b.xImg) > 1e-9 || Math.abs(a.yImg - b.yImg) > 1e-9) {
+      same = false;
+      detail = `i=${i} 全量(${a && a.xImg.toFixed(3)},${a && a.yImg.toFixed(3)})`
+        + ` vs 抽稀(${b && b.xImg.toFixed(3)},${b && b.yImg.toFixed(3)})`;
+      break;
+    }
+  }
+  chk(same, '采样点上的图像坐标与全量遥测一致（画面内判定不再整片误判）', detail);
+
+  // 反面：不按抽稀映射时会读到「第 3i 帧」的姿态。
+  // 为了让它必然算出不同结果，这里给 unmapped 的每一帧都写成不同姿态 ——
+  // 只要读错下标，结果就会变。
+  const unmapped = {
+    alt: [], yaw: Array.from({ length: 9 }, (_, k) => k * 11),
+    pitch: Array(9).fill(-45), focal: Array(9).fill(24), times: times.slice()
+  };
+  for (let k = 0; k < 9; k++) unmapped.alt.push(100);
+  const wrong = page.imagePointOfGround(trackFull, unmapped, 6, target);
+  const right = page.imagePointOfGround(trackFull, thin, 6, target);
+  chk(!!wrong && !!right && Math.abs(wrong.xImg - right.xImg) > 1e-6,
+    '对照：读错下标（拿第 6 帧直接读遥测第 6 条，而不是采样后的第 2 条）结果确实不同',
+    wrong ? `x ${wrong.xImg.toFixed(3)} vs ${right.xImg.toFixed(3)}` : '-');
+}
+
+console.log('\n=== 4) 相机标签与分组文案 ===');
+{
+  chk(page.photoCameraLabel('ZoomCamera') === '变焦', 'ZoomCamera -> 变焦（大图优先给这张）');
+  chk(page.photoCameraLabel('WideCamera') === '广角', 'WideCamera -> 广角');
+  chk(page.photoCameraLabel('InfraredCamera') === '热成像', 'InfraredCamera -> 热成像');
+  chk(page.photoCameraLabel('别的相机') === '别的相机', '认不出的相机原样显示（不猜）');
+  chk(page.photoCameraLabel('') === '照片', '空值 -> 「照片」兜底');
+  chk(page.photoCameraClass('ZoomCamera').includes('cam-zoom'), '变焦有独立配色类');
+  chk(page.photoCameraClass('InfraredCamera').includes('cam-thermal'), '热成像有独立配色类');
+
+  chk(page.photoTimeText('DJI_20260924095348_0002_V.JPG') === '2026-09-24 09:53:48', '照片名 -> 完整时刻');
+  chk(page.photoClockText('DJI_20260924095348_0002_V.JPG') === '09:53:48', '照片名 -> 钟点');
+  chk(page.photoTimeText('x.jpg') === '', '拆不出来 -> 空串');
+
+  const group = {
+    stamp: '20260924_095348',
+    lat: 23.0415,
+    lon: 114.1064,
+    accuracy: '实测',
+    count: 2,
+    members: [
+      { name: 'DJI_20260924095348_0002_V.JPG', folder: 'D:\\a b\\架次1', camera: 'WideCamera', accuracy: '实测', distance: 178.6, depression: 29.4 },
+      { name: 'DJI_20260924095348_0002_T.JPG', folder: 'D:\\a b\\架次1', camera: 'InfraredCamera', accuracy: '实测', distance: 178.6, depression: 29.4 }
+    ]
+  };
+
+  chk(page.photoShotText(group) === '广角 + 热成像', '组文案按组内顺序拼', page.photoShotText(group));
+  chk(page.photoLeadName(group).endsWith('_V.JPG'), 'lead 取组内第一张');
+  chk(page.photoGroupTimeText(group) === '2026-09-24 09:53:48', '组时刻取第一张的名字');
+  chk(page.photoGroupLabel([group], 0) === '地图下方的照片展示区', '单点时标题不写序号');
+  chk(page.photoGroupLabel([group, group], 1).includes('2 / 2'), '多点时标题带序号', page.photoGroupLabel([group, group], 1));
+
+  chk(page.hexToRgba('#1d4ed8', 0.35) === 'rgba(29,78,216,0.35)', '光晕色换算正确');
+  chk(page.hexToRgba('乱写', 0.5) === 'rgba(37,99,235,0.5)', '坏值退回默认蓝');
+}
+
+console.log('\n=== 5) 展示区：变焦大图优先、其余小图并排 ===');
+
+{
+  const mk = (camera, name, accuracy) => ({
+    name, folder: 'D:\\数据\\架次1', camera, accuracy: accuracy || '实测',
+    accuracy_note: '', distance: 100, depression: 30
+  });
+
+  // 后端已按 变焦 -> 广角 -> 热成像 排好，前端不再重排
+  const group = {
+    lat: 23.1, lon: 114.2, accuracy: '实测', count: 3,
+    members: [
+      mk('ZoomCamera', 'DJI_20260924101542_0004_S.JPG'),
+      mk('WideCamera', 'DJI_20260924101542_0004_V.JPG'),
+      mk('InfraredCamera', 'DJI_20260924101542_0004_T.JPG')
+    ]
+  };
+
+  const g = page.photoGalleryHtml(group);
+
+  chk(g.indexOf('photo-lead') >= 0, '有「大图」那一块');
+  chk(/photo-lead[\s\S]*?0004_S\.JPG/.test(g), '大图用的就是变焦那张（_S）');
+  chk(/photo-lead[\s\S]*?>大图</.test(g), '大图上标了「大图」');
+  chk((g.match(/photo-shot photo-thumb/g) || []).length === 2, '其余两张进小图区（并排）',
+    String((g.match(/photo-shot photo-thumb/g) || []).length) + ' 张');
+  chk(g.indexOf('0004_V.JPG') > g.indexOf('0004_S.JPG'), '小图排在大图之后');
+  chk(g.indexOf('0004_V.JPG') < g.indexOf('0004_T.JPG'), '小图内部保持后端给的顺序（广角在热成像前）');
+  chk((g.match(/\/photo\?path=/g) || []).length === 3, '三张都走后端 /photo 接口');
+  chk(g.includes('%5C'), '绝对路径里的反斜杠被编码（否则后端解析不出 path）');
+  chk(g.includes('data-photo-name='), '小图带文件名，点它才知道要按哪张的时刻跳');
+  chk(/alt="[^"]*照片"/.test(g), '每张都有 alt（图片取不到时不至于一片空白）');
+
+  // 只有一张时不该出现空的小图区
+  const single = page.photoGalleryHtml({ lat: 1, lon: 2, accuracy: '实测', count: 1, members: [mk('ZoomCamera', 'a_S.JPG')] });
+  chk(single.indexOf('photo-thumbs') < 0, '单张时没有小图区');
+  chk(single.indexOf('大图') >= 0, '单张也走「大图」这套版式');
+
+  // 「位置不准」的照片要带 ⚠，这是用户明确要的
+  const warn = page.photoGalleryHtml({
+    lat: 1, lon: 2, accuracy: '位置不准', count: 1,
+    members: [mk('WideCamera', 'w_V.JPG', '位置不准')]
+  });
+  chk(warn.includes('⚠'), '位置不准的那张带 ⚠ 角标标记');
+
+  const chips = page.photoCardChips({
+    lat: 23.041556, lon: 114.106484, accuracy: '位置不准', count: 1,
+    members: [{ name: 'DJI_20260924102746_0034_T.JPG', camera: 'InfraredCamera', accuracy: '位置不准', accuracy_note: '该张没有激光数据，中心点按平地假设估算', distance: 171.5, depression: 19.8 }]
+  });
+  chk(chips.includes('23.041556'), '点信息里有目标点坐标');
+  chk(chips.includes('2026-09-24 10:27:46'), '点信息里有拍摄时刻');
+  chk(chips.includes('位置不准') && chips.includes('⚠'), '位置不准时如实标出，并带上依据说明');
+}
+
+console.log('\n=== 6) 「跳视频」那块的说法 ===');
+
+{
+  const group = { lat: 23.1, lon: 114.2, accuracy: '实测', count: 1, members: [{ name: 'DJI_20260924095348_0002_V.JPG', camera: 'WideCamera' }] };
+
+  const hit = page.photoJumpHtml(group, [{
+    video: 'DJI_20260924095258_0001_V.MP4', relativePath: 'DJI_20260924095258_0001_V.MP4',
+    folderIndex: 0, stream: '可见光 3840×2160', index: 1500, time: 49.9,
+    gapSeconds: -0.1, startSeconds: 49.9, droneDistance: 4, inFrame: true, inFrameKnown: true
+  }]);
+
+  chk(hit.includes('DJI_20260924095258_0001_V.MP4'), '按钮上写着视频文件名');
+  chk(hit.includes('data-photo-match="0"'), '按钮带下标，点它才知道跳哪一段');
+  chk(hit.includes('画面内'), '时空都对上时，明确说「目标点在画面内」—— 这就是交叉验证');
+  chk(hit.includes('2026-09-24 09:53:48'), '写清是按哪个时刻对齐的');
+  chk(hit.includes('-0.1 秒'), '给出时间差（用户能自己判断可信度）');
+
+  const far = page.photoJumpHtml(group, [{
+    video: 'b.MP4', relativePath: 'b.MP4', folderIndex: 0, stream: 'x', index: 5,
+    time: 300, gapSeconds: 250, startSeconds: 300, droneDistance: 900,
+    inFrame: false, inFrameKnown: true
+  }]);
+  chk(far.includes('参考') || far.includes('核对'), '时间差大时提示只能当参考、要人工核对', far.includes('参考') ? '含「参考」' : '含「核对」');
+
+  const none = page.photoJumpHtml(group, []);
+  chk(none.includes('没有找到时间对得上的视频'), '找不到时说明白，而不是留空白');
+  chk(none.includes('加载全部'), '并给出可照做的下一步（先加载全部）');
+
+  const tip = page.photoTooltip({ lat: 23.041556, lon: 114.106484, accuracy: '位置不准', count: 2, members: [{ name: 'DJI_20260924095348_0002_V.JPG', camera: 'WideCamera' }] });
+  chk(tip.includes('位置不准'), '悬停提示里就写清位置可不可信');
+  chk(tip.includes('共 2 张'), '悬停提示里说明点开会有几张');
+}
+
+console.log('\n=== 7) 真实数据：照片时刻真的能落到视频的那一帧 ===');
+
+{
+  const DATA = path.join(ROOT, 'Data');
+  const folders = fs.existsSync(DATA)
+    ? fs.readdirSync(DATA).map((n) => path.join(DATA, n)).filter((p) => fs.statSync(p).isDirectory())
+    : [];
+
+  const geojsonFile = (() => {
+    for (const f of folders) {
+      const hit = fs.readdirSync(f).find((n) => /_V\.geojson$/i.test(n));
+      if (hit) return path.join(f, hit);
+    }
+    return null;
+  })();
+
+  if (!geojsonFile) {
+    console.log('  [SKIP] Data/ 下没有 GeoJSON，跳过真实数据那一层');
+  } else {
+    const geo = JSON.parse(fs.readFileSync(geojsonFile, 'utf8'));
+    const feature = geo.features[0];
+    const times = feature.properties.point_times;
+    const coords = feature.geometry.coordinates;
+
+    chk(times.length === coords.length, '真实 GeoJSON：时间与坐标一一对应', `${times.length} 条`);
+
+    const srtFile = path.join(path.dirname(geojsonFile), path.basename(geojsonFile).replace(/_V\.geojson$/i, '_V.srt'));
+    let tele = null;
+    if (fs.existsSync(srtFile)) {
+      const text = fs.readFileSync(srtFile, 'utf8').replace(/\r\n/g, '\n');
+      const t = [], yaw = [], pitch = [], focal = [], alt = [];
+      let cue = null, idx = 0;
+      for (const line of text.split('\n')) {
+        const m = line.match(/^(\d\d):(\d\d):(\d\d)[,.](\d\d\d)\s*-->/);
+        if (m) { cue = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) + (+m[4]) / 1000; continue; }
+        if (!line.includes('latitude')) continue;
+        if (idx % 3 === 0 && cue != null) {
+          t.push(cue);
+          const g = (re) => { const x = line.match(re); return x ? parseFloat(x[1]) : null; };
+          yaw.push(g(/gb_yaw:\s*(-?\d+(?:\.\d+)?)/));
+          pitch.push(g(/gb_pitch:\s*(-?\d+(?:\.\d+)?)/));
+          focal.push(g(/\[focal_len:\s*(-?\d+(?:\.\d+)?)\]/));
+          alt.push(g(/\[rel_alt:\s*(-?\d+(?:\.\d+)?)/));
+        }
+        idx++;
+      }
+      if (t.length) tele = { times: t, yaw, pitch, focal, alt };
+    }
+
+    chk(!!tele, '读到真实 SRT 遥测（画面内判定要用它）', tele ? `${tele.times.length} 条` : '没读到');
+
+    const track = {
+      coords, times, telemetry: tele,
+      video: path.basename(geojsonFile).replace(/\.geojson$/i, '.MP4'),
+      fileInfo: { relative_path: path.basename(geojsonFile).replace(/\.geojson$/i, '.MP4'), folder_index: 0 }
+    };
+
+    page.setFolders([path.dirname(geojsonFile)]);
+
+    const clip = page.videoRealStartMs(track.fileInfo.relative_path) != null
+      ? {
+        realStartMs: page.videoRealStartMs(track.fileInfo.relative_path),
+        track,
+        info: track.fileInfo,
+        ms0: page.videoRealStartMs(track.fileInfo.relative_path) + times[0] * 1000,
+        msEnd: page.videoRealStartMs(track.fileInfo.relative_path) + times[times.length - 1] * 1000
+      }
+      : null;
+
+    chk(!!clip, '视频开录时刻可用（照片时刻才有参照）',
+      clip ? new Date(clip.realStartMs).toLocaleString('zh-CN') : '取不到');
+
+    // 这一架次的照片（文件名时刻落在视频时间范围内的那些）
+    const photos = (() => {
+      const dir = path.dirname(geojsonFile);
+      const prefix = path.basename(geojsonFile).replace(/_V\.geojson$/i, '');
+      return fs.readdirSync(dir).filter((n) => /\.JPG$/i.test(n));
+    })();
+
+    chk(photos.length > 0, '同一架次目录里有 JPG', `${photos.length} 张`);
+
+    if (clip && photos.length) {
+      // 取一张照片，按它的时刻匹配这一帧
+      const photoName = photos[0];
+      const t = page.photoFileTime(photoName);
+      chk(t != null, '照片名解析出时刻', page.photoTimeText(photoName));
+
+      // 照片的飞机位置：取视频里离该时刻最近的那一帧的坐标当参照，
+      // 这样 droneDistance 这一项才有意义（照片 XMP 里的坐标不在这条测试链路上）
+      const i = page.photoFrameAt(track, (t - clip.realStartMs) / 1000);
+      const c = coords[i];
+
+      // 目标点用「该帧画面中心对应的地面点」—— 这是链路自己算出来的点，
+      // 拿它回来反投影，理应落在画面中心；同时也就把
+      // 「照片目标点 -> 画面内判定」这条交叉验证真正跑通了。
+      const target = tele ? page.centerGroundPointForTest(track, tele, i) : null;
+
+      const group = {
+        lat: null, lon: null, accuracy: '实测', count: 1, stamp: '',
+        members: [{
+          name: photoName,
+          folder: path.dirname(geojsonFile),
+          camera: 'WideCamera',
+          accuracy: '实测',
+          drone_lat: Number(c[1]),
+          drone_lon: Number(c[0])
+        }]
+      };
+
+      if (target) {
+        group.lat = target.lat;
+        group.lon = target.lng !== undefined ? target.lng : target.lon;
+      } else {
+        // 拿不到遥测时退回该帧坐标，只验证「找得到那一帧」
+        group.lat = Number(c[1]);
+        group.lon = Number(c[0]);
+      }
+
+      const m = page.photoFrameMatch(clip, group);
+
+      chk(!!m, '匹配函数返回了一帧');
+      chk(m && Math.abs(m.gapSeconds) <= 1, '找到的帧与照片时刻相差不到 1 秒（SRT 30fps，理应如此）',
+        m ? m.gapSeconds.toFixed(3) + ' 秒' : '-');
+      chk(m && Math.abs(m.time - (t - clip.realStartMs) / 1000) < 1,
+        '帧的视频内时刻与「照片时刻 - 开录时刻」一致',
+        m ? m.time.toFixed(3) + ' s' : '-');
+      chk(m && m.droneDistance != null && m.droneDistance < 50,
+        '空间也对得上：那一刻飞机就在照片飞机位置附近',
+        m && m.droneDistance != null ? m.droneDistance.toFixed(1) + ' 米' : '-');
+
+      if (target) {
+        chk(m && m.inFrameKnown === undefined,
+          'photoFrameMatch 只管单帧（inFrameKnown 是 photoMatchesFor 汇总后补上的，这里本就不该有）',
+          m ? `inFrameKnown=${m.inFrameKnown}` : '-');
+        chk(m && m.inFrame === true,
+          '照片目标点（= 该帧画面中心的地面点）落在画面内 —— 交叉验证真的能判对',
+          m ? `inFrame=${m.inFrame} x=${Number(m.xImg).toFixed(3)} y=${Number(m.yImg).toFixed(3)}` : '-');
+
+        // 目标点是「用全量 SRT 算出来的那一帧画面中心」，而判定用的遥测是
+        // 抽稀到 10Hz 的（每 3 帧一条），姿态最多差 50 ms —— 投影落点因此会有点
+        // 偏移。这里只要求落在画面内、且明显偏中心区，不要求像素级重合。
+        chk(m && Math.abs(m.xImg) < 0.5 && Math.abs(m.yImg) < 0.5,
+          '而且落在画面中心附近（抽稀 10Hz 的姿态误差带来的偏移很小）',
+          m ? `x=${Number(m.xImg).toFixed(4)} y=${Number(m.yImg).toFixed(4)}` : '-');
+
+        // 「画面内」的证据是前后 ±2 秒（约 ±60 帧）里多数采样都看得见 ——
+        // 单看一帧容易被瞬时抖动骗到。这里把同一套采样投票重放一遍：
+        // 目标点是画面中心，前后 ±2 秒理应在画面里。
+        const votes = (() => {
+          const from = Math.max(0, m.index - 60);
+          const to = Math.min(tele.times.length - 1, m.index + 60);
+          const step = Math.max(1, Math.ceil((to - from + 1) / 5));
+          let total = 0, hits = 0;
+          for (let k = from; k <= to; k += step) {
+            const p = page.imagePointOfGround(track, tele, k,
+              { lat: Number(target.lat), lng: Number(target.lng) });
+            if (!p) continue;
+            total++;
+            if (p.visible) hits++;
+          }
+          return { total, hits };
+        })();
+
+        chk(votes.total > 0 && votes.hits * 2 >= votes.total,
+          '±2 秒的采样投票也是「看得见」占多数（瞬时抖动不会把结论带偏）',
+          `${votes.hits}/${votes.total}`);
+      } else {
+        console.log('  [SKIP] 画面内判定（没读到遥测）');
+      }
+
+      // 时间越远，缺口越大：验证缺口确实是按真实时刻算的
+      const group2 = JSON.parse(JSON.stringify(group));
+      const laterName = photoName.replace(/(\d{8})(\d{6})/, (s, d, hhmmss) => {
+        const hh = Number(hhmmss.slice(0, 2));
+        return d + String(hh).padStart(2, '0') + hhmmss.slice(2);
+      });
+      // 改一小时之后的同名照片：缺口应当约 -3600 秒（照片晚于视频 -> 正/负按符号约定）
+      const t2 = page.photoFileTime(laterName);
+      if (t2 != null && t2 !== t) {
+        group2.members[0].name = laterName;
+        const m2 = page.photoFrameMatch(clip, group2);
+        const expected = (clip.msEnd - t2) / 1000;   // 晚于视频结束 -> 负的「超出范围」
+        chk(m2 === null || Math.abs(m2.gapSeconds) > 1800,
+          '把照片时刻改到一小时后：要么没候选，要么缺口很大（说明缺口是按真实时刻算的）',
+          m2 ? m2.gapSeconds.toFixed(1) + ' 秒' : 'null（超出范围，符合预期）');
+      } else {
+        console.log('  [SKIP] 改时刻的边界用例（名字里的小时是 09，改不动）');
+      }
+    }
+  }
+}
+
+console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
+
+{
+  chk(html.includes("/api/project/photos?name="), '接了后端的照片接口');
+  chk(html.includes("/photo?path="), '图片走后端 /photo（不用绝对路径直接喂浏览器）');
+  chk(/id="photoLayerBtn"/.test(html), '有照片图层开关');
+  chk(/id="photoCard"/.test(html), '有地图下方的展示区容器');
+  chk(/id="photoGallery"/.test(html), '展示区里有图片区');
+  chk(/id="photoJump"/.test(html), '展示区里有「跳视频」那块');
+  chk(/photoLayerBtn\.addEventListener\('click',\(\)=>setPhotoLayer/.test(html), '开关接线到 setPhotoLayer');
+  chk((html.match(/photoLayerBtn\.addEventListener/g) || []).length === 1, '开关的监听只挂一次');
+  chk((html.match(/photoCloseBtn\.addEventListener/g) || []).length === 1, '收起按钮的监听只挂一次');
+  chk((html.match(/loadProjectPhotos\(\)/g) || []).length >= 3,
+    '换项目 / 载入项目 / 导入之后都会刷新照片',
+    String((html.match(/loadProjectPhotos\(\)/g) || []).length) + ' 处');
+
+  // 「非实测」必须走 ⚠ 角标，而不是换一种颜色的点（用户 2026-10-06 明确要求的）
+  chk(/photo-warn-mark[^>]*>⚠</.test(html.replace(/\s+/g, ' ')) || html.includes("photo-warn-mark'>⚠"),
+    '⚠ 角标是独立元素贴在点的右上角');
+  chk(!/photo-warn[^}]*background:#fde68a/.test(html), '没有退回到「黄色小圆点」那套');
+
+  // 展示区必须在地图下面（而不是左右两栏里）
+  chk(html.indexOf('id="photoCard"') > html.indexOf('id="map"') && html.indexOf('id="photoCard"') < html.indexOf('id="altVideos"'),
+    '展示区的位置就在地图下方、检索结果之前');
+}
+
+console.log(`\n结果: ${ok ? '全部通过' : '有失败项'}`);
+process.exit(ok ? 0 : 1);
