@@ -524,32 +524,36 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                  transition:background .15s ease,color .15s ease}
 .photo-layer-btn:hover{background:#dbe7fa}
 .photo-layer-btn.photo-on,.photo-layer-btn.photo-on:hover{background:#2563eb;color:#fff}
-/* 卡片头部控件组统一：允许换行、子项可收缩（窄窗口不溢出卡片） */
 /* 地图卡片标题行的三段：加载全部照片 → 计数（它的说明） → 靠右的底图组。
    margin-left 必须显式归零 —— .card-tools 基础规则是 margin-left:auto
    （那是给「刷新/清空」那种右推按钮组用的），不归零时这一行会被推到中间，
-   按钮就不是「贴着左边、在标题正下方」了（实测偏了 61px）。 */
-.card-tools.map-tools{flex-wrap:wrap;justify-content:flex-start;margin-left:0}
+   按钮就不是「贴着左边、在标题正下方」了（实测偏了 61px）。
+   flex-basis 必须给 100% —— 否则这一行只按内容宽度撑开（它是 .card-head 里的
+   弹性项），行内没有富余空间，里面那句 margin-left:auto 只能把它推到
+   「行自己的右边缘」而不是卡片右边缘（实测差 61px；用户截图里 底图 后面
+   那一大截空白就是这么来的）。 */
+.card-tools.map-tools{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start;margin-left:0}
 .card-tools.map-tools>*{min-width:0}
 /* 计数紧跟在按钮右边（它是按钮的说明），不自己抢 auto 边距 */
 .photo-tools{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:0}
 .photo-tools #photoLayerCount,
 .photo-tools #photoLayerCountExtra{white-space:nowrap}
 /* 窗口窄到放不下时，按重要性依次让位。
-   顺序是：加载全部照片（左）→ 底图 + 天地图key（右）→ 计数。
+   顺序是：加载全部照片（左）→ 计数（跟着它）→ 底图 + 天地图key（最右）。
    按钮是「要点的」、计数是「看一眼」的，所以先舍计数。
-   阈值是**量出来的**（无头 Chrome，`--hide-scrollbars`）：
-   地图卡片的控件行宽 ≈ (视口 - 22 滚动条 - 380 左栏) × 0.525，间距 8px。
-     · 按钮 92 + 右组 308 = 408；
-     · 加「244 张 → 147 个点」96 需要 512  —— 视口 1800 时实测正好 512，放得下；
-     · 再加「· 97 处合并」63 需要 575     —— 视口 1920 时实测正好 575，放得下。
-   所以：<=1890 先舍「· 97 处合并」，<=1770 再舍「244 张 → 147 个点」。
-   判的是**视口**宽度（CSS 拿不到父元素宽度）；万一还是放不下，
-   计数会自己换行并右对齐，不会把按钮挤下去。 */
-@media(max-width:1890px){
+   阈值是**量出来的**（这一行现在占满整行，宽度就等于 card-head 的内容宽）：
+     一行放「按钮 92 + 计数 96 + 底图组 308 + 两处 8px 间距」要 512px
+       —— 实测视口 1800 时这一行宽 573，放得下；
+     再加「· 97 处合并」那 63px 要 575px
+       —— 实测视口 1920 时宽 630 放得下，1800 时差 2px 放不下。
+   一行宽 ≈ 573 + (视口 - 1800) × 0.475；媒体查询比的是 innerWidth，
+   而实测 innerWidth = 窗口 - 22，所以阈值要再减 22：
+     放得下补充的合并数（575px）需要窗口 ≥ 1804 -> innerWidth ≥ 1782 -> 阈值 1780；
+     放得下张数（512px）需要窗口 ≥ 1672 -> innerWidth ≥ 1650 -> 阈值 1650。 */
+@media(max-width:1780px){
   .photo-tools #photoLayerCountExtra{display:none}
 }
-@media(max-width:1770px){
+@media(max-width:1650px){
   .photo-tools #photoLayerCount{display:none}
 }
 

@@ -668,9 +668,9 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     chk(!/photoLayerBtn[^>]*class="toggle-btn/.test(html), '不再用 toggle-btn 那套（灰白看着像禁用）');
   }
   chk((html.match(/id="photoLayerCount"/g) || []).length === 1, '计数只有一处（没留重复元素）');
-  chk(/max-width:1890px\)\{[\s\S]{0,200}#photoLayerCountExtra\{display:none\}/.test(html),
-    '窄窗口时「· N 处合并」整段让位（阈值按实测：放不下两段就先舍补充信息）');
-  chk(/max-width:1770px\)\{[\s\S]{0,200}#photoLayerCount\{display:none\}/.test(html),
+  chk(/max-width:1780px\)\{[\s\S]{0,200}#photoLayerCountExtra\{display:none\}/.test(html),
+    '窄窗口时「· N 处合并」整段让位（阈值按实测：这一行满了就先舍补充信息）');
+  chk(/max-width:1650px\)\{[\s\S]{0,200}#photoLayerCount\{display:none\}/.test(html),
     '更窄时连张数也让位，只留按钮（按钮是「要点的」，优先保住）');
   chk(!/photoLayerCount\.textContent=total\s*\?[^;]*(->)/.test(html), '计数用「→」而不是 "->"');
 
