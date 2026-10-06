@@ -1549,8 +1549,8 @@ chk(/\.map-tools button\.secondary\{height:36px/.test(html),
 }
   // 注意别在末尾写 \} —— 这条规则后面还有 flex/min-width 才到右括号，
   // 要求「紧随右括号」会匹配不上（我上一版就栽在这儿）
-  chk(/\.search-bar\{[^}]*margin:0 0 0 14px/.test(html),
-    '搜索区不再是独立一行（并进标题行，左边留 14px 间距）');
+  chk(/\.search-bar\{[^}]*margin:0/.test(html),
+    '搜索区不再是独立一行（并进标题行；间距交给行内 gap，不再自带左外边距）');
 chk(/\.search-bar\{[^}]*flex:1 1 auto/.test(html),
   '搜索区占满标题与「底图」之间的剩余宽度（宽度自适应，不再固定收窄）');
 chk(/\.search-bar input\{[^}]*min-width:120px/.test(html), '输入框最小宽度 120px（给右侧的底图/key 按钮腾位置）');
