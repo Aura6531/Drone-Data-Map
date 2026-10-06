@@ -1393,10 +1393,11 @@ chk(/width<780/.test(body) && /narrow-tools/.test(body),
 
 console.log('\n=== 卡片头部与搜索区排布 ===');
 chk(/<div class="card-head">/.test(html), '卡片头部改用 .card-head');
-chk((html.match(/<div class="card-tools/g) || []).length === 2,
-  '两张卡片（GeoJSON 文件 / 轨迹地图）的控件组都用 .card-tools',
+chk((html.match(/<div class="card-tools/g) || []).length === 3,
+  '三张卡片的控件组都用 .card-tools（GeoJSON 文件 / 轨迹地图 / 标记点）',
   String((html.match(/<div class="card-tools/g) || []).length) + ' 处');
 chk(/<div class="card-tools map-tools">/.test(html), '地图卡片的控件组额外带 map-tools');
+chk(/<div class="card-tools marker-tools">/.test(html), '标记点卡片的控件组额外带 marker-tools');
 chk(/<div class="card-head">\s*\n\s*<h2>轨迹地图<\/h2>/.test(html),
   '「轨迹地图」在新结构里');
 chk(/<h2>轨迹文件<\/h2>/.test(html),

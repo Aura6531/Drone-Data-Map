@@ -72,10 +72,22 @@ http://127.0.0.1:8000/project_geojson_preview.html
 
 ---
 
+## 标记点
+
+在视频画面上右键 → 命名 → 地图上留一个点；这些点**随项目保存**，关掉重开仍在。
+右栏下半是标记点列表：
+
+- 每行 `[✓] 名称 纬度 经度 [×]`，表头「全选」带半选态，标题旁写着「已选 n / 共 m」
+- 点一行 → 地图定位到该点（16 级）+ 视频跳到那一帧
+- 勾选后批量：**删除** / **导出 KML** / **复制经纬度**（制表符表格，直接粘进 Excel）
+- 一个都没勾就点批量按钮 → 页面上直接提示先勾选
+
+---
+
 ## 测试
 
 ```bash
-node run_tests.js              # 一次跑完 12 套，任何一套失败就非零退出
+node run_tests.js              # 一次跑完 13 套，任何一套失败就非零退出
 node run_tests.js --with-net   # 额外跑需要联网的天地图瓦片检查
 node run_tests.js --list       # 只列清单
 ```
@@ -93,11 +105,12 @@ node test_drone.js      # 飞机箭头朝向
 node test_follow.js     # 地图跟随
 node test_nearest.js    # 按位置检索飞行视频（用真实 GeoJSON）
 node test_ab.js         # A+B 检索的数学基础（正/反投影互逆）
+node test_markers.js    # 标记点列表（排序/勾选/删除/KML/复制/跳转）
 python -B check_py.py   # 后端静态断言
 python -B test_geocode.py
 ```
 
-共 12 套（另有 1 套需联网的 `test_tdt_tiles.py`，用 `node run_tests.js --with-net` 跑）。
+共 13 套（另有 1 套需联网的 `test_tdt_tiles.py`，用 `node run_tests.js --with-net` 跑）。
 测试路径按脚本所在目录推导，换机器不用改；
 **注意 `node a.js b.js` 里 b.js 会被静默忽略**（只有第一个会执行），别那么写。
 

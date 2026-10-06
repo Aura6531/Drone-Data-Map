@@ -359,6 +359,34 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .card-tools button{height:32px;padding:0 10px;font-size:12px;font-weight:600;white-space:nowrap;flex:0 0 auto}
 /* 地图卡片的控件要和下拉框对齐成同一高度，否则按钮比下拉框高出一截 */
 .map-tools button.secondary{height:36px;padding:0 14px;font-size:13px}
+
+/* 右栏下半：标记点列表。
+   视频面板改成「按内容高度」（flex:0 0 auto），剩下的高度全给列表，
+   列表内部滚动 —— 这样右栏原来的空白处就利用起来了。 */
+.col-right .video-panel{flex:0 0 auto}
+.marker-card{flex:1 1 auto;min-height:190px;display:flex;flex-direction:column;gap:9px;padding:16px 18px}
+.marker-card h2{margin:0;font-size:17px;display:flex;align-items:center;gap:6px}
+.marker-count{font-size:12px;font-weight:700;color:#64748b}
+.marker-tools button{padding:7px 12px;font-size:13px;height:32px}
+.marker-head{display:flex;align-items:center;gap:10px;font-size:12px;color:#64748b;
+             border-bottom:1px solid #e5eaf2;padding-bottom:6px}
+.marker-all{display:flex;align-items:center;gap:6px;margin:0;font-weight:700;font-size:13px;color:#334155}
+.marker-all input{width:15px;height:15px;margin:0}
+.marker-cols{margin-left:auto}
+.marker-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.marker-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid #e5eaf2;
+            border-radius:8px;background:#fff;font-size:13px;cursor:pointer}
+.marker-row:hover{background:#f8fbff;border-color:#bfdbfe}
+.marker-row.is-active{border-color:#f59e0b;background:#fffbeb}
+.marker-row input[type=checkbox]{width:15px;height:15px;flex:0 0 auto;margin:0}
+.marker-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+             font-weight:700;color:#0f172a}
+.marker-num{flex:0 0 auto;width:84px;text-align:right;color:#475569;
+            font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.marker-del{flex:0 0 auto;width:22px;height:22px;padding:0;line-height:1;border-radius:6px;
+            background:#f1f5f9;color:#64748b;font-size:13px}
+.marker-del:hover{background:#fee2e2;color:#b91c1c}
+.marker-empty{font-size:13px;color:#94a3b8;line-height:1.7;padding:6px 2px}
 </style>
 </head>
 <body>
@@ -565,6 +593,28 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <div id="videoStatus" class="video-status"></div>
         </div>      </div>
     </div>
+
+    <!-- 标记点列表：视频画面右键取点得到的点都列在这里。
+         勾选后可批量删除 / 导出 KML / 复制名称+经纬度表格 / 生成 Word 报告；
+         点某一行则地图定位到该点、视频跳到那一帧。 -->
+    <section class="card marker-card" id="markerCard">
+      <div class="card-head">
+        <h2>标记点<span id="markerCount" class="marker-count">（空）</span></h2>
+        <div class="card-tools marker-tools">
+          <button id="markerDeleteBtn" class="secondary" type="button"
+                  title="删除勾选的标记点（只从项目里移除，不动视频和数据）">删除</button>
+          <button id="markerKmlBtn" class="secondary" type="button"
+                  title="把勾选的标记点导出成 KML（可在 Google Earth / 奥维等里打开）">导出 KML</button>
+          <button id="markerCopyBtn" class="secondary" type="button"
+                  title="把勾选点的「名称 / 纬度 / 经度」以制表符表格复制到剪贴板，可直接粘进 Excel">复制经纬度</button>
+        </div>
+      </div>
+      <div class="marker-head">
+        <label class="marker-all"><input type="checkbox" id="markerSelectAll">全选</label>
+        <span class="marker-cols">名称 · 纬度 · 经度（按创建时间）</span>
+      </div>
+      <div id="markerList" class="marker-list"></div>
+    </section>
   </section>
 
 </div>
@@ -2396,6 +2446,8 @@ function drawProjectMarkers(){
   for(const m of projectMarkers){
     addVideoMark(L.latLng(m.lat,m.lng),m.name);
   }
+
+  renderMarkerList();
 }
 
 // 从项目里读回标记点
@@ -2444,9 +2496,294 @@ function confirmVideoMark(){
 
   saveProjectMarkers();
 
+  renderMarkerList();
+
   closeVideoMarkDialog();
   pendingMark=null;
 }
+
+/* ============================================================
+   标记点列表（右栏下半）
+   勾选 / 全选（带半选态）/ 单个 × 删除 / 批量删除 /
+   导出 KML / 复制「名称 + 纬度 + 经度」表格 / 点行跳转
+   ============================================================ */
+
+const markerCard=document.getElementById('markerCard');
+const markerList=document.getElementById('markerList');
+const markerCount=document.getElementById('markerCount');
+const markerSelectAll=document.getElementById('markerSelectAll');
+const markerDeleteBtn=document.getElementById('markerDeleteBtn');
+const markerKmlBtn=document.getElementById('markerKmlBtn');
+const markerCopyBtn=document.getElementById('markerCopyBtn');
+
+let markerChecked=new Set();   // 勾选中的标记点 id（重绘不丢）
+let activeMarkerId='';         // 最后跳转到的那个，列表里高亮
+
+// 按创建时间排序（报告、导出、列表都用这个顺序）
+function sortedMarkers(){
+  return projectMarkers.slice().sort((a,b)=>{
+    const ta=Date.parse(a.created)||0;
+    const tb=Date.parse(b.created)||0;
+    if(ta!==tb)return ta-tb;
+    return String(a.id||'').localeCompare(String(b.id||''));
+  });
+}
+
+function selectedMarkers(){
+  return sortedMarkers().filter(m=>markerChecked.has(m.id));
+}
+
+function updateMarkerBar(){
+  const total=projectMarkers.length;
+  const picked=selectedMarkers().length;
+
+  if(markerCount)markerCount.textContent=total?`（已选 ${picked} / 共 ${total}）`:'（空）';
+
+  // 按钮不因为「没勾选」而禁用 —— 按要求：一个都没选就点，直接在页面上提示需要选择
+  const usable=total>0;
+  for(const b of [markerDeleteBtn,markerKmlBtn,markerCopyBtn])if(b)b.disabled=!usable;
+
+  if(markerSelectAll){
+    markerSelectAll.checked=total>0&&picked===total;
+    markerSelectAll.indeterminate=picked>0&&picked<total;   // 半选态
+  }
+}
+
+function renderMarkerList(){
+  if(!markerList)return;
+
+  // 换项目 / 点被删掉之后，勾选集合里的陈旧 id 要清掉
+  const alive=new Set(projectMarkers.map(m=>m.id));
+  for(const id of Array.from(markerChecked))if(!alive.has(id))markerChecked.delete(id);
+
+  markerList.innerHTML='';
+
+  const list=sortedMarkers();
+
+  if(!list.length){
+    const empty=document.createElement('div');
+    empty.className='marker-empty';
+    empty.textContent='还没有标记点：在视频画面上右键取点、命名后就会出现在这里。';
+    markerList.appendChild(empty);
+    updateMarkerBar();
+    return;
+  }
+
+  for(const m of list){
+    const row=document.createElement('div');
+    row.className='marker-row'+(m.id===activeMarkerId?' is-active':'');
+    row.title='点击跳转：地图定位到该点，视频跳到那一帧';
+
+    const cb=document.createElement('input');
+    cb.type='checkbox';
+    cb.checked=markerChecked.has(m.id);
+    cb.title='勾选后可批量删除 / 导出 / 复制';
+    cb.addEventListener('click',e=>e.stopPropagation());
+    cb.addEventListener('change',()=>{
+      if(cb.checked)markerChecked.add(m.id);
+      else markerChecked.delete(m.id);
+      updateMarkerBar();
+    });
+
+    const name=document.createElement('span');
+    name.className='marker-name';
+    name.textContent=m.name;
+
+    const lat=document.createElement('span');
+    lat.className='marker-num';
+    lat.textContent=Number(m.lat).toFixed(6);
+
+    const lng=document.createElement('span');
+    lng.className='marker-num';
+    lng.textContent=Number(m.lng).toFixed(6);
+
+    const del=document.createElement('button');
+    del.type='button';
+    del.className='marker-del';
+    del.textContent='×';
+    del.title='删除这个标记点';
+    del.addEventListener('click',e=>{e.stopPropagation();deleteMarkers([m.id],false)});
+
+    row.appendChild(cb);
+    row.appendChild(name);
+    row.appendChild(lat);
+    row.appendChild(lng);
+    row.appendChild(del);
+    row.addEventListener('click',()=>jumpToMarker(m.id));
+
+    markerList.appendChild(row);
+  }
+
+  updateMarkerBar();
+}
+
+async function deleteMarkers(ids,ask){
+  const list=projectMarkers.filter(m=>ids.indexOf(m.id)>=0);
+  if(!list.length)return;
+
+  if(ask&&!confirm(`确定删除这 ${list.length} 个标记点吗？\n只从当前项目里移除，不动视频和数据文件。`))return;
+
+  projectMarkers=projectMarkers.filter(m=>ids.indexOf(m.id)<0);
+
+  for(const id of ids){
+    markerChecked.delete(id);
+    if(activeMarkerId===id)activeMarkerId='';
+  }
+
+  drawProjectMarkers();          // 里面会重绘列表
+  await saveProjectMarkers();
+
+  if(videoStatus)videoStatus.textContent=`已删除 ${list.length} 个标记点。`;
+}
+
+// 点一行：地图跳到该点（16 级）+ 视频跳到那一帧
+function jumpToMarker(id){
+  const m=projectMarkers.find(x=>x.id===id);
+  if(!m)return;
+
+  activeMarkerId=id;
+  renderMarkerList();
+
+  if(map)map.setView([m.lat,m.lng],TRACK_FOCUS_ZOOM);
+
+  if(!m.video){
+    if(videoStatus)videoStatus.textContent='这个标记点没有对应的视频帧。';
+    return;
+  }
+
+  // 标记点存的是视频相对路径，先反查它属于哪个数据文件夹
+  const want=String(m.video).toLowerCase();
+  const f=geoFiles.find(x=>videoPathFromGeojson(x.relative_path).toLowerCase()===want);
+
+  if(!f){
+    if(videoStatus)videoStatus.textContent='找不到该标记点对应的视频：'+m.video;
+    return;
+  }
+
+  const payload={
+    folder_index:f.folder_index,
+    relative_path:String(m.video),
+    video_start:Number(m.time)||0,
+    video_end:0,
+    video:shortFileName(String(m.video))
+  };
+
+  openVideoFromPopup(encodeURIComponent(JSON.stringify(payload)));
+}
+
+function kmlEscape(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function buildMarkersKml(list){
+  const out=[
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<kml xmlns="http://www.opengis.net/kml/2.2">',
+    '<Document>',
+    '  <name>'+kmlEscape(projectSelect.value||'标记点')+'</name>',
+    '  <Style id="markStyle"><IconStyle><color>ff09b4f5</color><scale>1.1</scale></IconStyle></Style>'
+  ];
+
+  for(const m of list){
+    const note='纬度 '+Number(m.lat).toFixed(6)+'　经度 '+Number(m.lng).toFixed(6)
+      +(m.video?'　视频 '+m.video:'')
+      +(m.time?'　时间 '+formatTime(m.time):'');
+
+    out.push('  <Placemark>');
+    out.push('    <name>'+kmlEscape(m.name)+'</name>');
+    out.push('    <description>'+kmlEscape(note)+'</description>');
+    out.push('    <styleUrl>#markStyle</styleUrl>');
+    out.push('    <Point><coordinates>'+Number(m.lng)+','+Number(m.lat)+',0</coordinates></Point>');
+    out.push('  </Placemark>');
+  }
+
+  out.push('</Document>','</kml>');
+  return out.join('\n');
+}
+
+function downloadBlob(filename,blob){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+
+// 名称 + 纬度 + 经度，制表符分隔（粘进 Excel 正好是三列）
+function markersTsv(list){
+  const rows=[['名称','纬度','经度']];
+  for(const m of list)rows.push([m.name,Number(m.lat).toFixed(6),Number(m.lng).toFixed(6)]);
+  return rows.map(r=>r.join('\t')).join('\r\n');
+}
+
+async function copyMarkersTsv(list){
+  const text=markersTsv(list);
+
+  try{
+    // 127.0.0.1 也算安全上下文，剪贴板 API 可用
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    // 兜底：旧式选中 + copy
+    const ta=document.createElement('textarea');
+    ta.value=text;
+    ta.style.position='fixed';
+    ta.style.left='-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok=false;
+    try{ok=document.execCommand('copy')}catch(_){ok=false}
+    document.body.removeChild(ta);
+    if(!ok){
+      alert('浏览器不允许自动复制，可以手动复制下面这段：\n\n'+text);
+      return;
+    }
+  }
+
+  if(videoStatus)videoStatus.textContent=`已复制 ${list.length} 个标记点的名称 / 纬度 / 经度（可直接粘到 Excel）。`;
+}
+
+function pickedForExport(){
+  const list=selectedMarkers();
+  if(!list.length){
+    alert('请先勾选要处理的标记点（可以点表头的「全选」）。');
+    return null;
+  }
+  return list;
+}
+
+if(markerSelectAll)markerSelectAll.addEventListener('change',()=>{
+  if(markerSelectAll.checked){
+    for(const m of projectMarkers)markerChecked.add(m.id);
+  }else{
+    markerChecked.clear();
+  }
+  renderMarkerList();
+});
+
+if(markerDeleteBtn)markerDeleteBtn.addEventListener('click',()=>{
+  const list=pickedForExport();
+  if(list)deleteMarkers(list.map(m=>m.id),true);
+});
+
+if(markerKmlBtn)markerKmlBtn.addEventListener('click',()=>{
+  const list=pickedForExport();
+  if(!list)return;
+
+  const name=(projectSelect.value||'标记点')+'-标记点.kml';
+  downloadBlob(name,new Blob([buildMarkersKml(list)],
+    {type:'application/vnd.google-earth.kml+xml;charset=utf-8'}));
+
+  if(videoStatus)videoStatus.textContent=`已导出 ${list.length} 个标记点到 ${name}。`;
+});
+
+if(markerCopyBtn)markerCopyBtn.addEventListener('click',()=>{
+  const list=pickedForExport();
+  if(list)copyMarkersTsv(list);
+});
 
 // 右键：屏蔽浏览器菜单，算落点，弹命名框
 if(videoPlayer)videoPlayer.addEventListener('contextmenu',e=>{

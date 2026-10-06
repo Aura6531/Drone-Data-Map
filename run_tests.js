@@ -33,6 +33,7 @@ const NODE_SUITES = [
   'test_follow.js',     // 地图跟随
   'test_nearest.js',    // 按位置检索（用真实 GeoJSON）
   'test_ab.js',         // A+B 检索的数学基础（正/反投影互逆）
+  'test_markers.js',    // 标记点列表（排序/勾选/删除/KML/复制/跳转）
 ];
 const PY_SUITES = [
   'check_py.py',        // 后端静态断言
