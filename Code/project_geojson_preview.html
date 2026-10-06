@@ -523,8 +523,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       <div class="card-tools map-tools">
         <label for="baseMap" class="ctrl-label">底图</label>
         <select id="baseMap" class="ctrl-select">
-          <option value="street">街道图（天地图）</option>
-          <option value="satellite" selected>卫星图（天地图影像）</option>
+          <option value="street" selected>街道图（天地图）</option>
+          <option value="satellite">卫星图（天地图影像）</option>
           <option value="osm">OpenStreetMap</option>
         </select>
       </div>
@@ -1064,9 +1064,10 @@ const BASEMAP_DEFS={
 let baseLayers=[];
 let baseMapWarned='';
 
-// 默认底图：卫星图。两处要一致 —— 这里（脚本兜底）与 <select id="baseMap"> 上带 selected 的项
+// 默认底图：街道图。两处要一致 —— 这里（脚本兜底）与 <select id="baseMap"> 上带 selected 的项
 // （initBaseMap() 读的就是 select 的值）。
-const DEFAULT_BASEMAP='satellite';
+// 注：生成 Word 报告的确认弹窗里会提示「用卫星图效果更好」，但默认值保持街道图。
+const DEFAULT_BASEMAP='street';
 let currentBaseMapKind=DEFAULT_BASEMAP;
 
 function clearBaseLayers(){
@@ -3381,8 +3382,15 @@ function startWordReport(list){
   }
 
   if(reportModalHint){
+    const nowKind=currentBaseMapKind||DEFAULT_BASEMAP;
+
+    // 提示一句：卫星底图效果更好（已经是卫星图就不用再劝了）
+    const baseTip=nowKind==='satellite'
+      ?''
+      :'　※ 提示：用卫星图作为底图效果更好（可在「底图」下拉里切换）。';
+
     reportModalHint.textContent=`只包含勾选的 ${list.length} 个点。`
-      +`地图截图用当前底图（${basemapDisplayName(currentBaseMapKind||DEFAULT_BASEMAP)}）。`;
+      +`地图截图用当前底图（${basemapDisplayName(nowKind)}）。${baseTip}`;
   }
 
   reportModal.style.display='flex';
