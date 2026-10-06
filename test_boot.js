@@ -474,7 +474,7 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   }
 
   const btn = sb.els.get('photoLayerBtn');
-  chk(btn && btn._classes.has('off'), '照片图层默认关（不挡航迹）');
+  chk(btn && !btn._classes.has('photo-on'), '照片图层默认关（不挡航迹）');
   chk(btn && String(btn.textContent || '') === '', '开关按钮取得到');
 
   // 点一下「加载全部照片」：应该建出两个照片点，并把视野缩放到全部照片
@@ -484,7 +484,7 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   const made = svgHolder.length - before;
   chk(!toggleErr, '点「加载全部照片」不抛异常', toggleErr ? toggleErr.message : '');
   chk(made >= 2, '打开后为每个照片点建了图标', made + ' 个');
-  chk(!btn || !btn._classes.has('off'), '按钮的 off 类被摘掉了（看着是「开」）');
+  chk(btn && btn._classes.has('photo-on'), '打开后按钮带 photo-on（主色实心）');
   chk(btn && String(btn.getAttribute('aria-pressed')) !== 'false' || !btn, 'aria-pressed 跟着变');
 
   // 视野缩放：桩里记下 fitBounds 的调用，验证「一次把全部照片摆进画面」

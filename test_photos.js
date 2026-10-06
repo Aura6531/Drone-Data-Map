@@ -612,14 +612,37 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '左栏那个改叫「加载全部轨迹」（和「加载全部照片」区分开）');
   chk(/textContent=filtered\?`加载筛选（\$\{n\}）`:'加载全部轨迹'/.test(html),
     '筛选后按钮文案也跟着「加载全部轨迹」');
-  // 开关必须在「底图 / 天地图key」那一行里（用户要求放到那里），而不是另起一行
-  const toolsRow = html.slice(html.indexOf('card-tools map-tools'), html.indexOf('</div>', html.indexOf('id="photoLayerCountExtra"')));
-  chk(/id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow) && /id="photoLayerBtn"/.test(toolsRow),
-    '照片图层开关与底图 / 天地图key 在同一行（.card-tools.map-tools）');
+  // 「加载全部照片」放在这一行**最左边**（用户要求），底图/key 靠右，计数在最后
+  const toolsRow = html.slice(html.indexOf('card-tools map-tools'),
+                              html.indexOf('id="mapNotice"'));
+  chk(/id="photoLayerBtn"/.test(toolsRow) && /id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow),
+    '三个控件在同一行（.card-tools.map-tools）');
+  chk(toolsRow.indexOf('id="photoLayerBtn"') < toolsRow.indexOf('class="map-tools-right"'),
+    '「加载全部照片」在最左边（在底图那一组之前）');
+  chk(/\.map-tools-right\{[^}]*margin-left:auto/.test(html),
+    '底图 / 天地图key 那组用 margin-left:auto 靠右');
+  chk(toolsRow.indexOf('id="photoLayerCount"') > toolsRow.indexOf('id="keyBtn"'),
+    '计数跟在最后（窄窗口时先让位）');
+  // 大小与外观要和左栏「加载全部轨迹」一致
+  {
+    const fileBtn = (html.match(/\.card-tools\.file-actions button\{[^}]*\}/) || [''])[0];
+    const photoBtn = (html.match(/\.photo-layer-btn\{[^}]*\}/) || [''])[0];
+    const dim = (s) => (s.match(/height:(\d+)px/) || [])[1] + '/' + (s.match(/font-size:(\d+)px/) || [])[1]
+      + '/' + (s.match(/font-weight:(\d+)/) || [])[1];
+    chk(dim(photoBtn) === dim(fileBtn),
+      '「加载全部照片」与「加载全部轨迹」同尺寸同字重（34px / 12px / 700）',
+      `photo=${dim(photoBtn)} load=${dim(fileBtn)}`);
+    chk(/border-radius:9px/.test(photoBtn), '圆角与全局 button 一致（9px）');
+    chk(/color:#2563eb/.test(photoBtn), '关着时是浅底 + 主色字（看着可点，不是禁用灰）');
+    const onRule = (html.match(/\.photo-layer-btn\.photo-on[^{]*\{[^}]*\}/) || [''])[0];
+    chk(/#2563eb/.test(onRule) && /#fff/.test(onRule), '开启态是主色实心 + 白字（同「加载全部轨迹」）');
+    chk(/\.photo-layer-btn\.photo-on/.test(html), '开启态用 .photo-on 表示（替代原来那套灰白 off）');
+    chk(!/photoLayerBtn[^>]*class="toggle-btn/.test(html), '不再用 toggle-btn 那套（灰白看着像禁用）');
+  }
   chk((html.match(/id="photoLayerCount"/g) || []).length === 1, '计数只有一处（没留重复元素）');
-  chk(/max-width:1700px\)\{[\s\S]{0,200}#photoLayerCountExtra\{display:none\}/.test(html),
-    '窄窗口时「· N 处合并」整段让位（不挤掉主信息）');
-  chk(/max-width:1280px\)\{[\s\S]{0,200}#photoLayerCount\{display:none\}/.test(html),
+  chk(/max-width:1890px\)\{[\s\S]{0,200}#photoLayerCountExtra\{display:none\}/.test(html),
+    '窄窗口时「· N 处合并」整段让位（阈值按实测：放不下两段就先舍补充信息）');
+  chk(/max-width:1770px\)\{[\s\S]{0,200}#photoLayerCount\{display:none\}/.test(html),
     '更窄时连张数也让位，只留按钮（按钮是「要点的」，优先保住）');
   chk(!/photoLayerCount\.textContent=total\s*\?[^;]*(->)/.test(html), '计数用「→」而不是 "->"');
 

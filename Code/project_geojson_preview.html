@@ -488,37 +488,49 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    照片图层 + 地图下方展示区
    ============================================================ */
 
-/* 地图卡片标题行最右端：照片图层开关。
-   写成 span + inline-flex：这一块不是 .card-tools（那套类名有静态断言在数个数），
-   靠 inline-flex 自己排成一行。
-   .map-tools 本身是「不换行、控件不收缩」，一行挤不下时子元素会溢出卡片右边缘。
-   所以这里覆盖成：允许整行换行、控件也允许收缩；宽的时候照片图层这一组仍被
-   margin-left:auto 推到最右端（用户要求的位置），窄的时候它整组落到下一行，
-   而不是被挤出卡片。 */
+/* 地图卡片标题行的控件组：**加载全部照片放最左边**，
+   「底图 / 天地图key」用 .map-tools-right 推到右边，计数跟在最后。
+   （用户 2026-10-07：「这个按钮说了放到左边，大概红框位置。
+   而且大小应该是和『加载全部轨迹』按钮的大小、效果一致的」。） */
+/* 右侧那一组：底图 + 天地图key，整体用 margin-left:auto 推到右边。
+   照片计数不在这一组里 —— 它是独立的下一项，放不下时自己换行、右对齐，
+   不会把「底图 / key」一起顶到第二行。 */
+.map-tools-right{display:flex;align-items:center;gap:10px;margin-left:auto;min-width:0}
+
+/* 「加载全部照片」和左栏「加载全部轨迹」同款：同样大小、同款主按钮外观。
+   关=浅底 + 主色字（.secondary 的样子，看着是「可点」，不是禁用灰）；
+   开=主色实心 + 白字。
+   注意高度要写 min-height：`.map-tools button.secondary{height:36px}` 那条
+   选择器权重比单个类高，只写 height 会被它盖住（实测出来是 32px 不是 34px）。 */
+.photo-layer-btn{min-height:34px;height:34px;padding:0 12px;border:0;border-radius:9px;
+                 background:#e8eef8;color:#2563eb;font-size:12px;font-weight:600;
+                 white-space:nowrap;cursor:pointer;flex:0 0 auto;
+                 transition:background .15s ease,color .15s ease}
+.photo-layer-btn:hover{background:#dbe7fa}
+.photo-layer-btn.photo-on,.photo-layer-btn.photo-on:hover{background:#2563eb;color:#fff}
+/* 卡片头部控件组统一：允许换行、子项可收缩（窄窗口不溢出卡片） */
 .card-tools.map-tools{flex-wrap:wrap;justify-content:flex-start}
 .card-tools.map-tools>*{min-width:0}
-.card-tools.map-tools .photo-tools{display:inline-flex;align-items:center;gap:8px;
-                                   margin-left:auto;flex-wrap:wrap}
-/* 计数只占自己那一格的宽度，不许把底图/key 挤走；两段都 nowrap，
-   补充信息（合并数）窄窗口时整段让位（见下面的媒体查询）。 */
-.card-tools.map-tools .photo-tools #photoLayerCount,
-.card-tools.map-tools .photo-tools #photoLayerCountExtra{white-space:nowrap}
-.card-tools.map-tools .photo-tools #photoLayerBtn{flex:0 0 auto}
-/* 窗口窄到放不下时，按重要性依次让位，保证「照片图层」按钮始终和「天地图key」
-   在同一行、且不出卡片。
-   实测（无头 Chrome 量过）：这一行里「底图」标签 + 下拉框 + key 按钮要占 ~280px，
-   照片图层按钮 70px，两段计数约 180px；而窗口一窄，中间的卡片本身也跟着窄 ——
-   视口 1800 时卡片约 573px（三段都放得下）、1600 时约 479px（放不下完整计数）。
-   所以阈值卡在：视口 <=1700 先舍「· 97 处合并」，<=1280 再舍「244 张 → 147 个点」，
-   只留按钮（计数是「看一眼」的信息，按钮是「要点的」，后者优先）。
-   注意：这里判的是**视口**宽度、不是卡片宽度（CSS 拿不到父元素宽度，
-   容器查询在当前 Chromium 上也还不敢用）—— 所以卡片特别窄时，
-   这一组会整组落到第二行，而不会溢出卡片。 */
-@media(max-width:1700px){
-  .card-tools.map-tools .photo-tools #photoLayerCountExtra{display:none}
+/* 计数：独立一项，自己带 auto 让它右对齐（换行后也在右边） */
+.photo-tools{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.photo-tools #photoLayerCount,
+.photo-tools #photoLayerCountExtra{white-space:nowrap}
+/* 窗口窄到放不下时，按重要性依次让位。
+   顺序是：加载全部照片（左）→ 底图 + 天地图key（右）→ 计数。
+   按钮是「要点的」、计数是「看一眼」的，所以先舍计数。
+   阈值是**量出来的**（无头 Chrome，`--hide-scrollbars`）：
+   地图卡片的控件行宽 ≈ (视口 - 22 滚动条 - 380 左栏) × 0.525，间距 8px。
+     · 按钮 92 + 右组 308 = 408；
+     · 加「244 张 → 147 个点」96 需要 512  —— 视口 1800 时实测正好 512，放得下；
+     · 再加「· 97 处合并」63 需要 575     —— 视口 1920 时实测正好 575，放得下。
+   所以：<=1890 先舍「· 97 处合并」，<=1770 再舍「244 张 → 147 个点」。
+   判的是**视口**宽度（CSS 拿不到父元素宽度）；万一还是放不下，
+   计数会自己换行并右对齐，不会把按钮挤下去。 */
+@media(max-width:1890px){
+  .photo-tools #photoLayerCountExtra{display:none}
 }
-@media(max-width:1280px){
-  .card-tools.map-tools .photo-tools #photoLayerCount{display:none}
+@media(max-width:1770px){
+  .photo-tools #photoLayerCount{display:none}
 }
 
 /* 照片点：画成 SVG 圆形，fill 走 CSS 变量（实测=蓝、位置不准=黄）。
@@ -765,24 +777,24 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <button id="placeSearchBtn">搜索地名</button>
       </div>
       <div class="card-tools map-tools">
-        <label for="baseMap" class="ctrl-label">底图</label>
-        <select id="baseMap" class="ctrl-select">
-          <option value="street" selected>街道图（天地图）</option>
-          <option value="satellite">卫星图（天地图影像）</option>
-          <option value="osm">OpenStreetMap</option>
-        </select>
-        <button id="keyBtn" class="key-btn" type="button"
-                title="天地图 key：还没申请下来也能先用系统；拿到后在这里补填，存盘即生效">天地图key</button>
-        <!-- 照片图层：和轨迹一样是「显不显示」的开关。
-             用 toggle-btn 那套（开=蓝底、关=灰白），和视频面板上的开关一致。
-             外层用 span 而不是 div：静态断言只认 .card-tools 这个类名，
-             这里再包一个 div 会让「三张卡片各一个控件组」的计数变成 4。 -->
+        <!-- 「加载全部照片」放在这一行**最左边**（用户 2026-10-07 要求：
+            说好放左边的，别挤到右边去）。为了让「底图 / 天地图key」这一组
+            仍靠右，右侧那两段包进 .map-tools-right（margin-left:auto）。 -->
+        <button id="photoLayerBtn" class="photo-layer-btn" type="button" aria-pressed="false"
+                title="加载全部照片：把照片点显示到地图上，并把视野缩放到所有照片都看得见（再点一次隐藏）">加载全部照片</button>
+        <div class="map-tools-right">
+          <label for="baseMap" class="ctrl-label">底图</label>
+          <select id="baseMap" class="ctrl-select">
+            <option value="street" selected>街道图（天地图）</option>
+            <option value="satellite">卫星图（天地图影像）</option>
+            <option value="osm">OpenStreetMap</option>
+          </select>
+          <button id="keyBtn" class="key-btn" type="button"
+                  title="天地图 key：还没申请下来也能先用系统；拿到后在这里补填，存盘即生效">天地图key</button>
+        </div>
+        <!-- 照片计数：独立一项、带 margin-left:auto。放得下时与右组同一行，
+             放不下就自己掉到第二行并右对齐（不是把按钮一起挤下去）。 -->
         <span class="photo-tools">
-          <button id="photoLayerBtn" class="toggle-btn off" type="button" aria-pressed="false"
-                  title="加载全部照片：把照片点显示到地图上，并把视野缩放到所有照片都看得见（再点一次隐藏）">加载全部照片</button>
-          <!-- 计数分两段：「244 张 → 147 个点」是主信息，必须一直看得见；
-               「· 97 处合并」是补充，窗口窄时让位（媒体查询里隐藏），
-               免得整串被卡掉半截、连主信息都读不全。 -->
           <span id="photoLayerCount" class="photo-sub"></span><span id="photoLayerCountExtra"
                 class="photo-sub"></span>
         </span>
@@ -4040,7 +4052,8 @@ function renderPhotoLayer(){
 // 图层开关 + 计数文字的同步
 function updatePhotoLayerUI(){
   if(photoLayerBtn){
-    photoLayerBtn.classList.toggle('off',!photoLayerOn);
+    // 开/关：photo-on 是主色实心（和「加载全部轨迹」同款外观），关掉是浅底蓝字
+    photoLayerBtn.classList.toggle('photo-on',photoLayerOn);
     photoLayerBtn.setAttribute('aria-pressed',photoLayerOn?'true':'false');
   }
 
