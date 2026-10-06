@@ -532,8 +532,10 @@ else:
         "单元格内容水平靠左", str(xml.count('w:jc w:val="left"')) + " 处")
 
     headings = [p.text for p in document.paragraphs if p.style.name.startswith("Heading 1")]
-    chk("一、1 号排水口" in headings and "二、2 号 <桥下> & \"涵洞\"" in headings,
-        "章节标题用中文序号", str(headings)[:80])
+    chk("1. 1 号排水口" in headings and '2. 2 号 <桥下> & "涵洞"' in headings,
+        "章节标题是「数字序号. 空格 点名」（不用汉字数字）", str(headings)[:80])
+    chk(not any(re.match(r"^[一二三四五六七八九十]+、", h) for h in headings),
+        "标题里已经没有任何汉字序号", str(headings)[:80])
 
     chk("东莞2" in result["download_name"] and result["download_name"].endswith(".docx"),
         "下载文件名带项目名与日期", result["download_name"])
@@ -552,8 +554,6 @@ print("\n=== 5) 小工具 / 路径穿越防护 ===")
 
 chk(pm.format_seconds_text(608.274) == "00:10:08", "秒 -> 00:10:08", pm.format_seconds_text(608.274))
 chk(pm.format_seconds_text("abc") == "-", "坏值给 '-'，不抛异常")
-chk(pm.chinese_index(1) == "一" and pm.chinese_index(11) == "十一" and pm.chinese_index(21) == "二十一",
-    "中文序号 1/11/21", f"{pm.chinese_index(1)}/{pm.chinese_index(11)}/{pm.chinese_index(21)}")
 chk(pm.safe_file_stem('东莞2/非法:*名') == "东莞2_非法_名",
     "文件名里的非法字符被替换（连续的合成一个 _）", pm.safe_file_stem('东莞2/非法:*名'))
 

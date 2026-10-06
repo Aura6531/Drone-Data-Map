@@ -4319,30 +4319,6 @@ def make_map_snapshot(payload):
 # docx：书签 + 超链接目录（不是要按 F9 刷新的域）
 # ------------------------------------------------------------
 
-CHINESE_DIGITS = "零一二三四五六七八九"
-
-
-def chinese_index(number):
-    """1 -> 一、11 -> 十一、21 -> 二十一（章节序号）。"""
-
-    if number <= 0:
-        return str(number)
-
-    if number < 10:
-        return CHINESE_DIGITS[number]
-
-    if number < 20:
-        return "十" + (CHINESE_DIGITS[number % 10] if number % 10 else "")
-
-    if number < 100:
-        return (
-            CHINESE_DIGITS[number // 10]
-            + "十"
-            + (CHINESE_DIGITS[number % 10] if number % 10 else "")
-        )
-
-    return str(number)
-
 
 def add_docx_bookmark(paragraph, name, bookmark_id):
     """给段落挂一个书签（目录的超链接指到它）。"""
@@ -4809,7 +4785,8 @@ def build_docx_report(payload):
         document.add_page_break()
 
         heading = document.add_heading(
-            f"{chinese_index(index)}、{point['name']}",
+            # 章节标题：阿拉伯序号 + 英文句点 + 一个空格 + 点名（如 22. 东莞2-5）
+            f"{index}. {point['name']}",
             level=1
         )
         add_docx_bookmark(heading, f"mark{index}", 1000 + index)
