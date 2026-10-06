@@ -397,11 +397,18 @@ else:
         f"视频截图高度不超过 {pm.REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM}cm",
         f"最高 {max(heights_cm):.2f}cm")
     chk(min(heights_cm) <= pm.REPORT_MAP_IMAGE_MAX_HEIGHT_CM + 0.01,
-        f"地图截图更矮（按 {pm.REPORT_MAP_IMAGE_MAX_HEIGHT_CM}cm 封顶，好让整节同页）",
+        f"地图截图更矮（按 {pm.REPORT_MAP_IMAGE_MAX_HEIGHT_CM}cm 封顶）",
         f"最矮 {min(heights_cm):.2f}cm")
-    chk(max(widths_cm) <= pm.REPORT_IMAGE_MAX_WIDTH_CM + 0.01,
-        f"宽度不超过正文宽 {pm.REPORT_IMAGE_MAX_WIDTH_CM}cm",
+    chk(max(widths_cm) == pm.REPORT_IMAGE_MAX_WIDTH_CM,
+        f"16:9 的图横向铺满正文宽（{pm.REPORT_IMAGE_MAX_WIDTH_CM}cm）",
         f"最宽 {max(widths_cm):.2f}cm")
+    chk(max(widths_cm) <= pm.REPORT_IMAGE_MAX_WIDTH_CM + 0.01,
+        f"任何图都不会超过正文宽 {pm.REPORT_IMAGE_MAX_WIDTH_CM}cm",
+        f"最宽 {max(widths_cm):.2f}cm")
+
+    # 图与图注都居中（图铺满时看不出差别，回缩过的窄图与所有图注都靠它）
+    chk(xml.count('w:val="center"') >= 6,
+        "三张图 + 三行图注都设了居中", str(xml.count('w:val="center"')) + " 处")
 
     # 方形图（热成像 5:4）也按高度封顶，不会横向顶破页面
     square_width = pm.report_picture_width_cm(shots[-1].name) if shots else None
@@ -412,8 +419,9 @@ else:
         "图读不出来时退回正文宽，不抛异常", str(square_width))
 
     # 插图写上「诚实的 DPI」：像素宽 / 目标显示宽 —— 按固有尺寸排的阅读器也算得对
-    chk(pm.report_image_dpi(2480, 1395, pm.REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM) == (443, 443),
-        "2480x1395 的截图写成 443dpi（14.22cm 宽）",
+    expected_dpi = round(2480 / (pm.REPORT_IMAGE_MAX_WIDTH_CM / 2.54))
+    chk(pm.report_image_dpi(2480, 1395, pm.REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM) == (expected_dpi, expected_dpi),
+        f"2480x1395 的截图写成 {expected_dpi}dpi（铺满 {pm.REPORT_IMAGE_MAX_WIDTH_CM}cm 宽）",
         str(pm.report_image_dpi(2480, 1395, pm.REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM)))
     chk(pm.report_image_dpi(0, 0, 8.0) == (300, 300), "尺寸无效时给个安全默认值")
 

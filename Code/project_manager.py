@@ -132,13 +132,16 @@ MAP_TILE_PIXELS = 256
 # 「压缩」档：A4 正文宽约 19.7cm，按 320 ppi 折算 ≈ 2480 px 宽
 REPORT_IMAGE_WIDTH_A4 = 2480
 
-# 报告里插图的尺寸上限：一个章节要塞下 字段表 + 图 1（视频截图）+ 图 2（地图截图）
-# + 两行图注，必须都在同一页 A4 里 —— 所以都按【高度】封顶，而不是按宽度铺满。
+# 报告里插图的尺寸：两张图都**横向占满正文宽**（REPORT_IMAGE_MAX_WIDTH_CM = 15.9cm），
+# 只有「太高」的图才按高度上限回缩（热成像 5:4 那种方图，铺满宽会有 12.7cm 高，一页塞不下）。
 #
-# 两张图分档：视频截图是主内容，给大一点；地图截图只是「在哪」的提示，
-# 压扁一些，好让整节（含图注）稳稳排在一页里。热成像那种 5:4 的方图也不会顶破页宽。
-REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM = 8.0
-REPORT_MAP_IMAGE_MAX_HEIGHT_CM = 5.5
+# 于是实际尺寸就是：
+#   视频截图（16:9）→ 15.9cm 宽 × 8.94cm 高（撞宽度上限，铺满）
+#   地图截图（2.5:1）→ 15.9cm 宽 × 6.36cm 高（铺满，且上下裁得更扁）
+# 一节的预算：标题 1.0 + 字段表 3.7 + 照片 8.94 + 图注 0.7 + 地图 6.36 + 图注 0.7 ≈ 22cm，
+# A4 正文高 24.7cm —— 留 2.7cm 余量。
+REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM = 9.5
+REPORT_MAP_IMAGE_MAX_HEIGHT_CM = 6.6
 REPORT_IMAGE_MAX_HEIGHT_CM = REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM   # 兼容旧断言/调用
 REPORT_IMAGE_MAX_WIDTH_CM = 15.9
 
@@ -4405,11 +4408,11 @@ def report_image_pixel_size(path):
 
 
 def report_picture_width_cm(path, max_height_cm=REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM):
-    """算这张图在报告里该多宽：先按高度封顶，再按正文宽度封顶。
+    """算这张图在报告里该多宽：**先铺满正文宽**，只有太高时才按高度上限回缩。
 
     一个点那一节要塞下：字段表 + 图 1（视频截图）+ 图 2（地图截图）+ 两行图注，
-    必须都在同一页 A4 里。所以按【高度】封顶，而不是按正文宽度铺满 ——
-    热成像那种 5:4 的方图也不会把章节顶到下一页。
+    必须都在同一页 A4 里 —— 所以照片与地图都横向铺满（15.9cm），
+    高度超限的（热成像 5:4 那类）才回缩，免得把章节顶到下一页。
     """
 
     size = report_image_pixel_size(path)
@@ -4427,11 +4430,14 @@ def add_report_picture(document, path, max_height_cm=REPORT_VIDEO_IMAGE_MAX_HEIG
 
     keep_with_next：图要和紧跟的图注留在同一页 —— 不然会出现
     「图在这一页底、说明在下一页」这种很难看的排法。
+    段落居中：铺满宽度的图看不出差别，回缩过的窄图（热成像）居中才好看。
     """
 
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm, Pt
 
     paragraph = document.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
     paragraph.paragraph_format.space_before = Pt(6)
     paragraph.paragraph_format.keep_with_next = True
 
@@ -4441,6 +4447,20 @@ def add_report_picture(document, path, max_height_cm=REPORT_VIDEO_IMAGE_MAX_HEIG
     )
 
     return paragraph
+
+
+def add_report_caption(document, text):
+    """图注：小字、居中、跟着图走。"""
+
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+
+    caption = document.add_paragraph(text)
+    caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    caption.paragraph_format.space_after = Pt(2)
+    set_report_font(caption.runs[0], 9)
+
+    return caption
 
 
 # 报告里的字体：中文走 w:eastAsia，西文与数字走 w:ascii/w:hAnsi。
@@ -4746,25 +4766,20 @@ def build_docx_report(payload):
 
         if video_image:
             add_report_picture(document, video_image)
-
-            caption = document.add_paragraph(
+            add_report_caption(
+                document,
                 f"图 1　目标点视频截图（{point['video'] or '-'}　"
                 f"{point['time_text']}）"
-            )
-            set_report_font(caption.runs[0], 9)
-            caption.paragraph_format.space_after = Pt(2)
-            caption.paragraph_format.keep_with_next = True   # 图 2 跟着它一起走
+            ).paragraph_format.keep_with_next = True      # 图 2 跟着它一起走
 
         if map_image:
             add_report_picture(document, map_image, REPORT_MAP_IMAGE_MAX_HEIGHT_CM)
-
-            caption = document.add_paragraph(
+            add_report_caption(
+                document,
                 f"图 2　目标点地图截图（底图："
                 f"{point['basemap_name'] or '当前底图'}　"
                 f"缩放 {point['zoom']} 级）"
             )
-            set_report_font(caption.runs[0], 9)
-            caption.paragraph_format.space_after = Pt(2)
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 

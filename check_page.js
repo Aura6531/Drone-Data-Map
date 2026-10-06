@@ -1792,8 +1792,8 @@ console.log('\n=== 报告里的地图截图：16:9 + 飞机与注视虚线 ===')
   chk(/bearingAt\(track\.coords,i\)/.test(body), '朝向用 bearingAt()');
   chk(/这条航迹没加载就先不画飞机/.test(body),
     '航迹没加载时不画飞机（图照样出，不整份失败）');
-  chk(/width:1280,\s*\n\s*height:720/.test(body),
-    '地图截图用 16:9（报告里要和视频截图排在同一页，太高会顶到下一页）');
+  chk(/width:1600,\s*\n\s*height:640/.test(body),
+    '地图截图用 2.5:1（报告里横向铺满、上下更扁，一节才好同页）');
   chk(/body\.drone_lat=drone\.lat/.test(body) && /body\.drone_bearing=drone\.bearing/.test(body),
     '把飞机的位置与朝向一起传给 /api/mapsnapshot');
 }

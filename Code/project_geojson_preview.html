@@ -3136,7 +3136,8 @@ function reportDroneAt(m){
   return {lat:c[1],lng:c[0],bearing:(bearing==null?0:bearing)};
 }
 
-// 地图截图：底图跟随当前选择；尺寸用 16:9（报告里要和视频截图同页，太高会顶到下一页）
+// 地图截图：底图跟随当前选择；比例用 2.5:1（报告里横向铺满正文宽，
+// 上下裁得扁一些，好让「字段表 + 两张图 + 两行图注」稳稳排在同一页）
 async function reportMapImageOf(m,basemap){
   try{
     const body={
@@ -3144,8 +3145,8 @@ async function reportMapImageOf(m,basemap){
       lng:m.lng,
       zoom:TRACK_FOCUS_ZOOM,
       basemap,
-      width:1280,
-      height:720
+      width:1600,
+      height:640
     };
 
     // 把飞机的位置与朝向一起传过去，后端会画上飞机图标和「飞机 -> 目标点」的虚线
