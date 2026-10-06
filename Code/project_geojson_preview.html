@@ -4215,7 +4215,12 @@ function photoGalleryHtml(group){
     +`</figcaption>`;
 
   const leadFigure=
-    `<figure class="photo-shot photo-lead-shot" title="点击跳到对应的视频时刻">`
+    // data-photo-name 必须带上 —— 少了它，点大图时拿不到照片名，
+    // 就没法按 _T/_V/_S 配对，只能退回「候选第一条」（可能是别的流）。
+    // 热成像照片经常就是那一组的大图，所以这个漏掉时表现就是
+    // 「点热成像照片，跳出来的是可见光/变焦视频」。
+    `<figure class="photo-shot photo-lead-shot" data-photo-name="${esc(lead.name)}"
+             title="点击跳到这张照片对应的视频时刻">`
     +`<img src="${esc(photoThumbUrl(lead.folder,lead.name))}" alt="${esc(photoCameraLabel(lead.camera))}照片">`
     +leadCaption
     +`</figure>`;
@@ -4528,7 +4533,10 @@ function pickMatchForPhoto(matches,name){
 function openPhotoVideo(group,name){
   if(!group)return;
 
-  const target=String(name||'');
+  // 没给名字时（例如某个入口忘了带）用这一组的领衔照片兜底 ——
+  // 至少还能按它的 _T/_V/_S 去配对，别直接落到 matches[0]。
+  const members=Array.isArray(group.members)?group.members:[];
+  const target=String(name||(members[0]&&members[0].name)||'');
 
   const matches=photoMatches&&photoMatches.get(photoSelected);
 

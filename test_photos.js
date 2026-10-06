@@ -787,6 +787,37 @@ console.log('\n=== 9) 点某张照片该播哪一路（这条错过一次：点 
   const fn = extractFn('openPhotoVideo');
   chk(/pickMatchForPhoto\(matches,target\)/.test(fn), 'openPhotoVideo 用 pickMatchForPhoto 挑');
   chk(/pickMatchForPhoto\(fresh,target\)/.test(fn), '「还没匹配」那条兜底路径也用它（不再直接跳 fresh[0]）');
+  chk(/members\[0\]&&members\[0\]\.name/.test(fn),
+    '没给名字时用领衔照片兜底（否则空名字等于没有流标识，又会退回 matches[0]）');
+
+  // 大图（.photo-lead-shot）也**必须**带 data-photo-name。
+  // 这条漏过一次，表现就是用户报的「点热成像照片，跳出来的是可见光视频」：
+  // 大图没有名字 -> 流标识为空 -> 只能退回 matches[0]。
+  // 实测：147 组里 26 组的大图就是热成像照片，其中 20 组会跳错。
+  {
+    const g = { members: [
+      { name: 'DJI_20260924102325_0026_T.JPG', folder: 'D:\\d', camera: 'InfraredCamera', accuracy: '实测' },
+      { name: 'DJI_20260924102325_0026_V.JPG', folder: 'D:\\d', camera: 'ZoomCamera', accuracy: '实测' },
+    ] };
+    const gh = page.photoGalleryHtml(g);
+    const figs = gh.match(/<figure[^>]*>/g) || [];
+    chk(figs.length === 2, '两张照片两个 figure', String(figs.length));
+    chk(figs.every(f => /data-photo-name="DJI_/.test(f)),
+      '每个 figure（**含大图**）都带 data-photo-name',
+      figs.map(f => (f.match(/class="([^"]*)"/) || [])[1] || f.slice(0, 40)).join(' | '));
+
+    const leadName = (gh.match(/photo-lead-shot"[\s\S]{0,80}?data-photo-name="([^"]+)"/) || [])[1] || '';
+    chk(leadName === 'DJI_20260924102325_0026_T.JPG',
+      '大图带的是它自己那张的名字（热成像就是 _T）', leadName || '(缺)');
+
+    // 把大图的名字喂给 pickMatchForPhoto：必须挑 _T，而不是候选里排第一的 _V
+    const Vc = { video: 'DJI_20260924095258_0001_V.MP4', relativePath: 'DJI_20260924095258_0001_V.MP4' };
+    const Tc = { video: 'DJI_20260924095258_0001_T.MP4', relativePath: 'DJI_20260924095258_0001_T.MP4' };
+    chk(page.pickMatchForPhoto([Vc, Tc], leadName) === Tc,
+      '点大图（热成像）-> 挑 _T 视频（候选里 _V 排第一也不动摇）');
+    chk(page.pickMatchForPhoto([Vc, Tc], '') === Vc,
+      '名字为空时确实会退化成第一条（这正是当初出错的路径，所以名字不能缺）');
+  }
 }
 
 console.log('\n=== 10) 点照片跳视频：倒退 3 秒起播 + 3-2-1 倒计时 + 到照片时刻自动暂停 ===');
