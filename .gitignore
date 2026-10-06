@@ -45,17 +45,16 @@ __pycache__/
 *.log
 *.tmp
 
-# —— ⑥ 打包产物：都是可重新下载/重新生成的，绝不进仓库 ——
-# （2026-10-06 手滑把 build_libs 和 dist 提交过一次，见交接说明的教训记录）
-packaging/build_libs/
-packaging/dist/
-packaging/build/
-packaging/payload/
-packaging/_wheels/
-packaging/_tools/
-packaging/_tmp/
-packaging/installer/
-packaging/_debug_out.txt
+# —— ⑥ 打包目录：**只跟踪脚本与资源**，其余一律不进仓库 ——
+# （2026-10-06 手滑提交过三次：build_libs/dist、_accept、_installtest2。
+#   别再一条条列目录了 —— 白名单更稳：packaging 下只放行脚本/配置/图标。）
+packaging/*
+!packaging/*.py
+!packaging/*.ps1
+!packaging/*.spec
+!packaging/*.iss
+!packaging/*.ico
+!packaging/*.png
 Thumbs.db
 desktop.ini
 

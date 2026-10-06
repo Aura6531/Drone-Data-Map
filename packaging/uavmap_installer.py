@@ -507,6 +507,72 @@ def main():
     return 0
 
 
+def prepare_streams():
+    """无控制台的 exe（console=False）里 sys.stdout/stderr 是 None —— 不能直接 reconfigure。
+
+    （这正是本项目打包版踩过的坑：windowed 下任何对 sys.stdout 的操作都要先判空。
+      顺便把异常也写到日志，出事时能查。）
+    """
+
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+
+        if stream is None:
+            continue
+
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+        except Exception:
+            pass
+
+
+def log_path():
+    import tempfile
+
+    return Path(tempfile.gettempdir()) / "无人机巡查安装日志.txt"
+
+
+def report_crash(error):
+    """把未处理异常写进日志 + 弹一个能看懂的提示框（无控制台时这是唯一线索）。"""
+
+    import traceback
+
+    detail = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+
+    try:
+        log_path().write_text(detail, encoding="utf-8")
+
+    except OSError:
+        pass
+
+    try:
+        import tkinter
+        from tkinter import messagebox
+
+        root = tkinter.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            f"{APP_NAME} 安装程序出错",
+            f"{type(error).__name__}: {error}\n\n详细信息：{log_path()}",
+        )
+        root.destroy()
+
+    except Exception:
+        pass
+
+    print(detail, flush=True)
+
+
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.exit(main())
+    prepare_streams()
+
+    try:
+        sys.exit(main())
+
+    except SystemExit:
+        raise
+
+    except BaseException as crash:      # noqa: BLE001 - 最后一道兜底
+        report_crash(crash)
+        sys.exit(1)
