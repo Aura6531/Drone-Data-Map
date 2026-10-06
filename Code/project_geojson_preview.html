@@ -12,12 +12,14 @@
         onerror="this.onerror=null;var s=document.createElement('script');s.crossOrigin='anonymous';s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';document.head.appendChild(s);"></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#f3f5f7;color:#172033;font-family:"Microsoft YaHei","Noto Sans SC",Arial,sans-serif;--reticle:#5eead4;--reticle-zoom:#f87171;--ctrl-h:36px}
-/* --ctrl-h：一行里所有「控件」的统一高度（下拉框 / 输入框 / 按钮）。
-   用户 2026-10-07：四个下拉框和搜索框要一样高，最好和同排按钮也一样高。
-   实测过的不一致：选择项目 52、底图/日期/类型 36、搜索框 36、天地图key 32、
-   加载全部照片 34、加载全部轨迹 34、新建/导入 38 —— 现在全部走这个变量。
-   改高度只改这一处；某个控件确实需要例外时，在它自己的规则里显式覆盖。 */
+body{margin:0;background:#f3f5f7;color:#172033;font-family:"Microsoft YaHei","Noto Sans SC",Arial,sans-serif;--reticle:#5eead4;--reticle-zoom:#f87171;--ctrl-h:36px;--ctrl-font:13px}
+/* --ctrl-h / --ctrl-font：一行里所有「控件」的统一高度与统一字号
+   （下拉框 / 输入框 / 按钮）。
+   用户 2026-10-07：先要求「四个下拉框和搜索框高度一致，最好和同排按钮也一样高」，
+   随后又要求「字号也要统一」。
+   实测到的字号不一致：选择项目 17px、底图/日期/类型 13px、搜索框 14px；
+   现在四个下拉框 + 搜索框都走 --ctrl-font（13px），与同排按钮（12–13px）成一套。
+   改高度/字号都只改这一处；某个控件确实需要例外时，在它自己的规则里显式覆盖。 */
 /* 顶部深色标题栏（.header）已删除：占 76px 且和浏览器标签重复。
    页面名只在 <title> 里出现。 */
 
@@ -148,7 +150,7 @@ html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width
 h1{margin:0 0 10px;font-size:32px}h2{margin:0 0 20px;font-size:25px}
 .desc{font-size:18px;color:#63748b;margin-bottom:22px}
 label{font-weight:700;font-size:17px;display:block;margin-bottom:9px}
-select{width:100%;height:var(--ctrl-h);border:1px solid #cbd5e1;border-radius:9px;padding:0 16px;font-size:17px;background:#fff}
+select{width:100%;height:var(--ctrl-h);border:1px solid #cbd5e1;border-radius:9px;padding:0 16px;font-size:var(--ctrl-font);background:#fff}
 .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 button{border:0;border-radius:9px;padding:13px 22px;font-size:16px;font-weight:700;cursor:pointer;background:#2563eb;color:#fff}
 button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cursor:not-allowed}
@@ -323,7 +325,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 地名搜索并进标题行：它会占据标题与「底图」之间的剩余宽度，
    窄卡片时可以换到下一行（card-head 本身允许 wrap）。 */
 .search-bar{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;margin:0;flex:1 1 auto;min-width:0}
-.search-bar input{height:var(--ctrl-h);border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:14px;flex:1 1 auto;min-width:120px}
+.search-bar input{height:var(--ctrl-h);border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:var(--ctrl-font);flex:1 1 auto;min-width:120px}
 /* 「天地图key」按钮：和底图选单同排，放在它右边。已配置时变绿 */
 .key-btn{height:var(--ctrl-h);padding:0 12px;font-size:13px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 .key-btn:hover{border-color:#2563eb;color:#2563eb}
@@ -383,7 +385,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 下拉框必须显式 width:auto —— 全局 select{width:100%} 会让它按整个容器宽
    参与 flex 换行计算，把同一行后面的控件挤到第二行（地图卡片和视频标题栏都踩过）。
    width:auto 时浏览器按「最宽的那个选项」定宽，所以切换选项也不会跳动。 */
-.follow-select,.ctrl-select{width:auto;height:var(--ctrl-h);border:1px solid #cbd5e1;border-radius:8px;padding:0 10px;font-size:13px;background:#fff;max-width:270px;min-width:0}
+.follow-select,.ctrl-select{width:auto;height:var(--ctrl-h);border:1px solid #cbd5e1;border-radius:8px;padding:0 10px;font-size:var(--ctrl-font);background:#fff;max-width:270px;min-width:0}
 /* nowrap + 不收缩：中文标签在 flex 行里被挤窄会一个一个字竖排，这里必须锁住 */
 .follow-label,.ctrl-label{font-size:13px;font-weight:400;color:#64748b;margin:0;display:inline-block;white-space:nowrap;flex:0 0 auto}
 

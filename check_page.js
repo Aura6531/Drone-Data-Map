@@ -1472,6 +1472,21 @@ chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
       ['项目下拉框右边的 ×', /\.proj-del\{[^}]*height:var\(--ctrl-h\)/],
     ];
     for (const [name, re] of want) chk(re.test(html), name + ' 高度走 --ctrl-h');
+
+    // 字号同样统一（用户 2026-10-07：「字号也要统一」）——
+    // 原来选择项目 17px、底图/日期/类型 13px、搜索框 14px
+    const fontVar = (html.match(/--ctrl-font:(\d+)px/) || [])[1];
+    chk(fontVar === '13', '定义了统一的控件字号 --ctrl-font:13px', fontVar || '(缺)');
+    const fontUses = (html.match(/font-size:var\(--ctrl-font\)/g) || []).length;
+    chk(fontUses >= 3, '四个下拉框 + 搜索框的字号都引用它', fontUses + ' 处');
+    chk(/select\{width:100%;[^}]*font-size:var\(--ctrl-font\)/.test(html),
+      '选择项目（全局 select）字号走 --ctrl-font');
+    chk(/\.follow-select,\.ctrl-select\{[^}]*font-size:var\(--ctrl-font\)/.test(html),
+      '底图 / 日期 / 类型 字号走 --ctrl-font');
+    chk(/\.search-bar input\{[^}]*font-size:var\(--ctrl-font\)/.test(html),
+      '搜索框字号走 --ctrl-font');
+    chk(!/select\{width:100%;[^}]*font-size:17px/.test(html),
+      '选择项目不再是单独的 17px（那样会比其他三个明显大一号）');
   }
 }
 // 左栏改成「两个页」共用一块地方：项目数据/轨迹文件 ↔ 标记点，由标签开关切换
