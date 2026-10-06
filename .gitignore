@@ -67,3 +67,6 @@ packaging/_accept/
 # —— ⑦ 运行期缓存（数据目录里会生成，根目录也有） ——
 geocode_cache/
 packaging/*.zip.partial
+
+# —— ⑨ 临时诊断脚本（Code/ 下划线开头的都是我跑一次性检查用的） ——
+Code/_*.py
