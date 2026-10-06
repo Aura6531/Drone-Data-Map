@@ -414,9 +414,38 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .marker-all{display:flex;align-items:center;gap:6px;margin:0;font-weight:700;font-size:13px;color:#334155}
 .marker-all input{width:15px;height:15px;margin:0}
 .marker-cols{margin-left:auto}
+/* 标记点卡片：默认收起（只剩标题栏那一行），把高度让给照片与视频。
+   用户 2026-10-07：「标记点整个模块做成靠右侧的一个纵栏，默认收起状态，
+   可以给照片和视频模块留出很多空间」——右栏本来就是竖排，
+   所以这里做的就是「收起成一行」，展开后恢复原来的列表。 */
+/* 收起：只剩标题栏那一行。
+   min-height 必须显式归零 —— 基础规则上的 var(--marker-min-h,190px) 还在，
+   卡片会硬撑着 190px（实测收起后仍占 190px）。 */
+.marker-card.is-collapsed{flex:0 0 auto;min-height:0;padding:9px 14px}
+.marker-card.is-collapsed .marker-body{display:none}
+/* 收起时标题栏不占多余间距（.card-head 默认 margin-bottom:16px） */
+.marker-card.is-collapsed .card-head{margin-bottom:0;align-items:center}
+.marker-collapse-toggle{flex:0 0 auto;width:24px;height:24px;padding:0;margin-right:2px;
+                        border:1px solid #cbd5e1;border-radius:6px;background:#fff;
+                        color:#475569;font-size:12px;line-height:1;cursor:pointer;
+                        display:flex;align-items:center;justify-content:center}
+.marker-collapse-toggle:hover{border-color:#2563eb;color:#2563eb;background:#f8fbff}
+/* 展开态：箭头朝下（点它收起）。收起态：朝右（点它展开） */
+.marker-card:not(.is-collapsed) .marker-collapse-toggle{transform:rotate(90deg)}
+.marker-card.is-collapsed .marker-collapse-toggle{transform:none}
+/* 收起时列表相关的东西都不显示（.marker-body 已经包住了，这里只是双保险） */
+.marker-card.is-collapsed .marker-head,
+.marker-card.is-collapsed .marker-list,
+.marker-card.is-collapsed .marker-hint{display:none}
+/* 收起态下标题不再占满整行，让「删除 / 导出 KML …」还排在右边 */
+.marker-card.is-collapsed h2{margin-right:auto}
+/* 展开：长到 240px 就够看列表了（不跟照片抢更多） */
+.marker-card:not(.is-collapsed){flex:1 1 240px}
+
 /* 标记点列表：默认一栏；数量多了由 JS 按可用宽度自动分栏
    （markerListLayout：每栏最多 8 行，宽度够就并栏）；
    栏太窄或点太多时降级成 .marker-compact —— 只留名称。 */
+.marker-body{display:flex;flex-direction:column;gap:9px;min-height:0;flex:1}
 .marker-list{flex:1;min-height:0;overflow:auto;display:grid;gap:6px 10px;align-content:start}
 .marker-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid #e5eaf2;
             border-radius:8px;background:#fff;font-size:13px;cursor:pointer}
@@ -850,6 +879,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
          点某一行则地图定位到该点、视频跳到那一帧。 -->
     <section class="card marker-card" id="markerCard">
       <div class="card-head">
+        <!-- 收起 / 展开：默认收起，整块只占一行，把高度让给照片与视频。
+             放在标题左侧（标题行最左），一眼就能看到、也顺手。 -->
+        <button id="markerCollapseBtn" class="marker-collapse-toggle" type="button"
+                aria-expanded="false" aria-controls="markerBody"
+                title="收起 / 展开标记点">▸</button>
         <h2>标记点<span id="markerCount" class="marker-count">（空）</span></h2>
         <div class="card-tools marker-tools">
           <button id="markerDeleteBtn" class="secondary" type="button"
@@ -862,12 +896,15 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                   title="把勾选的点生成一份 Word 报告（目录可点 + 总表 + 每点一张视频截图和一张地图截图）">生成 Word 报告</button>
         </div>
       </div>
-      <div class="marker-head">
-        <label class="marker-all"><input type="checkbox" id="markerSelectAll">全选</label>
-        <span class="marker-cols">名称 · 纬度 · 经度（按创建时间）</span>
+      <!-- 收起时整块隐藏（只剩标题栏那一行） -->
+      <div id="markerBody" class="marker-body">
+        <div class="marker-head">
+          <label class="marker-all"><input type="checkbox" id="markerSelectAll">全选</label>
+          <span class="marker-cols">名称 · 纬度 · 经度（按创建时间）</span>
+        </div>
+        <div id="markerList" class="marker-list"></div>
+        <div id="reportStatus" class="marker-hint" style="display:none"></div>
       </div>
-      <div id="markerList" class="marker-list"></div>
-      <div id="reportStatus" class="marker-hint" style="display:none"></div>
     </section>
   </section>
 
@@ -1136,6 +1173,11 @@ let photoLayerOn=false;       // 照片图层开关（默认关，按需打开 �
 let photoActiveMarker=null;   // 当前选中的那个照片点（高亮用）
 let photoIndex=null;          // Map<"文件夹|时刻", 组的索引>，点某个标记时反查用
 let photoMatches=null;        // Map<组索引, 匹配到的视频>，按组缓存
+
+// 标记点卡片默认收起（用户 2026-10-07 要求：把空间让给照片与视频）。
+// 收起时只剩一行标题栏，点左边的箭头展开。放在顶层声明是为了避免暂时性死区
+// （见上面那段注释）。
+let markerCollapsed=true;
 
 // ------------------------------------------------------------
 // 各功能的开关状态。
@@ -3157,6 +3199,7 @@ function confirmVideoMark(){
    ============================================================ */
 
 const markerCard=document.getElementById('markerCard');
+const markerCollapseBtn=document.getElementById('markerCollapseBtn');
 const markerList=document.getElementById('markerList');
 const markerCount=document.getElementById('markerCount');
 const markerSelectAll=document.getElementById('markerSelectAll');
@@ -3200,6 +3243,35 @@ function sortedMarkers(){
 function selectedMarkers(){
   return sortedMarkers().filter(m=>markerChecked.has(m.id));
 }
+
+// 标记点卡片收起 / 展开。收起时整块只剩标题栏那一行（高度让给照片与视频）。
+// 默认收起（markerCollapsed=true）——用户明确要求「默认收起状态」。
+function applyMarkerCollapsed(){
+  if(!markerCard)return;
+
+  markerCard.classList.toggle('is-collapsed',markerCollapsed);
+
+  if(markerCollapseBtn){
+    // aria-expanded 说的是「内容展开了吗」，与 is-collapsed 相反
+    markerCollapseBtn.setAttribute('aria-expanded',markerCollapsed?'false':'true');
+    markerCollapseBtn.textContent=markerCollapsed?'▸':'▾';
+    markerCollapseBtn.title=markerCollapsed?'展开标记点':'收起标记点';
+  }
+
+  // 收起时标题栏里只剩标题与按钮，按钮不该是禁用的空壳
+  // （没标记点时它们本来就 disabled，这里不动，交给 updateMarkerBar 管）
+
+  // 卡片高度变了，右栏会重排 → 让各卡片按新高度重算（列表分栏也依赖宽度）
+  refreshMapSizeSoon();
+  if(!markerCollapsed)renderMarkerList();
+}
+
+function toggleMarkerCollapsed(){
+  markerCollapsed=!markerCollapsed;
+  applyMarkerCollapsed();
+}
+
+if(markerCollapseBtn)markerCollapseBtn.addEventListener('click',toggleMarkerCollapsed);
 
 function updateMarkerBar(){
   const total=projectMarkers.length;
@@ -7245,6 +7317,8 @@ function boot(){
   applyCrosshairVisibility();
   applyFootprintVisibility();
   applyMapPipVisibility();
+  // 标记点卡片默认收起（把它那截高度让给照片与视频）
+  applyMarkerCollapsed();
 
   // 项目列表不依赖地图，任何时候都要能用
   loadProjects();

@@ -59,7 +59,10 @@ function makeElement(id, tag) {
     },
     removeChild() {}, insertAdjacentHTML() {},
     querySelector() { return null }, querySelectorAll() { return [] },
-    setAttribute() {}, getAttribute() { return null }, removeAttribute() {},
+    setAttribute(k, v) { this._attrs[k] = String(v) },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null },
+    removeAttribute(k) { delete this._attrs[k] },
+    _attrs: {},
     getBoundingClientRect: () => ({ width: 100, height: 100, left: 0, top: 0, right: 100, bottom: 100 }),
     closest() { return null }, scrollIntoView() {}, focus() {}, click() {},
     load() {}, pause() {}, play() { return Promise.resolve() }, remove() {},
@@ -434,6 +437,32 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   chk(countExtra && /1 处合并/.test(String(countExtra.textContent)),
     '合并了几处单独一段（窄窗口时它能整段让位，不挤掉主信息）',
     countExtra ? String(countExtra.textContent) : '-');
+
+  // 标记点卡片：默认收起（用户要求把高度让给照片与视频），点箭头能展开
+  {
+    const mCard = sb.els.get('markerCard');
+    const mArrow = sb.els.get('markerCollapseBtn');
+
+    chk(mCard && mCard._classes.has('is-collapsed'), '标记点卡片默认收起');
+    chk(mArrow && String(mArrow.getAttribute('aria-expanded')) === 'false',
+      '收起时 aria-expanded=false', mArrow ? String(mArrow.getAttribute('aria-expanded')) : '-');
+    chk(mArrow && String(mArrow.textContent) === '▸', '收起时箭头朝右 ▸',
+      mArrow ? String(mArrow.textContent) : '-');
+
+    if (mArrow) mArrow._fire('click');
+    chk(mCard && !mCard._classes.has('is-collapsed'), '点箭头后展开');
+    chk(mArrow && String(mArrow.getAttribute('aria-expanded')) === 'true', '展开时 aria-expanded=true');
+    chk(mArrow && String(mArrow.textContent) === '▾', '展开时箭头朝下 ▾',
+      mArrow ? String(mArrow.textContent) : '-');
+    chk(mArrow && /收起标记点/.test(String(mArrow.title)), '展开后悬停提示变成「收起标记点」');
+
+    if (mArrow) mArrow._fire('click');
+    chk(mCard && mCard._classes.has('is-collapsed'), '再点一次又收起');
+    // #markerBody 是纯 CSS 包裹层（JS 不引用，靠 .is-collapsed 隐藏），
+    // 所以这里验 HTML 里有它、且包着列表；元素本身用 html 段断言。
+    chk(/id="markerBody"/.test(html), '#markerBody 在页面 HTML 里（收起时整块隐藏的包裹层）');
+    chk(/id="markerBody"[\s\S]{0,400}id="markerList"/.test(html), '#markerBody 里包着 #markerList');
+  }
 
   const btn = sb.els.get('photoLayerBtn');
   chk(btn && btn._classes.has('off'), '照片图层默认关（不挡航迹）');
