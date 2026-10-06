@@ -524,7 +524,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <label for="baseMap" class="ctrl-label">底图</label>
         <select id="baseMap" class="ctrl-select">
           <option value="street">街道图（天地图）</option>
-          <option value="satellite">卫星图（天地图影像）</option>
+          <option value="satellite" selected>卫星图（天地图影像）</option>
           <option value="osm">OpenStreetMap</option>
         </select>
       </div>
@@ -1063,7 +1063,11 @@ const BASEMAP_DEFS={
 
 let baseLayers=[];
 let baseMapWarned='';
-let currentBaseMapKind='street';
+
+// 默认底图：卫星图。两处要一致 —— 这里（脚本兜底）与 <select id="baseMap"> 上带 selected 的项
+// （initBaseMap() 读的就是 select 的值）。
+const DEFAULT_BASEMAP='satellite';
+let currentBaseMapKind=DEFAULT_BASEMAP;
 
 function clearBaseLayers(){
   baseLayers.forEach(layer=>{try{map.removeLayer(layer)}catch(e){}});
@@ -3302,7 +3306,7 @@ async function runWordReport(list,mode){
   reportBusy=true;
   if(reportOkBtn)reportOkBtn.disabled=true;
 
-  const basemap=currentBaseMapKind||'street';
+  const basemap=currentBaseMapKind||DEFAULT_BASEMAP;
   const points=[];
   let done=0;
 
@@ -3378,7 +3382,7 @@ function startWordReport(list){
 
   if(reportModalHint){
     reportModalHint.textContent=`只包含勾选的 ${list.length} 个点。`
-      +`地图截图用当前底图（${basemapDisplayName(currentBaseMapKind||'street')}）。`;
+      +`地图截图用当前底图（${basemapDisplayName(currentBaseMapKind||DEFAULT_BASEMAP)}）。`;
   }
 
   reportModal.style.display='flex';
@@ -3726,7 +3730,7 @@ function applyMapPipBase(){
     mapPipLayer=null;
   }
 
-  const def=BASEMAP_DEFS[currentBaseMapKind]||BASEMAP_DEFS.street;
+  const def=BASEMAP_DEFS[currentBaseMapKind]||BASEMAP_DEFS[DEFAULT_BASEMAP];
   const item=def.layers[0];
 
   mapPipLayer=L.tileLayer(

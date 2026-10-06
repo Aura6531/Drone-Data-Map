@@ -1680,8 +1680,15 @@ console.log('\n=== 标记点报告（Word）===');
   const report = body.slice(body.indexOf('async function runWordReport('),
     body.indexOf('function startWordReport('));
   chk(report.length > 0, '找到 runWordReport()');
-  chk(/const basemap=currentBaseMapKind\|\|'street'/.test(body),
-    '地图截图的底图跟随当前选择，不是写死街道图');
+  chk(/const basemap=currentBaseMapKind\|\|DEFAULT_BASEMAP/.test(body),
+    '地图截图的底图跟随当前选择（默认值也走常量，不是写死的）');
+  chk(/const DEFAULT_BASEMAP='satellite'/.test(body),
+    "默认底图是卫星图（DEFAULT_BASEMAP='satellite'）");
+  chk(/<option value="satellite" selected>/.test(html),
+    '底图下拉里卫星图带 selected（initBaseMap 读的就是这个值）');
+  chk(/let currentBaseMapKind=DEFAULT_BASEMAP;/.test(body),
+    '脚本里的当前底图初始值也指向同一个常量');
+  chk(!/\|\|'street'/.test(body), "没有残留的 ||'street' 兜底（否则会跟默认值不一致）");
   chk(/return '未解析'/.test(body), '逆地理编码失败就标「未解析」（不编造位置）');
   chk(/link\.download=result\.download_name/.test(report),
     '下载用服务端给的中文文件名（download 属性）');
