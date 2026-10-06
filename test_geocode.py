@@ -1,13 +1,15 @@
 import sys, json, io, pathlib
 
 sys.stdout.reconfigure(encoding="utf-8")
-sys.path.insert(0, r"<仓库根>\Code")
+# 路径按脚本所在目录推导（换机器/换盘符都不用改）
+ROOT = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "Code"))
 
 import project_manager as pm
 
 # 让测试确定化：不要读真实的 tianditu_key.txt
-NO_SUCH = pathlib.Path(r"<仓库根>\__no_such_key_file__.txt")
-TMP_KEY = pathlib.Path(r"<仓库根>\_test_key.txt")
+NO_SUCH = ROOT / "__no_such_key_file__.txt"
+TMP_KEY = ROOT / "_test_key.txt"
 
 ok = True
 def chk(cond, label, extra=""):
@@ -61,7 +63,7 @@ for value, expected, label in cases:
     chk(got == expected, label, f"{value!r} -> {got}")
 
 print("\n=== 2) 无 key 时的报错（应指向配置文件名）===")
-EMPTY_KEY = pathlib.Path(r"<仓库根>\_test_empty_key.txt")
+EMPTY_KEY = ROOT / "_test_empty_key.txt"
 EMPTY_KEY.write_text("# 只有注释，没有 key\n", encoding="utf-8")
 pm.TIANDITU_KEY = ""
 pm.TIANDITU_KEY_FILE = EMPTY_KEY
@@ -73,7 +75,7 @@ except ValueError as e:
         "提示里给出了配置文件名", str(e))
 
 print("\n=== 2b) 真实 tianditu_key.txt 能被正确读取 ===")
-REAL_KEY = pathlib.Path(r"<仓库根>\Code\tianditu_key.txt")
+REAL_KEY = ROOT / "Code" / "tianditu_key.txt"
 pm.TIANDITU_KEY_FILE = REAL_KEY
 real = pm.get_tianditu_key()
 chk(len(real) == 32 and all(c in "0123456789abcdefABCDEF" for c in real),

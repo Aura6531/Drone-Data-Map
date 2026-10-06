@@ -1,6 +1,8 @@
-import ast, io, sys
+import ast, io, sys, pathlib
 sys.stdout.reconfigure(encoding="utf-8")
-PY = r"<仓库根>\Code\project_manager.py"
+# 路径按脚本所在目录推导（换机器/换盘符都不用改）
+ROOT = pathlib.Path(__file__).resolve().parent
+PY = ROOT / "Code" / "project_manager.py"
 src = io.open(PY, encoding="utf-8").read()
 ok = True
 def chk(c, label, extra=""):

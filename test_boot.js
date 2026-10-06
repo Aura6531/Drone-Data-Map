@@ -6,8 +6,10 @@
 // 就抛 ReferenceError 并中断整个顶层脚本，页面只剩几个空白框。
 // 这个测试把顶层脚本真的跑一遍，两种场景都必须不抛异常。
 const fs = require('fs');
+const path = require('path');
 
-const HTML = process.argv[2] || '<仓库根>\\Code\\project_geojson_preview.html';
+// 路径按脚本所在目录推导（换机器/换盘符都不用改）；可用 argv[2] 覆盖
+const HTML = process.argv[2] || path.join(__dirname, 'Code', 'project_geojson_preview.html');
 const html = fs.readFileSync(HTML, 'utf8');
 const m = html.match(/<script>\s*([\s\S]*?)<\/script>/);
 if (!m) throw new Error('找不到主 <script> 块');

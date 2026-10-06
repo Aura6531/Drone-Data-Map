@@ -1,6 +1,10 @@
 // 用真实文件名验证：类型标签 + 归拢排序 + 索引不被打乱
 const fs = require('fs');
-const html = fs.readFileSync('<仓库根>\\Code\\project_geojson_preview.html', 'utf8');
+const path = require('path');
+
+// 路径按脚本所在目录推导（换机器/换盘符都不用改）；可用 argv[2] 覆盖
+const HTML = process.argv[2] || path.join(__dirname, 'Code', 'project_geojson_preview.html');
+const html = fs.readFileSync(HTML, 'utf8');
 
 function extractFn(name) {
   const start = html.indexOf('function ' + name + '(');

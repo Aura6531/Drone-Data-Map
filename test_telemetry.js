@@ -2,7 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const HTML = '<仓库根>\\Code\\project_geojson_preview.html';
+// 路径按脚本所在目录推导（换机器/换盘符都不用改）；可用 argv[2] 覆盖
+const HTML = process.argv[2] || path.join(__dirname, 'Code', 'project_geojson_preview.html');
 const html = fs.readFileSync(HTML, 'utf8');
 
 function extractFn(name) {

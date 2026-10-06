@@ -1,8 +1,11 @@
 import urllib.request, urllib.error, sys, io, pathlib
 sys.stdout.reconfigure(encoding="utf-8")
 
+# 路径按脚本所在目录推导（换机器/换盘符都不用改）
+ROOT = pathlib.Path(__file__).resolve().parent
+
 KEY = ""
-for line in pathlib.Path(r"<仓库根>\Code\tianditu_key.txt").read_text(encoding="utf-8").splitlines():
+for line in (ROOT / "Code" / "tianditu_key.txt").read_text(encoding="utf-8").splitlines():
     line = line.strip()
     if line and not line.startswith("#"):
         KEY = line
@@ -45,7 +48,8 @@ url = (f"https://t0.tianditu.gov.cn/img_w/wmts"
        f"?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=img"
        f"&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles"
        f"&TILEMATRIX=10&TILEROW=444&TILECOL=836&tk={KEY}")
-out = pathlib.Path(r"<仓库根>\lens_probe\tdt_img_test.png")
+out = ROOT / "lens_probe" / "tdt_img_test.png"
+out.parent.mkdir(parents=True, exist_ok=True)
 try:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=25) as r:

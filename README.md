@@ -75,6 +75,14 @@ http://127.0.0.1:8000/project_geojson_preview.html
 ## 测试
 
 ```bash
+node run_tests.js              # 一次跑完 12 套，任何一套失败就非零退出
+node run_tests.js --with-net   # 额外跑需要联网的天地图瓦片检查
+node run_tests.js --list       # 只列清单
+```
+
+逐套跑（与上面等价）：
+
+```bash
 node check_page.js      # 页面静态断言（最全的一套）
 node test_boot.js       # 页面启动执行
 node test_sync.js       # 地图 / 视频同步路径
@@ -84,11 +92,14 @@ node test_filelist.js   # 文件列表
 node test_drone.js      # 飞机箭头朝向
 node test_follow.js     # 地图跟随
 node test_nearest.js    # 按位置检索飞行视频（用真实 GeoJSON）
+node test_ab.js         # A+B 检索的数学基础（正/反投影互逆）
 python -B check_py.py   # 后端静态断言
 python -B test_geocode.py
 ```
 
-共 11 套。
+共 12 套（另有 1 套需联网的 `test_tdt_tiles.py`，用 `node run_tests.js --with-net` 跑）。
+测试路径按脚本所在目录推导，换机器不用改；
+**注意 `node a.js b.js` 里 b.js 会被静默忽略**（只有第一个会执行），别那么写。
 
 ---
 
@@ -109,6 +120,8 @@ python -B test_geocode.py
   接近平视时会明显偏（实测 1° 俯仰误差 ≈ 112 m）
 - 高度是**相对起飞点**的相对高度
 - 全屏反复切换后地图小窗尺寸需要重算（当前加了硬上限兜底）
+- 断网时 Leaflet 只能走 CDN 兜底：仓库里没有 `vendor/` 副本，
+  要离线可把 `leaflet.js` / `leaflet.css` 放进仓库根目录的 `vendor/`
 
 ---
 
