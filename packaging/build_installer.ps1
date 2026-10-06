@@ -1,16 +1,17 @@
-# ============================================================
-#  一键打包：PyInstaller 目录版 -> Inno Setup 安装包
+﻿# ============================================================
+#  一键打包：目录版程序 -> 安装程序 -> 分发 zip
 #
 #  在仓库根目录执行：  powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1
 #
 #  前置（脚本会自己检查并给出提示）：
-#    * packaging\build_libs   —— PyInstaller/pystray（用 python packaging\fetch_build_libs.py 准备）
-#    * packaging\payload      —— ffmpeg + Leaflet（用 python packaging\fetch_deps.py 准备）
-#    * Inno Setup 6（ISCC.exe）—— 编译安装包用；只打 exe 不需要它
+#    * packaging\build_libs  —— PyInstaller（python packaging\fetch_build_libs.py）
+#    * packaging\payload     —— ffmpeg + Leaflet（python packaging\fetch_deps.py）
 #
 #  产物：
-#    packaging\dist\UAVMap\              目录版程序（拷走即可运行）
-#    packaging\installer\*安装程序.exe    安装包
+#    packaging\dist\UAVMap\                                  目录版程序（拷走即可运行）
+#    packaging\dist-installer-release\...安装程序\             安装程序（exe + payload.zip）
+#    packaging\installer\无人机巡查数据地图_安装程序.zip        发给别人的那一个文件
+#    packaging\installer\无人机巡查数据地图_安装程序.exe        （装了 Inno Setup 时的备选方案）
 # ============================================================
 
 $ErrorActionPreference = 'Stop'
@@ -32,12 +33,12 @@ if (-not (Test-Path 'packaging\payload\ffmpeg\ffmpeg.exe')) {
     python -B packaging\fetch_deps.py
 }
 
-# ---------- 1) 打 exe ----------
-Step "PyInstaller：生成目录版程序"
-
 $env:PYTHONPATH = Join-Path $root 'packaging\build_libs'
 Remove-Item Env:\UAVMAP_CONSOLE -ErrorAction SilentlyContinue
+Remove-Item Env:\UAVMAP_PAYLOAD_SOURCE -ErrorAction SilentlyContinue
 
+# ---------- 1) 打应用（目录版） ----------
+Step "1/4 PyInstaller：目录版程序"
 python -B -m PyInstaller packaging\UAVMap.spec --noconfirm --clean `
     --distpath packaging\dist --workpath packaging\build
 
@@ -45,8 +46,31 @@ $exe = 'packaging\dist\UAVMap\UAVMap.exe'
 if (-not (Test-Path $exe)) { throw "没生成 $exe，打包失败" }
 Write-Host ("  生成 {0}（{1:N1} MB）" -f $exe, ((Get-Item $exe).Length / 1MB)) -ForegroundColor Green
 
-# ---------- 2) 编译安装包 ----------
-Step "Inno Setup：编译安装包"
+# ---------- 2) 做 LZMA 载荷 ----------
+Step "2/4 压缩载荷（LZMA）"
+python -B packaging\make_payload_zip.py
+
+# ---------- 3) 打安装程序 ----------
+Step "3/4 PyInstaller：安装程序"
+$env:UAVMAP_INSTALLER_ONEFOLDER = '1'
+python -B -m PyInstaller packaging\UAVMapInstaller.spec --noconfirm --clean `
+    --distpath packaging\dist-installer-release --workpath packaging\build-installer-release
+Remove-Item Env:\UAVMAP_INSTALLER_ONEFOLDER -ErrorAction SilentlyContinue
+
+$installerDir = 'packaging\dist-installer-release\无人机巡查数据地图_安装程序'
+if (-not (Test-Path $installerDir)) { throw "没生成安装程序目录 $installerDir" }
+
+# ---------- 4) 打成分发 zip（发给别人的就是这一个文件） ----------
+Step "4/4 分发 zip"
+New-Item -ItemType Directory -Force -Path packaging\installer | Out-Null
+$zip = 'packaging\installer\无人机巡查数据地图_安装程序.zip'
+Remove-Item $zip -ErrorAction SilentlyContinue
+Compress-Archive -Path "$installerDir\*" -DestinationPath $zip -CompressionLevel Optimal
+
+Write-Host ("  {0}  {1:N1} MB" -f $zip, ((Get-Item $zip).Length / 1MB)) -ForegroundColor Green
+
+# ---------- 可选：Inno Setup 版本 ----------
+Step "可选：Inno Setup 安装包"
 
 $iscc = @(
     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
@@ -54,15 +78,14 @@ $iscc = @(
     "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-if (-not $iscc) {
-    Write-Host "没找到 Inno Setup 6（ISCC.exe）。" -ForegroundColor Yellow
-    Write-Host "  * 目录版程序已经好了，可以直接拷走用：packaging\dist\UAVMap\"
-    Write-Host "  * 想生成安装包：装一个 Inno Setup 6（https://jrsoftware.org/isdl.php），再重跑本脚本"
-    exit 0
+if ($iscc) {
+    & $iscc 'packaging\UAVMap.iss'
+    Get-ChildItem packaging\installer -Filter *.exe -ErrorAction SilentlyContinue |
+        ForEach-Object { Write-Host ("  {0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) -ForegroundColor Green }
+} else {
+    Write-Host "  没装 Inno Setup 6，跳过（默认的安装程序已经好了，见上面的 zip）" -ForegroundColor Yellow
 }
 
-& $iscc 'packaging\UAVMap.iss'
-
 Step "完成"
-Get-ChildItem packaging\installer -Filter *.exe -ErrorAction SilentlyContinue |
+Get-ChildItem packaging\installer -ErrorAction SilentlyContinue |
     ForEach-Object { Write-Host ("  {0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) -ForegroundColor Green }
