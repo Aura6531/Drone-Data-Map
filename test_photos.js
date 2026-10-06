@@ -633,25 +633,32 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '左栏那个改叫「加载全部轨迹」（和「加载全部照片」区分开）');
   chk(/textContent=filtered\?`加载筛选（\$\{n\}）`:'加载全部轨迹'/.test(html),
     '筛选后按钮文案也跟着「加载全部轨迹」');
-  // 「加载全部照片」放在这一行**最左边**（用户要求），底图/key 靠右，计数在最后
+  // 这一行的三段（用户 2026-10-07 定的顺序）：
+  //   ① 加载全部照片（贴左，就在「轨迹地图」标题正下方，不留空）
+  //   ② 计数（它是按钮的说明，紧跟按钮右边）
+  //   ③ 底图 + 天地图key（推到这一行最右边）
   const toolsRow = html.slice(html.indexOf('card-tools map-tools'),
                               html.indexOf('id="mapNotice"'));
   chk(/id="photoLayerBtn"/.test(toolsRow) && /id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow),
     '三个控件在同一行（.card-tools.map-tools）');
-  chk(toolsRow.indexOf('id="photoLayerBtn"') < toolsRow.indexOf('class="map-tools-right"'),
-    '「加载全部照片」在最左边（在底图那一组之前）');
+  chk(toolsRow.indexOf('id="photoLayerBtn"') < toolsRow.indexOf('id="photoLayerCount"')
+      && toolsRow.indexOf('id="photoLayerCount"') < toolsRow.indexOf('class="map-tools-right"'),
+    '顺序：加载全部照片 -> 计数（它的说明） -> 底图组');
+  chk(/\.card-tools\.map-tools\{[^}]*margin-left:0/.test(html),
+    '这一行 margin-left:0 —— 否则被 .card-tools 的 auto 推到中间（实测偏 61px），'
+    +'就不是「贴着左边、在标题正下方」了');
   chk(/\.map-tools-right\{[^}]*margin-left:auto/.test(html),
-    '底图 / 天地图key 那组用 margin-left:auto 靠右');
-  chk(toolsRow.indexOf('id="photoLayerCount"') > toolsRow.indexOf('id="keyBtn"'),
-    '计数跟在最后（窄窗口时先让位）');
+    '底图 / 天地图key 那组用 margin-left:auto 靠这一行最右边');
+  chk(/\.photo-tools\{[^}]*margin-left:0/.test(html), '计数不抢 auto 边距，紧跟在按钮右边');
   // 大小与外观要和左栏「加载全部轨迹」一致
   {
     const fileBtn = (html.match(/\.card-tools\.file-actions button\{[^}]*\}/) || [''])[0];
     const photoBtn = (html.match(/\.photo-layer-btn\{[^}]*\}/) || [''])[0];
-    const dim = (s) => (s.match(/height:(\d+)px/) || [])[1] + '/' + (s.match(/font-size:(\d+)px/) || [])[1]
-      + '/' + (s.match(/font-weight:(\d+)/) || [])[1];
+    const dim = (s) => String(s).match(/height:[^;]*/)[0] + '/'
+      + (String(s).match(/font-size:[^;]*/) || [''])[0] + '/'
+      + (String(s).match(/font-weight:[^;]*/) || [''])[0];
     chk(dim(photoBtn) === dim(fileBtn),
-      '「加载全部照片」与「加载全部轨迹」同尺寸同字重（34px / 12px / 700）',
+      '「加载全部照片」与「加载全部轨迹」同尺寸同字重（都走 --ctrl-h / 12px / 600）',
       `photo=${dim(photoBtn)} load=${dim(fileBtn)}`);
     chk(/border-radius:9px/.test(photoBtn), '圆角与全局 button 一致（9px）');
     chk(/color:#2563eb/.test(photoBtn), '关着时是浅底 + 主色字（看着可点，不是禁用灰）');

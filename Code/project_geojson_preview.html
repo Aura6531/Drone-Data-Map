@@ -507,9 +507,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    「底图 / 天地图key」用 .map-tools-right 推到右边，计数跟在最后。
    （用户 2026-10-07：「这个按钮说了放到左边，大概红框位置。
    而且大小应该是和『加载全部轨迹』按钮的大小、效果一致的」。） */
-/* 右侧那一组：底图 + 天地图key，整体用 margin-left:auto 推到右边。
-   照片计数不在这一组里 —— 它是独立的下一项，放不下时自己换行、右对齐，
-   不会把「底图 / key」一起顶到第二行。 */
+/* 右侧那一组：底图 + 天地图key，用 margin-left:auto 推到这一行最右边。
+   计数不在这里面 —— 它跟在「加载全部照片」右边当说明。 */
 .map-tools-right{display:flex;align-items:center;gap:10px;margin-left:auto;min-width:0}
 
 /* 「加载全部照片」和左栏「加载全部轨迹」同款：同样大小、同款主按钮外观。
@@ -524,10 +523,14 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .photo-layer-btn:hover{background:#dbe7fa}
 .photo-layer-btn.photo-on,.photo-layer-btn.photo-on:hover{background:#2563eb;color:#fff}
 /* 卡片头部控件组统一：允许换行、子项可收缩（窄窗口不溢出卡片） */
-.card-tools.map-tools{flex-wrap:wrap;justify-content:flex-start}
+/* 地图卡片标题行的三段：加载全部照片 → 计数（它的说明） → 靠右的底图组。
+   margin-left 必须显式归零 —— .card-tools 基础规则是 margin-left:auto
+   （那是给「刷新/清空」那种右推按钮组用的），不归零时这一行会被推到中间，
+   按钮就不是「贴着左边、在标题正下方」了（实测偏了 61px）。 */
+.card-tools.map-tools{flex-wrap:wrap;justify-content:flex-start;margin-left:0}
 .card-tools.map-tools>*{min-width:0}
-/* 计数：独立一项，自己带 auto 让它右对齐（换行后也在右边） */
-.photo-tools{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+/* 计数紧跟在按钮右边（它是按钮的说明），不自己抢 auto 边距 */
+.photo-tools{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:0}
 .photo-tools #photoLayerCount,
 .photo-tools #photoLayerCountExtra{white-space:nowrap}
 /* 窗口窄到放不下时，按重要性依次让位。
@@ -792,11 +795,16 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <button id="placeSearchBtn">搜索地名</button>
       </div>
       <div class="card-tools map-tools">
-        <!-- 「加载全部照片」放在这一行**最左边**（用户 2026-10-07 要求：
-            说好放左边的，别挤到右边去）。为了让「底图 / 天地图key」这一组
-            仍靠右，右侧那两段包进 .map-tools-right（margin-left:auto）。 -->
+        <!-- 一行三段（用户 2026-10-07 定的）：
+             ① 「加载全部照片」**居中不动、贴着左边**（就在「轨迹地图」标题正下方）；
+             ② 紧跟它右边是照片计数 —— 那串字就是给这个按钮的说明；
+             ③ 「底图 + 天地图key」推到这一行最右边。 -->
         <button id="photoLayerBtn" class="photo-layer-btn" type="button" aria-pressed="false"
                 title="加载全部照片：把照片点显示到地图上，并把视野缩放到所有照片都看得见（再点一次隐藏）">加载全部照片</button>
+        <span class="photo-tools">
+          <span id="photoLayerCount" class="photo-sub"></span><span id="photoLayerCountExtra"
+                class="photo-sub"></span>
+        </span>
         <div class="map-tools-right">
           <label for="baseMap" class="ctrl-label">底图</label>
           <select id="baseMap" class="ctrl-select">
@@ -807,12 +815,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <button id="keyBtn" class="key-btn" type="button"
                   title="天地图 key：还没申请下来也能先用系统；拿到后在这里补填，存盘即生效">天地图key</button>
         </div>
-        <!-- 照片计数：独立一项、带 margin-left:auto。放得下时与右组同一行，
-             放不下就自己掉到第二行并右对齐（不是把按钮一起挤下去）。 -->
-        <span class="photo-tools">
-          <span id="photoLayerCount" class="photo-sub"></span><span id="photoLayerCountExtra"
-                class="photo-sub"></span>
-        </span>
       </div>
     </div>
 

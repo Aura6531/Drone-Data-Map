@@ -1571,7 +1571,7 @@ chk(/\.card-head h2\{margin:0\}/.test(html), '标题外边距清零（否则在 
     '全局 select: ' + ((globalSelect.match(/(?:^|;)width:([^;]*)/) || [])[1] || '?'));
   chk(/width:100%/.test(globalSelect), '（确认全局 select 确实是 width:100%）');
 }
-chk(/\.map-tools button\.secondary\{height:36px/.test(html),
+chk(/\.map-tools button\.secondary\{height:var\(--ctrl-h\)/.test(html),
   '地图卡片头部按钮高度对齐下拉框的 36px');
 // 「清除地图」和「重新扫描 / 加载全部轨迹」是一类操作，挪到一起了
 {
