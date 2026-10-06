@@ -369,6 +369,85 @@ else:
         chk(raises(pm.make_video_snapshot, {"project_name": "", "path": "x.MP4"}) is not None,
             "缺项目名要报错")
 
+        # ---- 画面落点：视频截图上叠一个目标点标志 ----
+        def is_mark(pixel):
+            r, g, b = pixel
+            return r > 150 and r - g > 60 and r - b > 60
+
+        def mark_bbox(path_a, path_b):
+            """同一帧、一张带标志一张不带：求差异外接框（只有标志那一小块不同）。
+
+            不用颜色找红色 —— 真实画面里本来就有红色物体（船、土、屋顶），会误判。
+            """
+            from PIL import ImageChops
+
+            with Image.open(path_a) as a, Image.open(path_b) as b:
+                diff = ImageChops.difference(a.convert("RGB"), b.convert("RGB")).convert("L")
+
+            return diff.point(lambda v: 255 if v > 40 else 0).getbbox()
+
+        plain_of = {"a4": small, "full": full}
+
+        for label, mode, fx, fy in (("压缩档", "a4", 0.25, 0.75),
+                                    ("原分辨率档", "full", 0.8, 0.2)):
+            spotted = pm.make_video_snapshot({
+                "project_name": "测试", "folder_index": 0,
+                "path": video.name, "time": 60, "mode": mode,
+                "spot_fx": fx, "spot_fy": fy,
+            })
+            spot_path = ROOT / "report_cache" / spotted["file"]
+
+            chk(spotted["spot"] is True, f"{label}：落点参数被接受", str(spotted.get("spot")))
+
+            with Image.open(spot_path) as opened:
+                mark = opened.convert("RGB")
+                cx = int(round(fx * mark.width))
+                cy = int(round(fy * mark.height))
+
+                chk(any(is_mark(mark.getpixel((x, y)))
+                        for x in range(max(0, cx - 3), min(mark.width, cx + 4))
+                        for y in range(max(0, cy - 3), min(mark.height, cy + 4))),
+                    f"{label}：标志中心是那个红（{fx:.0%}, {fy:.0%}）",
+                    str(mark.getpixel((cx, cy))))
+
+            box = mark_bbox(spot_path, ROOT / "report_cache" / plain_of[mode]["file"])
+            chk(box is not None, f"{label}：带标志的图和同帧原图有差异")
+
+            if box:
+                box_cx = (box[0] + box[2]) / 2
+                box_cy = (box[1] + box[3]) / 2
+                side = max(box[2] - box[0], box[3] - box[1])
+
+                chk(abs(box_cx - fx * spotted["width"]) <= 12
+                    and abs(box_cy - fy * spotted["height"]) <= 12,
+                    f"{label}：差异就只有那一小块标志，且落在鼠标点的位置",
+                    f"差异中心 ({box_cx:.0f}, {box_cy:.0f}) vs 落点 "
+                    f"({fx * spotted['width']:.0f}, {fy * spotted['height']:.0f})，{side}px 见方")
+
+                globals()[f"spot_side_{mode}"] = side
+                globals()[f"spot_area_{mode}"] = (spotted["width"], spotted["height"])
+
+        # 标志大小按图宽等比：4K 档应约为压缩档的 3840/2480 ≈ 1.55 倍
+        ratio = (spot_side_full / spot_side_a4) if spot_side_a4 else 0
+        chk(1.3 <= ratio <= 1.8,
+            "标志随输出分辨率等比放大（4K 档 ≈ 压缩档的 1.55 倍，不是固定像素）",
+            f"{spot_side_full}px / {spot_side_a4}px = {ratio:.2f}")
+
+        # 不给落点就不叠标志（老标记点没有这个字段）
+        plain = pm.make_video_snapshot({
+            "project_name": "测试", "folder_index": 0,
+            "path": video.name, "time": 60, "mode": "a4",
+        })
+        chk(plain["spot"] is False, "没给落点时如实回报 spot=false")
+
+        for bad in ({"spot_fx": "abc", "spot_fy": 0.5}, {"spot_fx": 1.4, "spot_fy": 0.5},
+                    {"spot_fx": -0.1, "spot_fy": 0.5}, {"spot_fx": 0.5}):
+            chk(pm.parse_image_spot(bad) is None,
+                f"坏落点当作没给：{bad}", str(pm.parse_image_spot(bad)))
+
+        chk(pm.parse_image_spot({"spot_fx": 0.25, "spot_fy": 0.75}) == (0.25, 0.75),
+            "正常落点原样返回")
+
     finally:
         pm.resolve_project_video = real_resolve
 

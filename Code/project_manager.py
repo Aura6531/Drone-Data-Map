@@ -3921,6 +3921,67 @@ def draw_dashed_line(draw, start, end, color, width=2, dash=6, gap=6):
         position = stop + gap
 
 
+# 目标点标志：白圈打底 + 红十字 —— **地图截图与原片截图共用这一套画法**，
+# 页面上、地图截图里、视频截图里看到的都是同一种「目标点」符号。
+# 半径沿用像素值，但视频截图有 4K 与 2480px 两档，固定像素在两档下视觉大小会差一倍，
+# 所以那边按图像宽度取比例（见 TARGET_MARK_WIDTH_RATIO）。
+TARGET_MARK_WIDTH_RATIO = 0.010     # 半径 ≈ 图宽的 1%（铺满 15.9cm 时直径约 3.2mm）
+
+
+def draw_target_marker(draw, center_x, center_y, radius):
+    """在 (center_x, center_y) 画目标点十字（白圈打底，深浅底图上都看得见）。"""
+
+    center_x = int(round(center_x))
+    center_y = int(round(center_y))
+    radius = max(6, int(round(radius)))
+
+    # 十字臂比圆多伸出去一点（和页面上那个准星一致）
+    arm = radius + max(4, int(round(radius * 0.62)))
+
+    for color, line_width in (
+        ((255, 255, 255), max(2, int(round(radius * 0.31)))),
+        ((220, 38, 38), max(1, int(round(radius * 0.19)))),
+    ):
+        draw.ellipse(
+            (center_x - radius, center_y - radius, center_x + radius, center_y + radius),
+            outline=color,
+            width=line_width
+        )
+        draw.line(
+            (center_x - arm, center_y, center_x + arm, center_y),
+            fill=color,
+            width=line_width
+        )
+        draw.line(
+            (center_x, center_y - arm, center_x, center_y + arm),
+            fill=color,
+            width=line_width
+        )
+
+
+def parse_image_spot(payload):
+    """画面上的落点（归一化 0..1，左上为原点）：`spot_fx` / `spot_fy`。
+
+    给了就返回 `(fx, fy)`；没给、不是数字、或越界都返回 `None`
+    —— **不编造位置**：老标记点没存过这两个字段，报告里就不叠目标点标志。
+    """
+
+    if payload.get("spot_fx") is None or payload.get("spot_fy") is None:
+        return None
+
+    try:
+        fx = float(payload["spot_fx"])
+        fy = float(payload["spot_fy"])
+
+    except (TypeError, ValueError):
+        return None
+
+    if not (0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0):
+        return None
+
+    return (fx, fy)
+
+
 def draw_drone_arrow(draw, center, bearing, size=DRONE_ARROW_SIZE):
     """在 center 画一个朝 bearing（自正北顺时针）的飞机箭头。
 
@@ -4049,30 +4110,8 @@ def compose_map_snapshot(lat, lng, zoom, kind, width, height, drone=None, target
 
     center_x = int(round(target_x - left))
     center_y = int(round(target_y - top))
-    radius = 16
 
-    draw.ellipse(
-        (center_x - radius, center_y - radius, center_x + radius, center_y + radius),
-        outline=(255, 255, 255),
-        width=5
-    )
-    draw.ellipse(
-        (center_x - radius, center_y - radius, center_x + radius, center_y + radius),
-        outline=(220, 38, 38),
-        width=3
-    )
-
-    for color, line_width in (((255, 255, 255), 5), ((220, 38, 38), 3)):
-        draw.line(
-            (center_x - radius - 10, center_y, center_x + radius + 10, center_y),
-            fill=color,
-            width=line_width
-        )
-        draw.line(
-            (center_x, center_y - radius - 10, center_x, center_y + radius + 10),
-            fill=color,
-            width=line_width
-        )
+    draw_target_marker(draw, center_x, center_y, 16)
 
     # 飞机 + 「飞机 -> 目标点」的注视虚线（和地图页面上是同一种表达）
     if drone and drone.get("lat") is not None and drone.get("lng") is not None:
@@ -4208,6 +4247,21 @@ def make_video_snapshot(payload):
 
             width, height = image.size
 
+            # 目标点标志：当初在画面上点的那一处（归一化坐标）—— 按输出分辨率放大
+            spot = parse_image_spot(payload)
+
+            if spot:
+                from PIL import ImageDraw
+
+                radius = max(12, round(width * TARGET_MARK_WIDTH_RATIO))
+
+                draw_target_marker(
+                    ImageDraw.Draw(image),
+                    spot[0] * width,
+                    spot[1] * height,
+                    radius
+                )
+
             image.save(
                 output_path,
                 "JPEG",
@@ -4236,6 +4290,7 @@ def make_video_snapshot(payload):
         "mode": mode,
         "width": width,
         "height": height,
+        "spot": bool(parse_image_spot(payload)),
     }
 
 

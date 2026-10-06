@@ -2516,7 +2516,8 @@ function footprintGeometry(origin,alt,yaw,pitch,roll,focal,dzoom){
 // ============================================================
 
 let videoMarkLayer=null;   // 用户标记的图层组（懒建：L 可能是异步到的）
-let pendingMark=null;      // 等待命名的那个落点
+let pendingMark=null;      // 等待命名的那个落点（latlng）
+let pendingMarkSpot=null;  // 那个落点在画面上的位置（归一化 0..1，左上为原点）
 
 function ensureVideoMarkLayer(){
   if(!map)return null;
@@ -2535,6 +2536,17 @@ function videoImagePoint(e){
   if(px<0||px>1||py<0||py>1)return null;
 
   return {xImg:px*2-1,yImg:1-py*2};
+}
+
+// 同上，但换成「左上为原点、0..1」的归一化位置 —— 存进标记点用。
+// 报告里的视频截图就是按这个比例叠目标点标志的，所以与视频输出分辨率无关。
+// （画面区 .video-stage 的 aspect-ratio 是照 videoWidth/videoHeight 动态写的，
+//   不会有 letterbox，所以元素框的比例就是画幅比例。）
+function videoImageSpot(e){
+  const pt=videoImagePoint(e);
+  if(!pt)return null;
+
+  return {fx:(pt.xImg+1)/2,fy:(1-pt.yImg)/2};
 }
 
 // 当前播放时刻、画面上这一点对应的地面位置
@@ -2595,6 +2607,8 @@ function addVideoMark(latlng,name){
 function closeVideoMarkDialog(){
   if(videoMarkModal)videoMarkModal.style.display='none';
   if(videoMarkError)videoMarkError.style.display='none';
+
+  pendingMarkSpot=null;      // 取消/关闭时一并丢掉落点，免得带到下一个点
 }
 
 // 名字比较用的归一化：去首尾空白、内部连续空白压成一个、忽略大小写
@@ -2641,8 +2655,14 @@ function nextMarkerName(){
   return prefix+(max+1);
 }
 
-function openVideoMarkDialog(latlng,info){
+function openVideoMarkDialog(latlng,spot){
   pendingMark=latlng;
+
+  // 记下鼠标点的那一处（报告截图上要在这里叠目标点标志）
+  pendingMarkSpot=(spot&&Number.isFinite(spot.fx)&&Number.isFinite(spot.fy))
+    ?{fx:spot.fx,fy:spot.fy}
+    :null;
+
   if(!videoMarkModal)return;
 
   // 预填一个顺序生成的默认名，并整段选中 —— 直接打字就是替换，
@@ -2698,15 +2718,25 @@ async function loadProjectMarkers(){
     const d=await api('/api/project/get?name='+encodeURIComponent(name));
     const list=(d&&d.project&&d.project.markers)||[];
 
-    projectMarkers=list.map(m=>({
-      id:String(m.id||''),
-      name:String(m.name||'标记'),
-      lat:Number(m.lat),
-      lng:Number(m.lng),
-      video:String(m.video||''),
-      time:Number(m.time||0),
-      created:String(m.created||'')
-    })).filter(m=>Number.isFinite(m.lat)&&Number.isFinite(m.lng));
+    projectMarkers=list.map(m=>{
+      const mark={
+        id:String(m.id||''),
+        name:String(m.name||'标记'),
+        lat:Number(m.lat),
+        lng:Number(m.lng),
+        video:String(m.video||''),
+        time:Number(m.time||0),
+        created:String(m.created||'')
+      };
+
+      // 画面上的落点（老标记点没有这两个字段）
+      if(Number.isFinite(Number(m.fx))&&Number.isFinite(Number(m.fy))){
+        mark.fx=Number(m.fx);
+        mark.fy=Number(m.fy);
+      }
+
+      return mark;
+    }).filter(m=>Number.isFinite(m.lat)&&Number.isFinite(m.lng));
   }catch(e){
     projectMarkers=[];
   }
@@ -2728,7 +2758,7 @@ function confirmVideoMark(){
   addVideoMark(pendingMark,name);
 
   // 记进项目里（含视频与时间 —— 以后列表点它能跳回这一帧）
-  projectMarkers.push({
+  const mark={
     id:'m'+Date.now(),
     name,
     lat:pendingMark.lat,
@@ -2736,7 +2766,16 @@ function confirmVideoMark(){
     video:clip?clip.path:'',
     time:videoPlayer?Number(videoPlayer.currentTime||0):0,
     created:new Date().toISOString()
-  });
+  };
+
+  // 画面上点的那一处（归一化 0..1）：报告的视频截图会在这里叠一个目标点标志。
+  // 老标记点没有这两个字段，报告里就不叠 —— 不编造位置。
+  if(pendingMarkSpot){
+    mark.fx=pendingMarkSpot.fx;
+    mark.fy=pendingMarkSpot.fy;
+  }
+
+  projectMarkers.push(mark);
 
   saveProjectMarkers();
 
@@ -3143,6 +3182,17 @@ async function reportPlaceOf(m){
 }
 
 // 视频截图：从原片抽这一帧；抽不到就让这一节少一张图，不整份失败
+// 标记点在画面上的落点（归一化 0..1）；老标记点没存过，返回 null
+function markerSpotOf(m){
+  const fx=Number(m&&m.fx);
+  const fy=Number(m&&m.fy);
+
+  if(!Number.isFinite(fx)||!Number.isFinite(fy))return null;
+  if(fx<0||fx>1||fy<0||fy>1)return null;
+
+  return {fx,fy};
+}
+
 async function reportVideoImageOf(m,mode){
   if(!m.video)return '';
 
@@ -3152,13 +3202,23 @@ async function reportVideoImageOf(m,mode){
   if(!f)return '';
 
   try{
-    const d=await jsonPost('/api/snapshot',{
+    const body={
       project_name:projectSelect.value,
       folder_index:f.folder_index,
       path:m.video,
       time:m.time,
       mode
-    });
+    };
+
+    // 当初鼠标点的那一处：后端会在截图上叠一个目标点标志
+    const spot=markerSpotOf(m);
+
+    if(spot){
+      body.spot_fx=spot.fx;
+      body.spot_fy=spot.fy;
+    }
+
+    const d=await jsonPost('/api/snapshot',body);
 
     return String((d&&d.file)||'');
 
@@ -3464,7 +3524,7 @@ if(videoPlayer)videoPlayer.addEventListener('contextmenu',e=>{
     `已取点：${hit.latlng.lat.toFixed(6)}, ${hit.latlng.lng.toFixed(6)}`
     +`（距无人机约 ${Math.round(hit.distance)} m）`;
 
-  openVideoMarkDialog(hit.latlng,hit);
+  openVideoMarkDialog(hit.latlng,videoImageSpot(e));
 });
 
 function ensureFootprintLayers(){

@@ -464,6 +464,7 @@ console.log('\n=== 12) 标记点名字不能跟已有的重复 ===');
     'projectMarkers', 'pendingMark', 'videoMarkName', 'addVideoMark',
     'saveProjectMarkers', 'renderMarkerList', 'closeVideoMarkDialog',
     'showVideoMarkError', 'projectSelect', 'clip', 'videoPlayer',
+    'pendingMarkSpot',
     `${extractFn('nextMarkerName')}
 ${extractFn('normalizeMarkerName')}
 ${extractFn('markerNameTaken')}
@@ -473,7 +474,7 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
 
   const make = (name) => ({ id: name, name, lat: 23, lng: 112, video: 'a.mp4', time: 1, created: '' });
 
-  function run(existing, typed) {
+  function run(existing, typed, spot) {
     errors.length = 0;
     added.length = 0;
     closed = 0;
@@ -491,7 +492,8 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
       (message) => errors.push(message),
       { value: '东莞2' },
       { path: 'a.mp4' },
-      { currentTime: 42 }
+      { currentTime: 42 },
+      spot === undefined ? null : spot
     );
 
     api.confirmVideoMark();
@@ -528,6 +530,22 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
   result = run(base, '   ');
   chk(added.length === 1 && added[0] === '东莞2-2',
     '名字留空：回落到顺序默认名（且是没被占用的那个）', added.join(','));
+
+  result = run(base, '带落点', { fx: 0.25, fy: 0.75 });
+  {
+    const mark = result.markers[result.markers.length - 1];
+    chk(mark.fx === 0.25 && mark.fy === 0.75,
+      '右键取点时的画面位置随标记点一起入库（fx / fy）',
+      `fx=${mark.fx} fy=${mark.fy}`);
+  }
+
+  result = run(base, '无落点', null);
+  {
+    const mark = result.markers[result.markers.length - 1];
+    chk(!('fx' in mark) && !('fy' in mark),
+      '没有落点就不写 fx/fy（老标记点不会长出编造的位置）',
+      JSON.stringify(mark));
+  }
 
   const api = run(base, 'x').api;
   chk(api.normalizeMarkerName('  A   B  ') === 'a b', '归一化：去空白 + 压空白 + 转小写',
@@ -588,6 +606,35 @@ return {reportMetersOffset, reportMapZoomForOffset};`
       `偏移 (${n}, ${e})m 时用 ${zoom} 级：飞机还在画面里`,
       `半高 ${(height / 2 * mpp).toFixed(0)}m / 半宽 ${(width / 2 * mpp).toFixed(0)}m`);
   }
+}
+
+console.log('\n=== 14) 画面落点换算：右键位置 -> 归一化 0..1 ===');
+{
+  const makeSpot = new Function(
+    'videoPlayer',
+    `${extractFn('videoImagePoint')}
+${extractFn('videoImageSpot')}
+return videoImageSpot;`
+  );
+
+  // 画面区 800×400，左上角在 (100, 50)
+  const spot = makeSpot({
+    getBoundingClientRect: () => ({ left: 100, top: 50, width: 800, height: 400 })
+  });
+
+  const at = (clientX, clientY) => spot({ clientX, clientY });
+  const show = value => JSON.stringify(value);
+
+  chk(show(at(100, 50)) === show({ fx: 0, fy: 0 }), '左上角 -> (0, 0)', show(at(100, 50)));
+  chk(show(at(900, 450)) === show({ fx: 1, fy: 1 }), '右下角 -> (1, 1)', show(at(900, 450)));
+  chk(show(at(500, 250)) === show({ fx: 0.5, fy: 0.5 }), '正中 -> (0.5, 0.5)', show(at(500, 250)));
+  chk(show(at(300, 150)) === show({ fx: 0.25, fy: 0.25 }), '四分之一处 -> 0.25',
+    show(at(300, 150)));
+  chk(show(at(300, 350)) === show({ fx: 0.25, fy: 0.75 }), '左下 -> (0.25, 0.75)',
+    show(at(300, 350)));
+
+  chk(at(50, 250) === null && at(500, 10) === null && at(950, 250) === null,
+    '点在画面外 -> null（不记落点）');
 }
 
 console.log(ok ? '\n结果: 全部通过' : '\n结果: 有失败');

@@ -1870,6 +1870,25 @@ console.log('\n=== 左列底边对齐 + 滚动条不再出现「浅灰直角」 
     '滑块是细圆角的');
 }
 
+console.log('\n=== 报告视频截图上的目标点标志（右键取点的位置）===');
+{
+  chk(/function videoImageSpot\(/.test(body), 'function videoImageSpot()：换成左上原点的 0..1 坐标');
+  chk(/const pt=videoImagePoint\(e\);/.test(body) && /fx:\(pt\.xImg\+1\)\/2/.test(body),
+    '换算用同一个 videoImagePoint（不另起一套算法）');
+  chk(/let pendingMarkSpot=null;/.test(body), '记下待命名落点在画面上的位置');
+  chk(/pendingMarkSpot=\(spot&&Number\.isFinite\(spot\.fx\)/.test(body),
+    '命名框只在坐标有效时才记落点');
+  chk(/pendingMarkSpot=null;\s*\/\/ 取消/.test(body) || /pendingMarkSpot=null;/.test(body),
+    '关掉命名框（含取消）就丢掉落点，不带进下一个点');
+  chk(/mark\.fx=pendingMarkSpot\.fx;/.test(body) && /mark\.fy=pendingMarkSpot\.fy;/.test(body),
+    '确认保存时把 fx/fy 一起写进标记点');
+  chk(/mark\.fx=Number\(m\.fx\);/.test(body) && /mark\.fy=Number\(m\.fy\);/.test(body),
+    '从项目读回时也保留 fx/fy（老标记点没有就不写）');
+  chk(/function markerSpotOf\(/.test(body), 'function markerSpotOf()：取落点并校验范围');
+  chk(/body\.spot_fx=spot\.fx;/.test(body) && /body\.spot_fy=spot\.fy;/.test(body),
+    '有落点时随 /api/snapshot 一起传（后端在那一处叠标志）');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));
