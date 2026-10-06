@@ -47,6 +47,19 @@ pm.TIANDITU_KEY = ""
 pm.TIANDITU_KEY_FILE = NO_SUCH
 chk(pm.get_tianditu_key() == "", "全部为空 -> 空（会被拦下并给出提示）")
 
+print("\n=== 0b) key 文件带 BOM（Windows 记事本另存 UTF-8 会加）===")
+BOM_KEY = ROOT / "_test_bom_key.txt"
+BOM_KEY.write_bytes(b"\xef\xbb\xbf" + b"feedfacefeedfacefeedfacefeedface\n")
+pm.TIANDITU_KEY = ""
+pm.TIANDITU_KEY_FILE = BOM_KEY
+got = pm.get_tianditu_key()
+chk(got == "feedfacefeedfacefeedfacefeedface",
+    "BOM 被吃掉，tk 前后没有脏字符", repr(got[:6]) + "..." + repr(got[-6:]))
+try:
+    BOM_KEY.unlink()
+except OSError:
+    pass
+
 print("\n=== 1) parse_lonlat 兼容性 ===")
 cases = [
     ("116.420888 39.609496", (116.420888, 39.609496), "v1 空格分隔"),

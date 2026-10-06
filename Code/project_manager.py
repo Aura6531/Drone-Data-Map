@@ -3065,7 +3065,9 @@ def get_tianditu_key():
 
     try:
 
-        with TIANDITU_KEY_FILE.open("r", encoding="utf-8") as f:
+        # utf-8-sig：记事本「UTF-8」另存会加 BOM，strip() 去不掉 \ufeff，
+        # 带进 tk 就会被天地图判为无效（SRT 读取也是这么处理的）
+        with TIANDITU_KEY_FILE.open("r", encoding="utf-8-sig") as f:
 
             for line in f:
 
