@@ -143,7 +143,10 @@ REPORT_IMAGE_WIDTH_A4 = 2480
 REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM = 9.5
 REPORT_MAP_IMAGE_MAX_HEIGHT_CM = 6.6
 REPORT_IMAGE_MAX_HEIGHT_CM = REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM   # 兼容旧断言/调用
-REPORT_IMAGE_MAX_WIDTH_CM = 15.9
+
+# 正文宽 = 21 - 2.5 - 2.5 = 16.0cm。表格也是 16.0cm（顶满正文宽），
+# 所以插图必须用同一个数 —— 15.9 的话图会比表格每边各缩 0.5mm，边界对不齐（用户提过）。
+REPORT_IMAGE_MAX_WIDTH_CM = 16.0
 
 # 地图截图上画的飞机箭头 / 注视虚线，颜色与页面上的保持一致
 DRONE_ARROW_FILL = (30, 136, 229)      # #1e88e5
@@ -4616,7 +4619,7 @@ def set_docx_table_width(table, column_widths):
     from docx.oxml.ns import qn
 
     total_emu = sum(int(width) for width in column_widths)
-    total_twips = max(1, int(total_emu / 635))      # 1 twip = 635 EMU
+    total_twips = max(1, int(round(total_emu / 635)))   # 1 twip = 635 EMU
 
     tblPr = table._tbl.tblPr
 
