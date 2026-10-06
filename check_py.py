@@ -25,7 +25,9 @@ for need in ("find_ffmpeg", "find_ffprobe", "probe_video_stream", "build_proxy_s
              "send_file_range", "stream_project_video", "load_srt_telemetry",
              "guess_image_type", "tile_source_url", "prune_tile_cache", "proxy_map_tile",
              "geocode_place", "get_tianditu_key", "parse_lonlat",
-             "shorter_keyword", "request_tianditu_search", "parse_tianditu_payload"):
+             "shorter_keyword", "request_tianditu_search", "parse_tianditu_payload",
+             # 导出「前后 10 秒」片段
+             "build_clip", "send_clip_download"):
     chk(need in names, f"def {need}")
 
 consts = set()
@@ -36,8 +38,24 @@ for n in tree.body:
                 consts.add(t.id)
 print("\n=== 常量齐备 ===")
 for need in ("PROXY_DIR", "PROXY_SECONDS", "PROXY_BUCKET_SECONDS", "PROXY_HEIGHT",
-             "PROXY_CRF", "PROXY_CACHE_MAX_MB", "PROXY_LOCK", "VIDEO_PROBE_CACHE"):
+             "PROXY_CRF", "PROXY_CACHE_MAX_MB", "PROXY_LOCK", "VIDEO_PROBE_CACHE",
+             # 导出片段：前 5 + 后 5 秒、1080p、单独缓存目录
+             "CLIP_BEFORE_SECONDS", "CLIP_AFTER_SECONDS", "CLIP_HEIGHT", "CLIP_CRF",
+             "CLIP_MAXRATE", "CLIP_DIR"):
     chk(need in consts, need)
+
+print("\n=== 导出「前后 10 秒」的实现要点 ===")
+chk("CLIP_BEFORE_SECONDS = 5" in src and "CLIP_AFTER_SECONDS = 5" in src,
+    "默认前 5 秒 + 后 5 秒（一共 10 秒）")
+chk("CLIP_HEIGHT = 1080" in src, "导出高度 1080p")
+chk('"-maxrate", CLIP_MAXRATE' in src and '"-crf", str(CLIP_CRF)' in src,
+    "限码率 + CRF（转发用，文件要小）")
+chk('f"scale=-2:{CLIP_HEIGHT}"' in src, "按 1080p 等比缩放（宽度自动偶数）")
+chk('"attachment; filename=' in src, "按下载发出去（Content-Disposition: attachment）")
+chk("url_quote(download_name)" in src, "中文文件名转义后再放进响应头")
+chk("CLIP_DIR" in src and "clip_path, start, seconds = build_clip" in src,
+    "片段缓存在独立目录（不会被播放缓存清理掉）")
+chk('"/api/project/clip"' in src, "注册了 /api/project/clip 路由")
 
 print("\n=== 路由与关键行为 ===")
 for need in ('/api/project/proxy', '/api/project/video', '/api/geocode',

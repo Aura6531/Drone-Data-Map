@@ -57,6 +57,8 @@ const PURE = [
   'pickMatchForPhoto',
   // 跳视频候选排序：把「和大图同一路」的提到最前
   'orderMatchesForLead',
+  // 导出「前后 10 秒」：算出当前播放位置在**整段视频**里的秒数（走片段时要加回 bucket）
+  'currentVideoSeconds', 'clipTimeText', 'proxyBucketOf',
   // 时刻对齐
   'videoRealStartMs', 'photoFileTime', 'photoVideoStartSeconds', 'photoFrameAt',
   // 匹配与展示
@@ -89,6 +91,10 @@ const consts = {
   PHOTO_CAM_NAMES: extractConst('PHOTO_CAM_NAMES'),
   // 大图的相机优先级（可见光变焦 > 可见光广角 > 热成像）
   PHOTO_CAMERA_RANK: extractConst('PHOTO_CAMERA_RANK'),
+  // 导出片段：前 5 秒 + 后 5 秒（前端只用它做文案；真正的切点在服务端）
+  CLIP_BEFORE_SECONDS: extractConst('CLIP_BEFORE_SECONDS'),
+  CLIP_AFTER_SECONDS: extractConst('CLIP_AFTER_SECONDS'),
+  PROXY_BUCKET_SECONDS: extractConst('PROXY_BUCKET_SECONDS'),
   // 点照片跳视频时往前倒退多久起播（用户 2026-10-07：先用 3 秒试）
   PHOTO_PREROLL_SECONDS: extractConst('PHOTO_PREROLL_SECONDS'),
 };
@@ -118,6 +124,8 @@ const src = [
   `const videoPlayer={currentTime:0,paused:false,ended:false,_paused:0,`
   + `play(){this.paused=false;return Promise.resolve()},`
   + `pause(){this.paused=true;this._paused++}};`,
+  // 导出片段那节要能改 clip（模拟「在播的是原片还是转码片段」）
+  `function setClipForTest(v){clip=v;}`,
   extractFn('setPhotoCountdownTarget'),
   extractFn('stopPhotoCountdown'),
   extractFn('updatePhotoCountdown'),
@@ -139,7 +147,8 @@ const src = [
   + `cd:{setTarget:setPhotoCountdownTarget,stop:stopPhotoCountdown,`
   + `update:updatePhotoCountdown,tick:tickPhotoPause,`
   + `getTarget:()=>photoPauseAt,setTargetRaw:v=>{photoPauseAt=v},`
-  + `player:videoPlayer,countdown:videoCountdown,status:videoStatus}};`
+  + `player:videoPlayer,countdown:videoCountdown,status:videoStatus,`
+  + `setClip:setClipForTest}};`
 ].join('\n');
 
 const page = new Function(src)();
@@ -881,6 +890,57 @@ console.log('\n=== 9b) 大图挑法与跳转优先级：可见光变焦 > 可见
     '渲染前会把候选按「大图那一路」重排');
   chk(/photoMatches\.set\(index,matches\)/.test(fn),
     '排完再缓存 —— 按钮的 data-photo-match 下标必须和它同一个顺序');
+}
+
+console.log('\n=== 9c) 导出「前后 10 秒」：中心点必须换算成整段视频里的秒数 ===');
+{
+  const cd = page.cd;                 // 复用倒计时那节的桩（含 videoPlayer / clip 状态）
+  chk(Number(consts.CLIP_BEFORE_SECONDS) === 5 && Number(consts.CLIP_AFTER_SECONDS) === 5,
+    '前 5 秒 + 后 5 秒（一共 10 秒）',
+    `${consts.CLIP_BEFORE_SECONDS} + ${consts.CLIP_AFTER_SECONDS}`);
+  chk(Number(consts.PROXY_BUCKET_SECONDS) === 30, '片段对齐粒度 30 秒（要和后端一致）',
+    String(consts.PROXY_BUCKET_SECONDS));
+
+  chk(page.proxyBucketOf(524) === 510, 'proxyBucketOf(524) = 510（对齐到 30 秒的格）',
+    String(page.proxyBucketOf(524)));
+
+  // 走转码片段：<video> 的时间轴从片段头算起，必须把 bucket 加回去，
+  // 否则导出的是「片段里的那一秒」而不是视频里的那一秒
+  cd.setClip({ start: 524, useProxy: true, folderIndex: 0, path: 'a_V.MP4' });
+  cd.player.currentTime = 14.82;
+  chk(Math.abs(page.currentVideoSeconds() - 524.82) < 0.001,
+    '转码片段：currentTime 14.82 + bucket 510 = 524.82（整段视频里的秒数）',
+    String(page.currentVideoSeconds()));
+
+  cd.setClip({ start: 100, useProxy: false, folderIndex: 0, path: 'a_V.MP4' });
+  cd.player.currentTime = 100;
+  chk(page.currentVideoSeconds() === 100, '原片：currentTime 就是整段视频里的秒数');
+
+  cd.setClip(null);
+  chk(page.currentVideoSeconds() === null, '没有在播的视频 -> null（导出按钮据此提示）');
+
+  cd.setClip({ start: 100, useProxy: false });
+  cd.player.currentTime = NaN;
+  chk(page.currentVideoSeconds() === null, 'currentTime 不是数字 -> null');
+
+  // 按钮与文案
+  const exp = extractFn('exportClip');
+  chk(/center:String\(center\.toFixed\(3\)\)/.test(exp), '请求里带 center（当前这一下的秒数）');
+  chk(/name:projectSelect\.value/.test(exp) && /folder_index:String\(clip\.folderIndex\)/.test(exp)
+      && /path:clip\.path/.test(exp), '四个参数齐全（name / folder_index / path / center）');
+  chk(/'\/api\/project\/clip\?'/.test(exp), '请求打到 /api/project/clip');
+  chk(/const from=Math\.max\(0,center-CLIP_BEFORE_SECONDS\)/.test(exp),
+    '文案里的起点 = 当前 - 5 秒（不早于 0）');
+  chk(/还没有在播的视频/.test(exp), '没在播视频时给一句人话提示（不静默失败）');
+  chk(/a\.download=''/.test(exp) || /a\.download=/.test(exp),
+    '用带 download 的 <a> 触发下载（响应头是 attachment）');
+
+  const head = html.slice(html.indexOf('id="speedToggle"'), html.indexOf('id="followMode"'));
+  chk(/id="speedToggle"/.test(head) && /id="clipBtn"/.test(head),
+    '按钮在 .video-head-tools 里');
+  chk(head.indexOf('id="speedToggle"') < head.indexOf('id="clipBtn"'),
+    '「导出前后10秒」在「2倍速」右边（用户指定的位置）');
+  chk(/>导出前后10秒</.test(html), '按钮文案是「导出前后10秒」');
 }
 
 console.log('\n=== 10) 点照片跳视频：倒退 3 秒起播 + 3-2-1 倒计时 + 到照片时刻自动暂停 ===');

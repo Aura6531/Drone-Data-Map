@@ -17,7 +17,7 @@ import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tkinter import filedialog
-from urllib.parse import urlparse, parse_qs, urlencode
+from urllib.parse import urlparse, parse_qs, urlencode, quote as url_quote
 
 
 # ============================================================
@@ -242,8 +242,23 @@ PROXY_SECONDS = 90           # 每次生成的片段长度（秒）
 PROXY_BUCKET_SECONDS = 30    # 起播点对齐粒度，便于缓存命中（前端必须一致）
 PROXY_HEIGHT = 1080          # 片段高度
 PROXY_CRF = 25               # H.264 质量，越小越清晰、文件越大
+
+# 「导出前后 10 秒」：以当前播放位置为中心，前 5 秒 + 后 5 秒，压成 1080p。
+# 这种片段是拿来转发给别人的，所以码率压得比网页缓存的转码片段更狠一点
+# （CRF 28 + 限码率 2.2 Mbps），10 秒大约 2~3 MB。
+CLIP_BEFORE_SECONDS = 5
+CLIP_AFTER_SECONDS = 5
+CLIP_HEIGHT = 1080
+CLIP_CRF = 28
+CLIP_MAXRATE = "2200k"
+CLIP_AUDIO_BITRATE = "96k"
+CLIP_DIR_NAME = "video_clip"
 PROXY_CACHE_MAX_MB = 4096    # 片段缓存上限，超出后按最旧的删除
 PROXY_LOCK = threading.Lock()
+
+# 导出片段放这里（和网页缓存的转码片段分开，免得被 prune 按缓存清掉）
+CLIP_DIR = TEST_DIR / CLIP_DIR_NAME
+CLIP_LOCK = threading.Lock()
 
 # ------------------------------------------------------------
 # 视频实时信息（云台朝向/俯仰、焦距、变焦、高度）
@@ -3403,6 +3418,156 @@ def build_proxy_segment(video_path, start_seconds, seconds):
 
 
 # ============================================================
+# 导出「前后 10 秒」片段（给用户转发用）
+# ============================================================
+
+def build_clip(video_path, center_seconds):
+    """以 center_seconds 为中心，切「前 5 秒 + 后 5 秒」并压成 1080p。
+
+    返回 (片段路径, 实际起点秒, 实际时长秒)。
+
+    和 build_proxy_segment 的区别：
+      · 起点**不对齐**到 PROXY_BUCKET_SECONDS —— 用户要的就是「当前这一下」前后各 5 秒；
+      · 码率压得更狠（CRF 28 + maxrate 2200k），因为这种片段是转发给别人的，
+        文件越小越好；10 秒大约 2~3 MB；
+      · 结果也缓存（同一视频同一秒重复点不会重转），但放在单独的 CLIP_DIR，
+        不会被网页播放缓存的 prune_proxy_cache 清掉。
+    """
+
+    ffmpeg = find_ffmpeg()
+
+    if not ffmpeg:
+        raise ValueError(
+            "未找到 ffmpeg，无法导出片段。"
+            " 请安装 ffmpeg 并确保 ffmpeg 在 PATH 中，然后重启服务。"
+        )
+
+    try:
+        stat = video_path.stat()
+        stamp = f"{video_path}|{stat.st_size}|{int(stat.st_mtime)}"
+
+    except OSError:
+        raise ValueError("无法读取视频文件信息。")
+
+    info = probe_video_stream(video_path)
+    duration = float((info or {}).get("duration") or 0.0)
+
+    # 起点：想往前 5 秒，但不能小于 0；同时保证「后 5 秒」还在文件里
+    start = max(0.0, float(center_seconds) - CLIP_BEFORE_SECONDS)
+
+    if duration:
+        start = min(start, max(0.0, duration - 0.5))
+
+    seconds = float(CLIP_BEFORE_SECONDS + CLIP_AFTER_SECONDS)
+
+    if duration:
+        seconds = max(1.0, min(seconds, max(1.0, duration - start)))
+
+    digest = hashlib.sha1(
+        f"{stamp}|{round(start, 2)}|{round(seconds, 2)}|{CLIP_HEIGHT}|{CLIP_CRF}".encode("utf-8")
+    ).hexdigest()[:20]
+
+    output_path = CLIP_DIR / f"{digest}.mp4"
+
+    with CLIP_LOCK:
+
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return output_path, start, seconds
+
+        CLIP_DIR.mkdir(parents=True, exist_ok=True)
+
+        temp_path = output_path.with_name(output_path.stem + ".part.mp4")
+
+        command = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel", "error",
+            # -ss 放在 -i 前面：关键帧定位、快（不需要解码前面那一大段）。
+            # 导出片段差个零点几秒无所谓，换来的是几秒钟就能出结果。
+            "-ss", f"{start:.3f}",
+            "-i", str(video_path),
+            "-t", f"{seconds:.3f}",
+            "-map", "0:v:0",
+            "-map", "0:a?",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", str(CLIP_CRF),
+            "-maxrate", CLIP_MAXRATE,
+            "-bufsize", "4400k",
+            "-vf", f"scale=-2:{CLIP_HEIGHT}",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", CLIP_AUDIO_BITRATE,
+            "-movflags", "+faststart",
+            "-y", str(temp_path),
+        ]
+
+        try:
+            completed = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=600,
+            )
+
+        except subprocess.TimeoutExpired:
+            raise ValueError("导出超时（ffmpeg 超过 10 分钟没完成）。")
+
+        except OSError as e:
+            raise ValueError(f"无法启动 ffmpeg：{e}")
+
+        if (
+            completed.returncode != 0
+            or not temp_path.exists()
+            or temp_path.stat().st_size == 0
+        ):
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+            detail = (completed.stderr or b"").decode(
+                "utf-8",
+                errors="replace"
+            ).strip()[:300]
+
+            raise ValueError(f"导出失败：{detail or '未知错误'}")
+
+        temp_path.replace(output_path)
+
+    return output_path, start, seconds
+
+
+def send_clip_download(handler, file_path, download_name):
+    """把导出的片段当**下载**发出去（浏览器直接存文件，不在页面里播）。"""
+
+    file_size = file_path.stat().st_size
+
+    # 文件名里可能有中文/空格，按 RFC 5987 同时给 filename 与 filename*
+    quoted = url_quote(download_name)
+
+    handler.send_response(200)
+    handler.send_header("Content-Type", "video/mp4")
+    handler.send_header("Content-Length", str(file_size))
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header(
+        "Content-Disposition",
+        f"attachment; filename=\"{quoted}\"; filename*=UTF-8''{quoted}"
+    )
+    handler.end_headers()
+
+    with open(file_path, "rb") as clip_file:
+        remaining = file_size
+
+        while remaining > 0:
+            chunk = clip_file.read(min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            handler.wfile.write(chunk)
+            remaining -= len(chunk)
+
+
+# ============================================================
 # 地图瓦片代理
 # ============================================================
 
@@ -5743,6 +5908,62 @@ class ProjectManagerHandler(
                         params.get("lng", [""])[0]
                     )
                 )
+
+            except Exception as e:
+
+                json_response(
+                    self,
+                    {"error": str(e)},
+                    400
+                )
+
+            return
+
+        # ----------------------------------------------------
+        # 导出「前后 10 秒」：以当前播放位置为中心，前 5 秒 + 后 5 秒，1080p
+        # ----------------------------------------------------
+
+        if path == "/api/project/clip":
+
+            try:
+
+                params = parse_qs(parsed.query)
+
+                project_name = params.get("name", [""])[0]
+                folder_index = params.get("folder_index", [""])[0]
+                relative_path = params.get("path", [""])[0]
+
+                if not project_name:
+                    raise ValueError("缺少项目名称。")
+
+                if not relative_path:
+                    raise ValueError("缺少视频相对路径。")
+
+                try:
+                    center = float(params.get("center", ["0"])[0] or 0)
+                except ValueError:
+                    center = 0.0
+
+                center = max(0.0, center)
+
+                video_path = resolve_project_video(
+                    project_name,
+                    folder_index,
+                    relative_path
+                )
+
+                clip_path, start, seconds = build_clip(video_path, center)
+
+                # 文件名：视频名 + 起止时刻，转发给别人时一眼能看出是哪一段
+                # （文件名里不能有冒号，Windows 不允许，所以用点分隔）
+                stem = Path(relative_path).stem
+                span = (
+                    f"{format_seconds_text(start).replace(':', '.')}"
+                    f"-{format_seconds_text(start + seconds).replace(':', '.')}"
+                )
+                download_name = f"{stem}_{span}.mp4"
+
+                send_clip_download(self, clip_path, download_name)
 
             except Exception as e:
 

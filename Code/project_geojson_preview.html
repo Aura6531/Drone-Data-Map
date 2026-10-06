@@ -885,6 +885,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             <button id="thermalToggle" class="toggle-btn" type="button" hidden aria-pressed="true" title="同步热成像画面：显示 / 关闭（画面左下角）">红外</button>
             <button id="mapPipToggle" class="toggle-btn" type="button" aria-pressed="true" title="地图小地图：显示 / 关闭（画面右下角，跟着飞机走）">小地图</button>
             <button id="speedToggle" class="toggle-btn" type="button" aria-pressed="false" title="2 倍速播放：开 / 关（可见光与热成像同步，切换视频后仍然生效）">2倍速</button>
+            <!-- 导出片段：以当前播放位置为中心，前 5 秒 + 后 5 秒（共 10 秒），1080p。
+                 放在「2倍速」右边（用户 2026-10-07 指定的位置）。 -->
+            <button id="clipBtn" class="toggle-btn" type="button"
+                    title="导出前后 10 秒：以当前画面这一下为中心，前 5 秒 + 后 5 秒，压成 1080p 下载（方便转发）">导出前后10秒</button>
             <!-- 原来自制了一个「全屏」按钮，但它和浏览器自带控件那个重复，
                  而且原生那个是真铺满、零黑边（自制那条 theater 布局始终有黑边）。
                  所以按需求删掉自制按钮，全屏统一用视频控件里的那个。 -->
@@ -5573,6 +5577,100 @@ if(speedToggle){
 [videoPlayer,videoThermal].forEach(el=>{
   if(el&&typeof el.addEventListener==='function')el.addEventListener('loadedmetadata',applyPlaybackRate);
 });
+
+/* ============================================================
+   导出「前后 10 秒」（1080p 片段，转发用）
+   ------------------------------------------------------------
+   用户 2026-10-07：「给视频模块增加一个按钮：导出前后10秒。
+   一共10秒，前5秒后5秒。分辨率用1080P即可。这种视频一般是下载下来
+   转发给别人看的，不能太大。放在【2倍速】按钮的右边。」
+   切片段与压制都在后端做（/api/project/clip，ffmpeg：前 5 秒 + 后 5 秒、
+   1080p、CRF 28 + 限码率），前端只负责报出「当前这一刻是哪一秒」并触发下载。
+   ============================================================ */
+
+const clipBtn=document.getElementById('clipBtn');
+// 导出中心点的时间半径，只用于文案提示（真正的切点在服务端）
+const CLIP_BEFORE_SECONDS=5;
+const CLIP_AFTER_SECONDS=5;
+
+// 当前播放位置在**整段视频**里的秒数。
+// 走转码片段时 <video> 的时间轴从片段头（bucket）算起，必须把 bucket 加回去，
+// 否则导出的会是「片段里的那一秒」而不是视频里的那一秒。
+function currentVideoSeconds(){
+  if(!videoPlayer||!clip)return null;
+
+  const t=Number(videoPlayer.currentTime);
+
+  if(!Number.isFinite(t))return null;
+
+  const bucket=clip.useProxy?proxyBucketOf(clip.start):0;
+
+  return Math.max(0,bucket+t);
+}
+
+// 云端文件名里的时刻文本（和视频标题一致的口径）
+function clipTimeText(seconds){
+  return formatTime(Math.max(0,Number(seconds)||0));
+}
+
+function exportClip(){
+  if(!clip){
+    if(videoStatus)videoStatus.textContent='还没有在播的视频，先打开一段再导出。';
+    return;
+  }
+
+  const center=currentVideoSeconds();
+
+  if(center===null){
+    if(videoStatus)videoStatus.textContent='读不到当前播放位置，稍等一下再点导出。';
+    return;
+  }
+
+  const from=Math.max(0,center-CLIP_BEFORE_SECONDS);
+  const to=center+CLIP_AFTER_SECONDS;
+
+  const q=new URLSearchParams({
+    name:projectSelect.value,
+    folder_index:String(clip.folderIndex),
+    path:clip.path,
+    center:String(center.toFixed(3))
+  });
+
+  if(videoStatus){
+    videoStatus.textContent=`正在导出 ${clipTimeText(from)} ~ ${clipTimeText(to)}（1080p，`
+      +`约 ${CLIP_BEFORE_SECONDS+CLIP_AFTER_SECONDS} 秒）……第一次要等十几秒。`;
+  }
+
+  if(clipBtn)clipBtn.disabled=true;
+
+  // 直接用隐藏的 <a download> 触发下载：响应头带 Content-Disposition: attachment，
+  // 浏览器会存文件而不是在页面里播。
+  try{
+    const a=document.createElement('a');
+    a.href='/api/project/clip?'+q.toString();
+    a.download='';
+    a.style.display='none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    setTimeout(()=>{
+      if(videoStatus)videoStatus.textContent=
+        `已导出 ${clipTimeText(from)} ~ ${clipTimeText(to)}（1080p）。`
+        +`若浏览器没弹出保存框，检查是否拦了下载。`;
+    },1200);
+
+  }catch(e){
+    if(videoStatus)videoStatus.textContent='导出失败：'+e.message;
+
+  }finally{
+    setTimeout(()=>{if(clipBtn)clipBtn.disabled=false},1500);
+  }
+}
+
+if(clipBtn){
+  clipBtn.addEventListener('click',exportClip);
+}
 
 /* ============================================================
    天地图 key：先用系统、后补 key
