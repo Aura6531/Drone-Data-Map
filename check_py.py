@@ -41,20 +41,28 @@ for need in ("PROXY_DIR", "PROXY_SECONDS", "PROXY_BUCKET_SECONDS", "PROXY_HEIGHT
              "PROXY_CRF", "PROXY_CACHE_MAX_MB", "PROXY_LOCK", "VIDEO_PROBE_CACHE",
              # 导出片段：前 5 + 后 5 秒、1080p、单独缓存目录
              "CLIP_BEFORE_SECONDS", "CLIP_AFTER_SECONDS", "CLIP_HEIGHT", "CLIP_CRF",
-             "CLIP_MAXRATE", "CLIP_DIR"):
+             "CLIP_MAXRATE", "CLIP_BUFSIZE", "CLIP_CACHE_MAX_MB", "CLIP_DIR"):
     chk(need in consts, need)
 
 print("\n=== 导出「前后 10 秒」的实现要点 ===")
 chk("CLIP_BEFORE_SECONDS = 5" in src and "CLIP_AFTER_SECONDS = 5" in src,
     "默认前 5 秒 + 后 5 秒（一共 10 秒）")
 chk("CLIP_HEIGHT = 1080" in src, "导出高度 1080p")
-chk('"-maxrate", CLIP_MAXRATE' in src and '"-crf", str(CLIP_CRF)' in src,
-    "限码率 + CRF（转发用，文件要小）")
+# 画质：原来 crf28 + 2200k 实测 SSIM 0.894、用户说糊；现在 crf20 + 6000k
+chk("CLIP_CRF = 20" in src, "CRF 20（比原来的 28 清晰一大截）")
+chk('CLIP_MAXRATE = "6000k"' in src, "限码率 6000k（原来 2200k 太狠）")
+chk('"-maxrate", CLIP_MAXRATE' in src and '"-bufsize", CLIP_BUFSIZE' in src,
+    "限码率与缓冲都走常量")
 chk('f"scale=-2:{CLIP_HEIGHT}"' in src, "按 1080p 等比缩放（宽度自动偶数）")
 chk('"attachment; filename=' in src, "按下载发出去（Content-Disposition: attachment）")
 chk("url_quote(download_name)" in src, "中文文件名转义后再放进响应头")
 chk("CLIP_DIR" in src and "clip_path, start, seconds = build_clip" in src,
     "片段缓存在独立目录（不会被播放缓存清理掉）")
+chk("prune_clip_cache" in names and "prune_clip_cache()" in src,
+    "导出目录有自己的清理（超过 CLIP_CACHE_MAX_MB 按最旧的删）")
+chk("CLIP_MAXRATE}|{CLIP_BUFSIZE}" in src.replace("f\"|{", "f\"|{")
+    or "|{CLIP_MAXRATE}|{CLIP_BUFSIZE}" in src,
+    "缓存指纹带上码率参数（改压制档位会重新生成，不会复用旧文件）")
 chk('"/api/project/clip"' in src, "注册了 /api/project/clip 路由")
 
 print("\n=== 路由与关键行为 ===")

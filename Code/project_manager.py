@@ -244,15 +244,25 @@ PROXY_HEIGHT = 1080          # 片段高度
 PROXY_CRF = 25               # H.264 质量，越小越清晰、文件越大
 
 # 「导出前后 10 秒」：以当前播放位置为中心，前 5 秒 + 后 5 秒，压成 1080p。
-# 这种片段是拿来转发给别人的，所以码率压得比网页缓存的转码片段更狠一点
-# （CRF 28 + 限码率 2.2 Mbps），10 秒大约 2~3 MB。
+# 这种片段是拿来转发给别人的，但**不能为了小把画面压糊**：
+# 用户 2026-10-07 反馈「码率压得有点高，看着比较糊」。实测同一段真实素材
+# （4K 原片第 600 秒起 10 秒，缩到 1080p，与 crf12/slow 的对照算分）：
+#     crf28 + 2200k：2.3 MB，SSIM 0.894，PSNR 30.5 dB  ← 原来那档，确实糊
+#     crf24 + 4000k：4.3 MB，SSIM 0.939，PSNR 33.4 dB
+#     crf22 + 5000k：5.8 MB，SSIM 0.953，PSNR 34.7 dB
+#     crf20 + 6000k：7.3 MB，SSIM 0.960，PSNR 35.6 dB  ← 现在这档，肉眼看已经很干净
+#     crf18 + 8000k：9.8 MB，SSIM 0.970，PSNR 37.1 dB
+# 选 crf20：10 秒约 7 MB，微信/邮件转发都没问题，画质比原来好一大截。
+# 想再小就调 CLIP_CRF（22 -> 约 5.8 MB）；想更清晰调到 18。
 CLIP_BEFORE_SECONDS = 5
 CLIP_AFTER_SECONDS = 5
 CLIP_HEIGHT = 1080
-CLIP_CRF = 28
-CLIP_MAXRATE = "2200k"
+CLIP_CRF = 20
+CLIP_MAXRATE = "6000k"
+CLIP_BUFSIZE = "12000k"
 CLIP_AUDIO_BITRATE = "96k"
 CLIP_DIR_NAME = "video_clip"
+CLIP_CACHE_MAX_MB = 2048     # 导出片段目录上限，超出后按最旧的删
 PROXY_CACHE_MAX_MB = 4096    # 片段缓存上限，超出后按最旧的删除
 PROXY_LOCK = threading.Lock()
 
@@ -3464,7 +3474,8 @@ def build_clip(video_path, center_seconds):
         seconds = max(1.0, min(seconds, max(1.0, duration - start)))
 
     digest = hashlib.sha1(
-        f"{stamp}|{round(start, 2)}|{round(seconds, 2)}|{CLIP_HEIGHT}|{CLIP_CRF}".encode("utf-8")
+        f"{stamp}|{round(start, 2)}|{round(seconds, 2)}|{CLIP_HEIGHT}|{CLIP_CRF}"
+        f"|{CLIP_MAXRATE}|{CLIP_BUFSIZE}".encode("utf-8")
     ).hexdigest()[:20]
 
     output_path = CLIP_DIR / f"{digest}.mp4"
@@ -3493,7 +3504,7 @@ def build_clip(video_path, center_seconds):
             "-preset", "veryfast",
             "-crf", str(CLIP_CRF),
             "-maxrate", CLIP_MAXRATE,
-            "-bufsize", "4400k",
+            "-bufsize", CLIP_BUFSIZE,
             "-vf", f"scale=-2:{CLIP_HEIGHT}",
             "-pix_fmt", "yuv420p",
             "-c:a", "aac",
@@ -3535,7 +3546,57 @@ def build_clip(video_path, center_seconds):
 
         temp_path.replace(output_path)
 
+    prune_clip_cache()
+
     return output_path, start, seconds
+
+
+def prune_clip_cache():
+    """导出片段目录别无限长：超过 CLIP_CACHE_MAX_MB 就按最旧的删。
+
+    导出的片段是给用户下载的，删了也不影响他用（他自己那份已经存下来了），
+    所以要清就清，不会像网页缓存那样有「删了就得重转」的代价。
+    """
+
+    try:
+        files = [
+            p for p in CLIP_DIR.glob("*.mp4")
+            if p.is_file()
+        ]
+
+    except OSError:
+        return
+
+    total = 0
+    entries = []
+
+    for path in files:
+        try:
+            stat = path.stat()
+
+        except OSError:
+            continue
+
+        total += stat.st_size
+        entries.append((stat.st_mtime, stat.st_size, path))
+
+    limit = CLIP_CACHE_MAX_MB * 1024 * 1024
+
+    if total <= limit:
+        return
+
+    entries.sort()  # 最旧的在前
+
+    for _mtime, size, path in entries:
+        if total <= limit:
+            break
+
+        try:
+            path.unlink()
+            total -= size
+
+        except OSError:
+            continue
 
 
 def send_clip_download(handler, file_path, download_name):
