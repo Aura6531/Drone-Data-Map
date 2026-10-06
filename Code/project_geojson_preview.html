@@ -509,24 +509,18 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
   .card-tools.map-tools .photo-tools #photoLayerCount{display:none}
 }
 
-/* 照片点：画成 SVG 圆形，fill 走 CSS 变量（实测=蓝、位置不准=橙）。
+/* 照片点：画成 SVG 圆形，fill 走 CSS 变量（实测=蓝、位置不准=黄）。
    刻意不用 emoji 当点 —— emoji 的尺寸与基线随字体变，多张排在一起会歪。 */
 .photo-div-icon{background:none;border:none}
 .photo-dot-svg{display:block;overflow:visible;filter:drop-shadow(0 1px 2px rgba(15,23,42,.45))}
 .photo-div-icon .photo-dot{fill:var(--photo-dot,#1d4ed8);stroke:#fff;stroke-width:2}
-.photo-div-icon.photo-warn .photo-dot{fill:#f59e0b}
+/* 「位置不准」不再在外面挂一个 ⚠ 三角（用户 2026-10-07：
+   「图标合并到一起，用黄色点、里面是个叹号就可以了」）——
+   点本身变黄，叹号画在圆里面，一个标记就说完。 */
+.photo-div-icon.photo-warn .photo-dot{fill:var(--photo-warn-dot,#f5b301)}
+.photo-div-icon .photo-dot-mark{fill:#1f2937}
 
-/* 「非实测」角标：⚠ 贴在点的右上角。
-   不加圆底、不加描边 —— 就是用户说的「贴个角标」，多了反而像另一个标记。
-   text-anchor:middle + dominant-baseline 让它在 20×20 的图标里居中；
-   字形取 SVG 里的文本基元（U+26A0 不带 U+FE0F），避免彩色 emoji 字体把它画成
-   一张方图、位置因字体而异。颜色用深琥珀，压在浅色影像底图上也能看清。 */
-.photo-div-icon .photo-warn-mark{
-  font-family:"Segoe UI Symbol","Noto Sans Symbols 2",sans-serif;
-  font-size:13px;font-weight:700;fill:#b45309;stroke:#fff;stroke-width:3;
-  paint-order:stroke;text-anchor:middle;dominant-baseline:central}
-
-/* 当前选中的照片点：外面加一圈琥珀色光晕，和展示区里那张大图呼应 */
+/* 当前选中的照片点：描一圈琥珀色，和展示区里那张大图呼应 */
 .photo-div-icon.photo-active .photo-dot{stroke:#f59e0b;stroke-width:3}
 
 /* ---- 右栏里的照片展示区 ---- */
@@ -3962,6 +3956,12 @@ function photoMatchesFor(group){
 
 // 照片点的图标。实测=蓝点；位置不准=橙点 + 右上角 ⚠。
 // 用 SVG 而不是 DOM 圆点：⚠ 要压在圆的右上角、还要不受字体度量影响。
+// 照片点的图标。
+// 实测 = 蓝点；位置不准 = **黄点 + 圆里一个叹号**（用户 2026-10-07 要求：
+// 「图标合并到一起，用黄色点、里面是个叹号就可以了」——原来是橙点外面挂个 ⚠ 三角，
+// 两个图元挤在 20×20 里既挤又容易被误认成两个标记）。
+// 叹号用 SVG 基元（矩形 + 圆点）画，不用字体里的「!」：
+// 字体度量会让它在不同机器上偏上偏下，SVG 基元位置是定死的。
 function photoIcon(group,active){
   if(!leafletReady()||typeof L.divIcon!=='function')return null;
 
@@ -3970,9 +3970,15 @@ function photoIcon(group,active){
 
   const cls='photo-div-icon'+(warn?' photo-warn':'')+(activeNow?' photo-active':'');
 
-  // 光晕用内联颜色 + 外层 SVG 的 CSS 变量：选中时光圈要和点本身的颜色一致，
-  // 而颜色是由「实不实测」在 JS 里决定的，CSS 里没法从一个变量推另一个。
-  const dotColor=warn?'#f59e0b':'#1d4ed8';
+  // 内联颜色 + 外层 CSS 变量：颜色由「实不实测」在 JS 里决定，
+  // CSS 里没法从一个变量推另一个（选中时的描边色也要跟它一致）。
+  const dotColor=warn?'#f5b301':'#1d4ed8';
+
+  // 叹号：不压到圆边（圆半径 6，竖条从 y=6.9 到 10.8、点在 12.3）
+  const mark=warn
+    ?'<rect class="photo-dot-mark" x="9.15" y="6.9" width="1.7" height="3.9" rx="0.85"/>'
+     +'<circle class="photo-dot-mark" cx="10" cy="12.3" r="1.05"/>'
+    :'';
 
   return L.divIcon({
     className:cls,
@@ -3981,8 +3987,8 @@ function photoIcon(group,active){
     tooltipAnchor:[0,-11],
     html:`<svg class="photo-dot-svg" width="20" height="20" viewBox="0 0 20 20" style="--photo-dot:${dotColor}">`
         +`<circle class="photo-dot" cx="10" cy="10" r="6"/>`
+        +mark
         +`</svg>`
-        +(warn?'<span class="photo-warn-mark">⚠</span>':'')
   });
 }
 

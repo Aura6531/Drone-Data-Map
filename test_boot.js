@@ -409,9 +409,14 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     return json({});
   };
 
-  // divIcon 的 html 参数里带着照片点/⚠ 角标，顺手收下来验证
+  // divIcon 的 html 参数里带着照片点/叹号；className 里带着 photo-warn
   const realDivIcon = globalThis.L.divIcon;
-  globalThis.L.divIcon = (opts) => { svgHolder.push(String((opts && opts.html) || '')); return realDivIcon(opts) };
+  const iconOpts = [];
+  globalThis.L.divIcon = (opts) => {
+    svgHolder.push(String((opts && opts.html) || ''));
+    iconOpts.push(opts || {});
+    return realDivIcon(opts);
+  };
 
   let threw = null;
   try {
@@ -491,13 +496,16 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   }
 
   const iconHtml = svgHolder.slice(before).join('\n');
+  const iconCls = iconOpts.slice(before).map((o) => String(o.className || '')).join('\n');
   chk(/photo-dot/.test(iconHtml), '照片点用 SVG 圆点画');
-  chk(/photo-warn-mark/.test(iconHtml), '「位置不准」那个点贴了 ⚠ 角标');
-  chk((iconHtml.match(/photo-warn-mark/g) || []).length === 1,
-    '只有那一个「位置不准」的贴角标（实测的不贴）',
-    String((iconHtml.match(/photo-warn-mark/g) || []).length) + ' 个');
-  chk(/--photo-dot:#f59e0b/.test(iconHtml), '带角标那个点本身是橙色');
+  chk(/photo-warn/.test(iconCls), '「位置不准」的那个点带 photo-warn 类',
+    iconCls.replace(/\s+/g, ' ').slice(0, 80));
+  chk(/photo-dot-mark/.test(iconHtml), '「位置不准」的圆里画了叹号（.photo-dot-mark）');
+  chk((iconHtml.match(/--photo-dot:#f5b301/g) || []).length === 1,
+    '只有那一个「位置不准」的是黄点（实测的不黄）',
+    String((iconHtml.match(/--photo-dot:#f5b301/g) || []).length) + ' 个');
   chk(/--photo-dot:#1d4ed8/.test(iconHtml), '实测那个点是蓝色');
+  chk(!/⚠/.test(iconHtml), '图标里不再有 ⚠ 三角（合并成一个叹号了）');
 
   // 点第一个照片点：展示区应被打开，并把该组全部成员放出来
   const card = sb.els.get('photoCard');

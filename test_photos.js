@@ -682,9 +682,12 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     String((html.match(/loadProjectPhotos\(\)/g) || []).length) + ' 处');
 
   // 「非实测」必须走 ⚠ 角标，而不是换一种颜色的点（用户 2026-10-06 明确要求的）
-  chk(/photo-warn-mark[^>]*>⚠</.test(html.replace(/\s+/g, ' ')) || html.includes("photo-warn-mark'>⚠"),
-    '⚠ 角标是独立元素贴在点的右上角');
-  chk(!/photo-warn[^}]*background:#fde68a/.test(html), '没有退回到「黄色小圆点」那套');
+  // 「位置不准」必须是一个合并的标记：黄点 + 圆里的叹号（用户 2026-10-07 定）
+  chk(/\.photo-div-icon\.photo-warn \.photo-dot\{fill:var\(--photo-warn-dot,#f5b301\)\}/.test(html),
+    '「位置不准」的点本身是黄点（不是外面再挂一个三角）');
+  chk(/\.photo-div-icon \.photo-dot-mark\{fill:#1f2937\}/.test(html), '叹号画在圆里面（.photo-dot-mark）');
+  chk(!/photo-warn-mark/.test(html), '旧的 ⚠ 角标（外面挂三角）已经去掉');
+  chk(!/photo-warn[^}]*background:#fde68a/.test(html), '也没有退回到「黄色小圆点」那套');
 
   // 展示区现在在右栏（2026-10-07 用户要求挪过去），不在中栏地图下面了
   chk(html.indexOf('id="photoCard"') > html.indexOf('class="col col-mid"'),
