@@ -1697,6 +1697,8 @@ console.log('\n=== 标记点报告（Word）===');
     (html.match(/name="reportBasemap"/g) || []).length + ' 处');
   chk(/<input type="radio" name="reportBasemap" value="satellite" checked>/.test(html),
     '报告底图默认选卫星图（选项里也标了「推荐」）');
+  chk(/推荐 —— 影像底图更好认/.test(html),
+    '推荐理由就写「影像底图更好认」（短句，一行放得下）');
   chk(!/<select id="reportBasemap"/.test(html), '不再用下拉框');
   chk(/const REPORT_DEFAULT_BASEMAP='satellite'/.test(body),
     "REPORT_DEFAULT_BASEMAP='satellite'（与网页地图的默认值分开）");
