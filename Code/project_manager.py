@@ -6553,6 +6553,8 @@ class ProjectManagerHandler(
 
         每个标记点的字段（前端负责填全）：
             id / name / lat / lng / video / time / created
+            fx / fy（可选）：右键取点时鼠标点在画面上的归一化位置（0..1，左上为原点），
+                            报告的视频截图靠它叠目标点标志。老标记点没有这两个字段。
         其中 video + time 是"点列表能跳回那一帧"的关键。
         """
 
@@ -6585,7 +6587,7 @@ class ProjectManagerHandler(
                 if lat is None or lng is None:
                     continue
 
-                cleaned.append({
+                entry = {
                     "id": str(item.get("id") or ""),
                     "name": str(item.get("name") or "标记"),
                     "lat": float(lat),
@@ -6593,7 +6595,23 @@ class ProjectManagerHandler(
                     "video": str(item.get("video") or ""),
                     "time": float(item.get("time") or 0),
                     "created": str(item.get("created") or "")
-                })
+                }
+
+                # 画面落点：有且合法才带上。
+                # 这里曾经按固定字段重建、把它悄悄丢了 —— 表现是「页面刷新后报告里的
+                # 目标点标志全没了」，打包验收时才发现（见 packaging/accept_packaged_app.py）。
+                try:
+                    fx = float(item.get("fx"))
+                    fy = float(item.get("fy"))
+
+                except (TypeError, ValueError):
+                    fx = fy = None
+
+                if fx is not None and fy is not None and 0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0:
+                    entry["fx"] = fx
+                    entry["fy"] = fy
+
+                cleaned.append(entry)
 
             project["markers"] = cleaned
 
