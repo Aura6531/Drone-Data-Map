@@ -81,24 +81,33 @@ html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width
 .leaflet-interactive.track-hit{pointer-events:stroke}
 .col-mid .card>.card-head{flex:0 0 auto}
 
-/* 左栏收起：整列缩成一条窄轨，只留展开按钮 */
 .col-left{position:relative;overflow:visible}
 .col-left .col-body{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
-/* 收起按钮现在是标题行里的普通按钮（原来绝对定位在栏右上角，会单独占一行）。
-   尺寸和收起后窄轨上的展开箭头保持一致。 */
-.side-toggle{flex:0 0 auto;width:28px;height:28px;padding:0;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#475569;font-size:15px;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+/* 左栏的「标签开关」：项目数据 / 轨迹文件  ↔  标记点
+   （用户 2026-10-07：「标记点模块跟项目数据和轨迹文件模块占用同一空间，
+   把那个『项目数据向左收起』的按钮做成标记点页面的标签开关」）。
+   两个页共用左栏这一块，点按钮来回切；原来的「收起成窄轨」整套样式已删除。 */
+.side-toggle{flex:0 0 auto;height:28px;padding:0 12px;border:1px solid #cbd5e1;border-radius:7px;
+             background:#fff;color:#475569;font-size:13px;font-weight:600;line-height:1;cursor:pointer;
+             display:flex;align-items:center;justify-content:center;white-space:nowrap}
 .side-toggle:hover{border-color:#2563eb;color:#2563eb;background:#f8fbff}
-.side-toggle:hover{background:#f1f5f9;border-color:#94a3b8}
-.side-rail{display:none}
-body.side-collapsed .layout{grid-template-columns:40px minmax(0,1fr) minmax(0,1.12fr)}
-body.side-collapsed .col-left .col-body,
-body.side-collapsed .col-left .side-toggle{display:none}
-/* 收起后保留一条窄轨：整条都可点（好按），顶部放一个「展开」箭头，
-   与右上角的「收起」箭头构成一对 */
-body.side-collapsed .col-left .side-rail{display:flex;align-items:flex-start;justify-content:center;flex:1;width:100%;padding:10px 0 0;border:1px solid #dbe3ee;border-radius:12px;background:#fff;cursor:pointer}
-.side-rail-icon{width:28px;height:28px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#475569;font-size:15px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center}
-body.side-collapsed .col-left .side-rail:hover{background:#f8fbff;border-color:#2563eb}
-body.side-collapsed .col-left .side-rail:hover .side-rail-icon{color:#2563eb;border-color:#2563eb}
+/* 当前正显示哪一页：没显示的那一页整体隐藏。
+   .left-view 只是个外层包裹层，负责「让卡片纵向铺满」；真正显隐的是
+   #viewProject / #markerCard —— 两个都写清楚 display，免得被别的规则盖住。 */
+.col-left .left-view{display:none}
+.col-left.view-project .left-view,
+.col-left.view-markers .left-view{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
+.col-left #viewProject{display:none}
+.col-left #markerCard{display:none}
+.col-left.view-project #viewProject{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
+.col-left.view-markers #markerCard{display:flex;flex-direction:column;min-height:0;flex:1}
+/* 标记点页里列表要能撑满并自己滚（和右栏那版一样） */
+.col-left .marker-card{min-height:0}
+/* 导出这四个按钮：左栏 380px 放不下「删除 / 导出 KML / 复制经纬度 / 生成 Word 报告」
+   一行，让它们自己换行；用 .card-tools.marker-tools 而不是 .row，
+   这样「三张卡片各一个 .card-tools」那套结构保持一致。 */
+.col-left .card-tools.marker-tools{flex-wrap:wrap;justify-content:flex-start;gap:8px;margin-top:2px}
+.col-left .card-tools.marker-tools button{flex:0 1 auto;height:32px;padding:0 10px;font-size:12px;white-space:nowrap}
 
 /* 右栏：视频未播放时的占位说明 */
 /* 最小高度：右栏下面还有照片展示区（可伸缩）与标记点卡片，
@@ -400,10 +409,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    视频面板改成「按内容高度」（flex:0 0 auto），剩下的高度全给列表，
    列表内部滚动 —— 这样右栏原来的空白处就利用起来了。 */
 .col-right .video-panel{flex:0 0 auto;min-height:200px}
-/* flex 与最小高度都走变量：右栏出现照片展示区时，标记点卡片和它平分剩下的高度。
+/* flex 与最小高度都走变量：右栏出现照片展示区时要和它分高度。
    变量没被覆盖时就是原来的 1 1 auto / 190px。
    （min-height 也必须走变量：基础规则的选择器权重比「右栏里」那条低，
-     直接写在基础规则里会把它压过去。） */
+     直接写在基础规则里会把它压过去。）
+   注：标记点卡片 2026-10-07 已挪到左栏（与项目数据共用一块地方、标签开关切换），
+   所以下面那条 .col-right 的规则只在「标记点还在右栏」的历史布局里才有意义 ——
+   保留无害，但真正生效的是 .col-left 里那套。 */
 .marker-card{flex:var(--marker-flex,1 1 auto);min-height:var(--marker-min-h,190px);
              display:flex;flex-direction:column;gap:9px;padding:16px 18px}
 .marker-card h2{margin:0;font-size:17px;display:flex;align-items:center;gap:6px}
@@ -414,33 +426,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .marker-all{display:flex;align-items:center;gap:6px;margin:0;font-weight:700;font-size:13px;color:#334155}
 .marker-all input{width:15px;height:15px;margin:0}
 .marker-cols{margin-left:auto}
-/* 标记点卡片：默认收起（只剩标题栏那一行），把高度让给照片与视频。
-   用户 2026-10-07：「标记点整个模块做成靠右侧的一个纵栏，默认收起状态，
-   可以给照片和视频模块留出很多空间」——右栏本来就是竖排，
-   所以这里做的就是「收起成一行」，展开后恢复原来的列表。 */
-/* 收起：只剩标题栏那一行。
-   min-height 必须显式归零 —— 基础规则上的 var(--marker-min-h,190px) 还在，
-   卡片会硬撑着 190px（实测收起后仍占 190px）。 */
-.marker-card.is-collapsed{flex:0 0 auto;min-height:0;padding:9px 14px}
-.marker-card.is-collapsed .marker-body{display:none}
-/* 收起时标题栏不占多余间距（.card-head 默认 margin-bottom:16px） */
-.marker-card.is-collapsed .card-head{margin-bottom:0;align-items:center}
-.marker-collapse-toggle{flex:0 0 auto;width:24px;height:24px;padding:0;margin-right:2px;
-                        border:1px solid #cbd5e1;border-radius:6px;background:#fff;
-                        color:#475569;font-size:12px;line-height:1;cursor:pointer;
-                        display:flex;align-items:center;justify-content:center}
-.marker-collapse-toggle:hover{border-color:#2563eb;color:#2563eb;background:#f8fbff}
-/* 展开态：箭头朝下（点它收起）。收起态：朝右（点它展开） */
-.marker-card:not(.is-collapsed) .marker-collapse-toggle{transform:rotate(90deg)}
-.marker-card.is-collapsed .marker-collapse-toggle{transform:none}
-/* 收起时列表相关的东西都不显示（.marker-body 已经包住了，这里只是双保险） */
-.marker-card.is-collapsed .marker-head,
-.marker-card.is-collapsed .marker-list,
-.marker-card.is-collapsed .marker-hint{display:none}
-/* 收起态下标题不再占满整行，让「删除 / 导出 KML …」还排在右边 */
-.marker-card.is-collapsed h2{margin-right:auto}
-/* 展开：长到 240px 就够看列表了（不跟照片抢更多） */
-.marker-card:not(.is-collapsed){flex:1 1 240px}
+/* 标记点卡片原来还有一套「默认收起 / 点箭头展开」的样式（.is-collapsed +
+   .marker-collapse-toggle）。2026-10-07 用户把它挪到左栏、改成「与项目数据
+   共用一块地方、由标签开关切换」之后，那套已经删掉 —— 显示/隐藏整页由
+   .col-left.view-project / .view-markers 决定，不需要再叠一层收起。 */
 
 /* 标记点列表：默认一栏；数量多了由 JS 按可用宽度自动分栏
    （markerListLayout：每栏最多 8 行，宽度够就并栏）；
@@ -637,14 +626,21 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
      左栏可收起，收起后留一条窄轨用于展开。 -->
 <div class="layout" id="layout">
 
-  <aside class="col col-left" id="colLeft">
+  <aside class="col col-left view-project" id="colLeft">
+    <!-- 左栏是两个「页」共用一块地方（用户 2026-10-07 要求）：
+         · 项目页（默认）：项目数据 + 轨迹文件
+         · 标记点页：标记点列表 + 删除/导出 KML/复制经纬度/生成报告
+         标题行右侧那个按钮就是标签开关，点一下在两页之间切。 -->
     <div class="col-body">
+      <div class="left-view" id="viewProject">
       <section class="card">
-        <!-- 收起按钮和标题同一行：文字在左、按钮在右，不再单独占一行 -->
+        <!-- 标签开关与标题同一行：文字在左、按钮在右，不再单独占一行 -->
         <div class="card-head">
           <h2>项目数据</h2>
           <button id="sideToggle" class="side-toggle" type="button"
-                  title="收起检索栏" aria-label="收起检索栏">‹</button>
+                  aria-pressed="false"
+                  title="切到标记点（标记点列表与导出）"
+                  aria-label="切到标记点">标记点</button>
         </div>
 
         <label class="ctrl-label" for="projectSelect">选择项目</label>
@@ -702,11 +698,34 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div id="fileNotice" class="notice" style="display:none"></div>
         <div id="fileList" class="file-list" style="margin-top:16px"></div>
       </section>
+      </div><!-- /#viewProject -->
+
+      <!-- 标记点页：与项目页共用左栏这一块，标签开关切换。
+           原来是右栏最下面的卡片，2026-10-07 用户要求挪到这里。 -->
+      <section class="card marker-card card-fill" id="markerCard">
+        <div class="card-head">
+          <h2>标记点<span id="markerCount" class="marker-count">（空）</span></h2>
+          <button id="sideToggleBack" class="side-toggle" type="button"
+                  title="切回项目数据 / 轨迹文件" aria-label="切回项目数据">项目</button>
+        </div>
+        <div class="marker-head">
+          <label class="marker-all"><input type="checkbox" id="markerSelectAll">全选</label>
+          <span class="marker-cols">名称 · 纬度 · 经度（按创建时间）</span>
+        </div>
+        <div class="card-tools marker-tools">
+          <button id="markerDeleteBtn" class="secondary" type="button"
+                  title="删除勾选的标记点（只从项目里移除，不动视频和数据）">删除</button>
+          <button id="markerKmlBtn" class="secondary" type="button"
+                  title="把勾选的标记点导出成 KML（可在 Google Earth / 奥维等里打开）">导出 KML</button>
+          <button id="markerCopyBtn" class="secondary" type="button"
+                  title="把勾选点的「名称 / 纬度 / 经度」以制表符表格复制到剪贴板，可直接粘进 Excel">复制经纬度</button>
+          <button id="markerReportBtn" type="button"
+                  title="把勾选的点生成一份 Word 报告（目录可点 + 总表 + 每点一张视频截图和一张地图截图）">生成 Word 报告</button>
+        </div>
+        <div id="markerList" class="marker-list"></div>
+        <div id="reportStatus" class="marker-hint" style="display:none"></div>
+      </section>
     </div>
-    <button id="sideRail" class="side-rail" type="button"
-            title="展开检索栏" aria-label="展开检索栏">
-      <span class="side-rail-icon" aria-hidden="true">›</span>
-    </button>
   </aside>
 
   <section class="col col-mid">
@@ -868,38 +887,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       <div id="photoJump" class="photo-jump" style="display:none"></div>
     </section>
 
-    <!-- 标记点列表：视频画面右键取点得到的点都列在这里。
-         勾选后可批量删除 / 导出 KML / 复制名称+经纬度表格 / 生成 Word 报告；
-         点某一行则地图定位到该点、视频跳到那一帧。 -->
-    <section class="card marker-card" id="markerCard">
-      <div class="card-head">
-        <!-- 收起 / 展开：默认收起，整块只占一行，把高度让给照片与视频。
-             放在标题左侧（标题行最左），一眼就能看到、也顺手。 -->
-        <button id="markerCollapseBtn" class="marker-collapse-toggle" type="button"
-                aria-expanded="false" aria-controls="markerBody"
-                title="收起 / 展开标记点">▸</button>
-        <h2>标记点<span id="markerCount" class="marker-count">（空）</span></h2>
-        <div class="card-tools marker-tools">
-          <button id="markerDeleteBtn" class="secondary" type="button"
-                  title="删除勾选的标记点（只从项目里移除，不动视频和数据）">删除</button>
-          <button id="markerKmlBtn" class="secondary" type="button"
-                  title="把勾选的标记点导出成 KML（可在 Google Earth / 奥维等里打开）">导出 KML</button>
-          <button id="markerCopyBtn" class="secondary" type="button"
-                  title="把勾选点的「名称 / 纬度 / 经度」以制表符表格复制到剪贴板，可直接粘进 Excel">复制经纬度</button>
-          <button id="markerReportBtn" type="button"
-                  title="把勾选的点生成一份 Word 报告（目录可点 + 总表 + 每点一张视频截图和一张地图截图）">生成 Word 报告</button>
-        </div>
-      </div>
-      <!-- 收起时整块隐藏（只剩标题栏那一行） -->
-      <div id="markerBody" class="marker-body">
-        <div class="marker-head">
-          <label class="marker-all"><input type="checkbox" id="markerSelectAll">全选</label>
-          <span class="marker-cols">名称 · 纬度 · 经度（按创建时间）</span>
-        </div>
-        <div id="markerList" class="marker-list"></div>
-        <div id="reportStatus" class="marker-hint" style="display:none"></div>
-      </div>
-    </section>
+    <!-- 标记点列表已挪到左栏（与「项目数据 / 轨迹文件」共用一块地方，
+         由标题行那个标签开关切换）——见文件开头 <aside class="col col-left">。
+         右栏从此只放视频与照片展示区。 -->
   </section>
 
 </div>
@@ -1168,10 +1158,8 @@ let photoActiveMarker=null;   // 当前选中的那个照片点（高亮用）
 let photoIndex=null;          // Map<"文件夹|时刻", 组的索引>，点某个标记时反查用
 let photoMatches=null;        // Map<组索引, 匹配到的视频>，按组缓存
 
-// 标记点卡片默认收起（用户 2026-10-07 要求：把空间让给照片与视频）。
-// 收起时只剩一行标题栏，点左边的箭头展开。放在顶层声明是为了避免暂时性死区
-// （见上面那段注释）。
-let markerCollapsed=true;
+// 标记点卡片 2026-10-07 已挪到左栏（与项目数据共用一块地方、标签开关切换），
+// 不再有「默认收起」那层状态。
 
 // ------------------------------------------------------------
 // 各功能的开关状态。
@@ -1895,7 +1883,7 @@ const mapPipCanvas=document.getElementById('mapPipCanvas');
 const mapPipToggle=document.getElementById('mapPipToggle');
 /* 自制「全屏」按钮与 fullscreenToggle 常量均已删除：全屏统一用 <video> 自带的控件。 */
 const sideToggle=document.getElementById('sideToggle');
-const sideRail=document.getElementById('sideRail');
+const sideToggleBack=document.getElementById('sideToggleBack');
 const videoThermal=document.getElementById('videoThermal');
 const videoCrosshair=document.getElementById('videoCrosshair');
 let videoStopAt=null;
@@ -3193,7 +3181,6 @@ function confirmVideoMark(){
    ============================================================ */
 
 const markerCard=document.getElementById('markerCard');
-const markerCollapseBtn=document.getElementById('markerCollapseBtn');
 const markerList=document.getElementById('markerList');
 const markerCount=document.getElementById('markerCount');
 const markerSelectAll=document.getElementById('markerSelectAll');
@@ -3238,34 +3225,9 @@ function selectedMarkers(){
   return sortedMarkers().filter(m=>markerChecked.has(m.id));
 }
 
-// 标记点卡片收起 / 展开。收起时整块只剩标题栏那一行（高度让给照片与视频）。
-// 默认收起（markerCollapsed=true）——用户明确要求「默认收起状态」。
-function applyMarkerCollapsed(){
-  if(!markerCard)return;
-
-  markerCard.classList.toggle('is-collapsed',markerCollapsed);
-
-  if(markerCollapseBtn){
-    // aria-expanded 说的是「内容展开了吗」，与 is-collapsed 相反
-    markerCollapseBtn.setAttribute('aria-expanded',markerCollapsed?'false':'true');
-    markerCollapseBtn.textContent=markerCollapsed?'▸':'▾';
-    markerCollapseBtn.title=markerCollapsed?'展开标记点':'收起标记点';
-  }
-
-  // 收起时标题栏里只剩标题与按钮，按钮不该是禁用的空壳
-  // （没标记点时它们本来就 disabled，这里不动，交给 updateMarkerBar 管）
-
-  // 卡片高度变了，右栏会重排 → 让各卡片按新高度重算（列表分栏也依赖宽度）
-  refreshMapSizeSoon();
-  if(!markerCollapsed)renderMarkerList();
-}
-
-function toggleMarkerCollapsed(){
-  markerCollapsed=!markerCollapsed;
-  applyMarkerCollapsed();
-}
-
-if(markerCollapseBtn)markerCollapseBtn.addEventListener('click',toggleMarkerCollapsed);
+// 标记点卡片收起 / 展开的那套已删除：2026-10-07 标记点挪到左栏，
+// 显示/隐藏整页由 applyLeftView()（见文件末尾附近）决定。
+// 收起态真正被移到右栏那版取代了，这里只留注释说明去向。
 
 function updateMarkerBar(){
   const total=projectMarkers.length;
@@ -5547,20 +5509,46 @@ try{refreshKeyState()}catch(e){}
 // 面板就是右栏里的普通元素，栏多宽它多宽，不会再出现落点算偏的问题。
 
 /* ============================================================
-   左栏收起 / 展开
-   收起后中栏变宽，Leaflet 必须重算尺寸，否则地图会出现灰块和瓦片错位。
+   左栏的两个「页」：项目数据/轨迹文件  ↔  标记点
+   ------------------------------------------------------------
+   用户 2026-10-07：「标记点模块跟项目数据和轨迹文件模块占用同一空间，
+   把那个『项目数据向左收起』的按钮做成标记点页面的标签开关」。
+   所以原来那套「收起成窄轨」已删除 —— 左栏宽度不变，只切换显示哪一页。
+   切换后左右两栏宽度都没变，但中栏地图那张卡片的宽度可能因滚动条出现/消失
+   而变，所以仍然让 Leaflet 重算一次尺寸。
    ============================================================ */
 
-function applySideCollapsed(collapsed){
-  document.body.classList.toggle('side-collapsed',collapsed);
+function applyLeftView(view){
+  const markers=view==='markers';
 
-  // 布局宽度变了，两张地图都要重算。隔一点时间再确认一次，防布局过渡未结束。
-  // 视频面板是栏内普通元素，自动跟着变宽变窄；只需要更新一下控件换行和地图小窗尺寸。
+  const aside=document.getElementById('colLeft');
+  if(aside){
+    aside.classList.toggle('view-markers',markers);
+    aside.classList.toggle('view-project',!markers);
+  }
+
+  // 两个开关的文案：处在哪一页，按钮就写「去另一页」的名字
+  if(sideToggle){
+    sideToggle.textContent=markers?'项目':'标记点';
+    sideToggle.title=markers?'切回项目数据 / 轨迹文件':'切到标记点（标记点列表与导出）';
+    sideToggle.setAttribute('aria-label',sideToggle.title);
+    // aria-pressed 表示「标记点页是否正显示」
+    sideToggle.setAttribute('aria-pressed',markers?'true':'false');
+  }
+  if(sideToggleBack){
+    sideToggleBack.textContent=markers?'项目':'标记点';
+    sideToggleBack.title='切回项目数据 / 轨迹文件';
+  }
+
+  // 布局没变宽窄，但列表的可用宽度/高度变了：重排一次列表栏数
+  if(markers)renderMarkerList();
+
+  // 地图还没建起来（boot 阶段的默认视图）时不必重算，也没有计时器要挂
+  if(!map)return;
+
   const relayout=()=>{
     if(map)map.invalidateSize();
-
     applyVideoPanelLayout();
-
     refreshMapPipSize();
     if(mapPip)mapPip.invalidateSize(false);
   };
@@ -5570,11 +5558,11 @@ function applySideCollapsed(collapsed){
 }
 
 if(sideToggle){
-  sideToggle.addEventListener('click',()=>applySideCollapsed(true));
+  sideToggle.addEventListener('click',()=>applyLeftView('markers'));
 }
 
-if(sideRail){
-  sideRail.addEventListener('click',()=>applySideCollapsed(false));
+if(sideToggleBack){
+  sideToggleBack.addEventListener('click',()=>applyLeftView('project'));
 }
 
 // 窗口尺寸变化同样要让 Leaflet 重算（分栏布局对宽度很敏感）。
@@ -7323,8 +7311,8 @@ function boot(){
   applyCrosshairVisibility();
   applyFootprintVisibility();
   applyMapPipVisibility();
-  // 标记点卡片默认收起（把它那截高度让给照片与视频）
-  applyMarkerCollapsed();
+  // 左栏默认显示「项目数据 / 轨迹文件」那一页（标记点页由标签开关切换）
+  applyLeftView('project');
 
   // 项目列表不依赖地图，任何时候都要能用
   loadProjects();

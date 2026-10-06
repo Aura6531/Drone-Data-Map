@@ -640,11 +640,19 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   const rightCol = html.slice(html.indexOf('<section class="col col-right"'),
                               html.indexOf('id="keyModal"'));
   chk(/id="photoCard"/.test(rightCol), '照片展示区在右栏里');
-  chk(/id="videoModal"/.test(rightCol) && /id="markerCard"/.test(rightCol),
-    '切片确实覆盖了右栏（含视频面板与标记点卡片）');
-  chk(rightCol.indexOf('id="photoCard"') > rightCol.indexOf('id="videoModal"')
-      && rightCol.indexOf('id="photoCard"') < rightCol.indexOf('id="markerCard"'),
-    '位置：视频面板之后、标记点列表之前');
+  // 标记点卡片已挪到左栏（与项目数据共用一块地方、标签开关切换）——
+  // 右栏现在只有视频面板 + 照片展示区
+  const iRight = html.indexOf('<section class="col col-right"');
+  chk(iRight > 0 && html.indexOf('id="markerCard"') < iRight,
+    '标记点卡片在右栏之前（也就是左栏里）',
+    `markerCard@${html.indexOf('id="markerCard"')} col-right@${iRight}`);
+  // 注意用 `<aside class="col col-left` 做前缀匹配：实际的标签带 view-project 与 id
+  const iLeft = html.indexOf('<aside class="col col-left');
+  chk(iLeft > 0 && html.indexOf('id="markerCard"') > iLeft,
+    '标记点卡片确实在左栏那个 aside 里',
+    `aside@${iLeft} markerCard@${html.indexOf('id="markerCard"')}`);
+  chk(html.indexOf('id="photoCard"') > html.indexOf('id="videoModal"'),
+    '照片展示区仍在视频面板之后（右栏里）');
   chk(!/id="photoCard"[\s\S]{0,20000}id="photoCard"/.test(html), 'photoCard 只有一处');
   // 原来在地图卡片里（.below-map 之前），现在挪到右栏 —— 所以它应当排在
   // altVideos / stats 这些「地图下面的次要内容」之后。

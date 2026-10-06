@@ -443,30 +443,32 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     '合并了几处单独一段（窄窗口时它能整段让位，不挤掉主信息）',
     countExtra ? String(countExtra.textContent) : '-');
 
-  // 标记点卡片：默认收起（用户要求把高度让给照片与视频），点箭头能展开
+  // 左栏「标签开关」：项目数据/轨迹文件 ↔ 标记点（用户 2026-10-07 要求）
   {
-    const mCard = sb.els.get('markerCard');
-    const mArrow = sb.els.get('markerCollapseBtn');
+    const colLeft = sb.els.get('colLeft');
+    const toggle = sb.els.get('sideToggle');
+    const back = sb.els.get('sideToggleBack');
 
-    chk(mCard && mCard._classes.has('is-collapsed'), '标记点卡片默认收起');
-    chk(mArrow && String(mArrow.getAttribute('aria-expanded')) === 'false',
-      '收起时 aria-expanded=false', mArrow ? String(mArrow.getAttribute('aria-expanded')) : '-');
-    chk(mArrow && String(mArrow.textContent) === '▸', '收起时箭头朝右 ▸',
-      mArrow ? String(mArrow.textContent) : '-');
+    chk(colLeft && colLeft._classes.has('view-project'), '左栏默认显示「项目数据 / 轨迹文件」页');
+    chk(colLeft && !colLeft._classes.has('view-markers'), '默认不是标记点页');
+    chk(toggle && String(toggle.textContent) === '标记点', '开关按钮默认写「标记点」（点它去标记点页）',
+      toggle ? String(toggle.textContent) : '-');
+    chk(toggle && String(toggle.getAttribute('aria-pressed')) === 'false', '默认 aria-pressed=false');
 
-    if (mArrow) mArrow._fire('click');
-    chk(mCard && !mCard._classes.has('is-collapsed'), '点箭头后展开');
-    chk(mArrow && String(mArrow.getAttribute('aria-expanded')) === 'true', '展开时 aria-expanded=true');
-    chk(mArrow && String(mArrow.textContent) === '▾', '展开时箭头朝下 ▾',
-      mArrow ? String(mArrow.textContent) : '-');
-    chk(mArrow && /收起标记点/.test(String(mArrow.title)), '展开后悬停提示变成「收起标记点」');
+    if (toggle) toggle._fire('click');
+    chk(colLeft && colLeft._classes.has('view-markers'), '点一下切到标记点页');
+    chk(toggle && String(toggle.textContent) === '项目', '切过去之后按钮写「项目」',
+      toggle ? String(toggle.textContent) : '-');
+    chk(toggle && String(toggle.getAttribute('aria-pressed')) === 'true', '标记点页时 aria-pressed=true');
+    chk(toggle && /切回项目/.test(String(toggle.title)), '悬停提示跟着变');
 
-    if (mArrow) mArrow._fire('click');
-    chk(mCard && mCard._classes.has('is-collapsed'), '再点一次又收起');
-    // #markerBody 是纯 CSS 包裹层（JS 不引用，靠 .is-collapsed 隐藏），
-    // 所以这里验 HTML 里有它、且包着列表；元素本身用 html 段断言。
-    chk(/id="markerBody"/.test(html), '#markerBody 在页面 HTML 里（收起时整块隐藏的包裹层）');
-    chk(/id="markerBody"[\s\S]{0,400}id="markerList"/.test(html), '#markerBody 里包着 #markerList');
+    if (back) back._fire('click');
+    chk(colLeft && colLeft._classes.has('view-project'), '点标记点页里的「项目」按钮切回来');
+    chk(toggle && String(toggle.textContent) === '标记点', '切回来按钮又写「标记点」');
+
+    // 旧的「收起成窄轨」应当已经删干净
+    chk(!sb.els.has('sideRail') || !html.includes('id="sideRail"'), '窄轨（sideRail）已删除');
+    chk(!html.includes('side-collapsed'), 'side-collapsed 那套样式已删除');
   }
 
   const btn = sb.els.get('photoLayerBtn');

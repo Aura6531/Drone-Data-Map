@@ -493,7 +493,7 @@ chk(/id="mapPipCanvas" class="map-pip-canvas"><\/div>/.test(html),
 chk(/id="mapPipToggle"/.test(html), '地图小窗开关存在');
 chk(!/id="dockBtn"/.test(html), '「归位」按钮已删除（面板固定，没有可归位的）');
 for (const f of ['ensureMapPip', 'applyMapPipBase', 'syncMapPip', 'applyMapPipVisibility',
-                 'applySideCollapsed',
+                 'applyLeftView',
                  'refreshMapPipSize', 'applyThermalVisibility']) {
   chk(new RegExp('function\\s+' + f + '\\s*\\(').test(body), `function ${f}()`);
 }
@@ -1152,9 +1152,9 @@ chk(/id="videoSlot"/.test(html), '右栏有未播放时的占位说明');
     '显式栅格行高 1fr —— 三栏严格等高，底部才会对齐', grid.slice(0, 130));
   chk(/380px minmax\(0,1fr\) minmax\(0,1\.12fr\)/.test(grid),
     '列宽：左固定 380px，中/右按比例（地图略窄、视频略宽）', grid.slice(0, 90));
-  chk(/height:100vh/.test(grid), '占满整个视口高度（顶栏已删除）');
-  chk(/body\.side-collapsed \.layout\{grid-template-columns:40px/.test(html),
-    '收起后左栏缩成 40px 窄轨');
+  chk(/height:100vh/.test(html) || /height:100vh/.test(grid), '占满整个视口高度（顶栏已删除）');
+  // 左栏现在是「项目页 / 标记点页」两页共用同一块地方，宽度不再变化
+  chk(!/side-collapsed/.test(html), '左栏不再有「收起成 40px 窄轨」那套（改成标签开关切页）');
 }
 // 卡片自带 margin-bottom:22px，会和 flex gap 叠加 ——
 // 上面出现 38px 大缝、下面把卡片顶起来对不齐。而且在左栏里卡片是 .col-body 的
@@ -1432,45 +1432,37 @@ chk(!/\.file-meta\{/.test(html), '已删掉不再使用的 .file-meta 样式');
 chk(/\.file-list\{display:grid;gap:8px;align-content:start/.test(html),
   '列表行高只由内容决定（align-content:start）—— 否则列表被撑满后每行被拉开，条目上下留大片空白');
 chk(/\.file-list\{[^}]*gap:8px/.test(html), '列表项间距 8px（原 12px），同屏看得更多');
-chk(/id="sideToggle"/.test(html), '左栏右上角有收起按钮');
+chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
 {
-  // 收起按钮放在标题行里（文字左、按钮右），不再绝对定位单独占一行
+  // 标签开关放在标题行里（文字左、按钮右），不再绝对定位单独占一行
   const headStart = html.indexOf('id="sideToggle"');
-  const head = html.slice(Math.max(0, headStart - 260), headStart + 120);
-  chk(/class="card-head"/.test(head), '收起按钮在 .card-head 标题行里');
-  chk(head.indexOf('<h1>项目与数据</h1>') < head.indexOf('id="sideToggle"'),
+  const head = html.slice(Math.max(0, headStart - 320), headStart + 260);
+  chk(/class="card-head"/.test(head), '标签开关在 .card-head 标题行里');
+  chk(head.indexOf('<h2>项目数据</h2>') < head.indexOf('id="sideToggle"'),
     '标题在左、按钮在右');
   const st = (html.match(/\.side-toggle\{[^}]*\}/) || [''])[0];
   chk(!/position:absolute/.test(st), '不再是绝对定位（那会让它单独占一行）');
-  chk(/flex:0 0 auto;width:28px;height:28px/.test(st), '尺寸和窄轨上的展开箭头一致（28x28）');
+  chk(/height:28px/.test(st), '按钮高度 28px（和标题行其他小按钮一致）');
 }
-chk(/id="sideRail"/.test(html), '收起后留一条窄轨用于展开');
+// 左栏改成「两个页」共用一块地方：项目数据/轨迹文件 ↔ 标记点，由标签开关切换
+chk(/id="viewProject"/.test(html), '项目页包在 #viewProject 里');
+chk(/<aside class="col col-left view-project" id="colLeft">/.test(html), '默认显示项目页');
+chk(/id="sideToggleBack"/.test(html), '标记点页里也有一个切回「项目」的按钮');
 {
-  // 收起/展开是一对箭头，方向要对应：收起 ‹ 、展开 ›
-  const toggle = (html.match(/<button id="sideToggle"[^>]*>([^<]*)</) || [])[1] || '';
-  const railIcon = (html.match(/<span class="side-rail-icon"[^>]*>([^<]*)</) || [])[1] || '';
-  chk(toggle.trim() === '‹', '收起按钮是 ‹（指向左）', JSON.stringify(toggle));
-  chk(railIcon.trim() === '›', '展开图标是 ›（指向右），与收起箭头成对', JSON.stringify(railIcon));
-  chk(/\.side-rail-icon\{[^}]*width:28px;height:28px/.test(html),
-    '展开图标做成和收起按钮同样大小的方块');
-  chk(!/检<br>索/.test(html), '窄轨里不再用竖排文字');
-  chk(/body\.side-collapsed \.col-left \.side-rail\{[^}]*align-items:flex-start/.test(html),
-    '展开箭头放在窄轨顶部，与收起按钮位置对应');
-  chk(/body\.side-collapsed \.col-left \.side-rail\{[^}]*cursor:pointer/.test(html)
-    && /\.side-rail\{display:none\}/.test(html),
-    '整条窄轨可点，展开前隐藏');
-}
-{
-  const start = body.indexOf('function applySideCollapsed(');
+  const start = body.indexOf('function applyLeftView(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/side-collapsed/.test(fn), '切换 side-collapsed 类');
-  chk(/map\.invalidateSize\(\)/.test(fn), '收起/展开后让地图重算尺寸');
+  chk(/view-markers/.test(fn) && /view-project/.test(fn), '切换 view-markers / view-project 类');
+  chk(/markers\?'项目':'标记点'/.test(fn), '按钮文案跟着当前页切换');
+  chk(/renderMarkerList\(\)/.test(fn), '切到标记点页时重排列表（栏宽变了）');
+  chk(/map\.invalidateSize\(\)/.test(fn), '切换后让地图重算尺寸');
   chk(/refreshMapPipSize\(\)/.test(fn) && /mapPip\.invalidateSize/.test(fn),
     '地图小窗也一起重算');
-  // 视频面板是栏内普通元素，自动跟着栏宽变；这里只需更新控件换行与地图小窗
-  chk(/applyVideoPanelLayout\(\)/.test(fn),
-    '收起/展开后更新视频面板的控件换行（位置由 CSS 自动跟随）');
+  chk(/applyVideoPanelLayout\(\)/.test(fn), '切换后更新视频面板的控件换行');
 }
+// 旧的「收起成窄轨」那套应当已经删干净
+chk(!/id="sideRail"/.test(html), '窄轨（sideRail）已删除');
+chk(!/body\.side-collapsed/.test(html), 'side-collapsed 那套样式已删除');
+chk(!/function applySideCollapsed/.test(body), '旧函数 applySideCollapsed 已删除');
 {
   const start = body.indexOf("window.addEventListener('resize'");
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('});', start));
