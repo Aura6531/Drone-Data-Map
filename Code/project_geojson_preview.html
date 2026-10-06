@@ -422,6 +422,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .report-opt{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;
             font-size:13px;font-weight:400;line-height:1.6;color:#334155;cursor:pointer}
 .report-opt input{width:15px;height:15px;margin:3px 0 0;flex:0 0 auto}
+/* 报告地图底图那一行：文字 + 下拉 */
+.report-basemap{display:flex;align-items:center;gap:10px;margin:14px 0 0;
+                font-size:13px;font-weight:600;color:#334155}
+.report-basemap select{flex:1 1 auto;min-width:0;height:38px;font-size:13px}
 </style>
 </head>
 <body>
@@ -677,8 +681,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
   </div>
 </div>
 
-<!-- 生成 Word 报告：先选视频截图的尺寸。
-     地图截图不用选 —— 它跟随当前底图（选街道就街道、选卫星就卫星）。 -->
+<!-- 生成 Word 报告：先选视频截图的尺寸，再选报告地图用哪个底图。
+     （报告底图与网页地图的底图是**分开的**：网页地图默认街道图，
+      这里默认卫星图 —— 影像底图上红十字和飞机箭头更好认。） -->
 <div id="reportModal" class="mini-modal" style="display:none">
   <div class="mini-modal-box">
     <div class="mini-modal-title">生成 Word 报告</div>
@@ -693,6 +698,14 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       <input type="radio" name="reportImageMode" value="a4">
       <span><b>压缩至 320ppi</b>　约 2480px 宽 —— 打印清晰、体积友好</span>
     </label>
+    <div class="report-basemap">
+      <label for="reportBasemap">报告地图底图</label>
+      <select id="reportBasemap" class="ctrl-select">
+        <option value="street">街道图（天地图）</option>
+        <option value="satellite" selected>卫星图（天地图影像）　推荐</option>
+        <option value="osm">OpenStreetMap</option>
+      </select>
+    </div>
     <div class="row mini-modal-actions">
       <button id="reportCancel" class="secondary">取消</button>
       <button id="reportOk">开始生成</button>
@@ -2750,8 +2763,18 @@ const markerReportBtn=document.getElementById('markerReportBtn');
 const reportStatus=document.getElementById('reportStatus');
 const reportModal=document.getElementById('reportModal');
 const reportModalHint=document.getElementById('reportModalHint');
+const reportBasemapSelect=document.getElementById('reportBasemap');
 const reportOkBtn=document.getElementById('reportOk');
 const reportCancel=document.getElementById('reportCancel');
+
+// 报告地图用的底图：**与网页地图的底图分开**。
+// 网页地图默认街道图（DEFAULT_BASEMAP，看地图时方便）；
+// 报告默认卫星图 —— 影像底图上红十字、飞机箭头和虚线都更好认。
+const REPORT_DEFAULT_BASEMAP='satellite';
+
+function reportBasemapKind(){
+  return (reportBasemapSelect&&reportBasemapSelect.value)||REPORT_DEFAULT_BASEMAP;
+}
 
 let markerChecked=new Set();   // 勾选中的标记点 id（重绘不丢）
 let activeMarkerId='';         // 最后跳转到的那个，列表里高亮
@@ -3296,7 +3319,7 @@ async function reportMapImageOf(m,basemap){
   }
 }
 
-async function runWordReport(list,mode){
+async function runWordReport(list,mode,basemapKind){
   if(reportBusy)return;
 
   if(!list.length){
@@ -3307,7 +3330,8 @@ async function runWordReport(list,mode){
   reportBusy=true;
   if(reportOkBtn)reportOkBtn.disabled=true;
 
-  const basemap=currentBaseMapKind||DEFAULT_BASEMAP;
+  // 报告地图的底图：优先用调用方给的（弹窗里选的），否则取下拉当前值
+  const basemap=basemapKind||reportBasemapKind();
   const points=[];
   let done=0;
 
@@ -3377,20 +3401,14 @@ function startWordReport(list){
   }
 
   if(!reportModal){
-    runWordReport(list,'full');
+    runWordReport(list,'full',reportBasemapKind());
     return;
   }
 
   if(reportModalHint){
-    const nowKind=currentBaseMapKind||DEFAULT_BASEMAP;
-
-    // 提示一句：卫星底图效果更好（已经是卫星图就不用再劝了）
-    const baseTip=nowKind==='satellite'
-      ?''
-      :'　※ 提示：用卫星图作为底图效果更好（可在「底图」下拉里切换）。';
-
+    // 说明这一份报告里地图截图会用哪个底图（底图下拉一改，这句跟着变）
     reportModalHint.textContent=`只包含勾选的 ${list.length} 个点。`
-      +`地图截图用当前底图（${basemapDisplayName(nowKind)}）。${baseTip}`;
+      +`地图截图用下面选的底图（${basemapDisplayName(reportBasemapKind())}）。`;
   }
 
   reportModal.style.display='flex';
@@ -3403,8 +3421,20 @@ if(markerReportBtn)markerReportBtn.addEventListener('click',()=>{
 
 if(reportOkBtn)reportOkBtn.addEventListener('click',()=>{
   const mode=reportImageMode();
+  const baseKind=reportBasemapKind();
   closeReportModal();
-  runWordReport(selectedMarkers(),mode);
+  runWordReport(selectedMarkers(),mode,baseKind);
+});
+
+// 改底图选择时同步刷新那句说明
+if(reportBasemapSelect)reportBasemapSelect.addEventListener('change',()=>{
+  const list=pickedForExport()||[];
+  const count=list.length;
+
+  if(reportModalHint){
+    reportModalHint.textContent=`只包含勾选的 ${count} 个点。`
+      +`地图截图用下面选的底图（${basemapDisplayName(reportBasemapKind())}）。`;
+  }
 });
 
 if(reportCancel)reportCancel.addEventListener('click',closeReportModal);

@@ -1612,8 +1612,9 @@ chk(/function isSpaceKey\(/.test(body), 'function isSpaceKey()（兼容 key 与 
   chk(/\.catch\(\(\)=>\{\}\)/.test(fn), 'play() 的 Promise 失败不会变成未处理异常');
 }
 chk(/id="baseMap"/.test(html), '底图选择框存在');
-chk((html.match(/<option value="(street|satellite|osm)"/g) || []).length === 3,
-  '提供街道图 / 卫星图 / OpenStreetMap 三种');
+chk((html.match(/<option value="(street|satellite|osm)"/g) || []).length === 6,
+  '网页地图与报告弹窗各有一组「街道图 / 卫星图 / OpenStreetMap」',
+  (html.match(/<option value="(street|satellite|osm)"/g) || []).length + ' 个选项');
 chk(/function\s+setBaseMap\s*\(/.test(body), 'function setBaseMap()');
 chk(/function\s+initBaseMap\s*\(/.test(body), 'function initBaseMap()');
 chk(/function\s+clearBaseLayers\s*\(/.test(body), 'function clearBaseLayers()');
@@ -1680,21 +1681,29 @@ console.log('\n=== 标记点报告（Word）===');
   const report = body.slice(body.indexOf('async function runWordReport('),
     body.indexOf('function startWordReport('));
   chk(report.length > 0, '找到 runWordReport()');
-  chk(/const basemap=currentBaseMapKind\|\|DEFAULT_BASEMAP/.test(body),
-    '地图截图的底图跟随当前选择（默认值也走常量，不是写死的）');
+  chk(/const basemap=basemapKind\|\|reportBasemapKind\(\)/.test(body),
+    '报告地图的底图来自弹窗里那个下拉（不再跟随网页地图的底图）');
   chk(/const DEFAULT_BASEMAP='street'/.test(body),
-    "默认底图是街道图（DEFAULT_BASEMAP='street'）");
+    "网页地图默认底图是街道图（DEFAULT_BASEMAP='street'）");
   chk(/<option value="street" selected>/.test(html),
     '底图下拉里街道图带 selected（initBaseMap 读的就是这个值）');
   chk(/let currentBaseMapKind=DEFAULT_BASEMAP;/.test(body),
     '脚本里的当前底图初始值也指向同一个常量');
   chk(!/\|\|'street'/.test(body), "没有残留的 ||'street' 兜底（否则会跟默认值不一致）");
 
-  // 报告确认弹窗里要提示「用卫星图作为底图效果更好」，且已经是卫星图时不啰嗦
-  chk(/用卫星图作为底图效果更好/.test(body),
-    '报告确认弹窗里提示「用卫星图作为底图效果更好」');
-  chk(/nowKind==='satellite'\s*\?\s*''/.test(body),
-    '已经是卫星图时不再提示这一句');
+  // 报告确认弹窗：报告自己的底图选择器，默认卫星图
+  chk(/<select id="reportBasemap"/.test(html), '弹窗里有报告地图底图下拉');
+  chk(/<option value="satellite" selected>卫星图/.test(html),
+    '报告底图默认选卫星图（选项里也标了「推荐」）');
+  chk(/const REPORT_DEFAULT_BASEMAP='satellite'/.test(body),
+    "REPORT_DEFAULT_BASEMAP='satellite'（与网页地图的默认值分开）");
+  chk(/function reportBasemapKind\(\)/.test(body), 'function reportBasemapKind()');
+  chk(/地图截图用下面选的底图（\$\{basemapDisplayName\(reportBasemapKind\(\)\)\}）/.test(body),
+    '弹窗说明里写明会用哪个底图');
+  chk(/reportBasemapSelect\.addEventListener\('change'/.test(body),
+    '改下底图下拉，那句说明立即跟着变');
+  chk(!/currentBaseMapKind/.test(report),
+    '报告流程里不再引用网页地图的底图（两套底图彻底解耦）');
   chk(/return '未解析'/.test(body), '逆地理编码失败就标「未解析」（不编造位置）');
   chk(/link\.download=result\.download_name/.test(report),
     '下载用服务端给的中文文件名（download 属性）');
