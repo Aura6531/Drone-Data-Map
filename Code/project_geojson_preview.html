@@ -3114,17 +3114,50 @@ async function reportVideoImageOf(m,mode){
   }
 }
 
-// 地图截图：底图跟随当前选择
+// 报告用：这个标记点当时飞机在哪、朝哪 —— 地图截图上要画飞机和注视虚线
+function reportDroneAt(m){
+  const want=String(m.video||'').toLowerCase();
+  if(!want)return null;
+
+  const track=loadedTracks.find(t=>
+    videoPathFromGeojson(t.fileInfo.relative_path).toLowerCase()===want);
+
+  if(!track||!track.coords||!track.coords.length||!track.times||!track.times.length){
+    return null;   // 这条航迹没加载就先不画飞机，图照样出
+  }
+
+  const i=indexAtTime(track.times,Number(m.time)||0);
+  const c=track.coords[i];
+
+  if(!c)return null;
+
+  const bearing=bearingAt(track.coords,i);
+
+  return {lat:c[1],lng:c[0],bearing:(bearing==null?0:bearing)};
+}
+
+// 地图截图：底图跟随当前选择；尺寸用 16:9（报告里要和视频截图同页，太高会顶到下一页）
 async function reportMapImageOf(m,basemap){
   try{
-    const d=await jsonPost('/api/mapsnapshot',{
+    const body={
       lat:m.lat,
       lng:m.lng,
       zoom:TRACK_FOCUS_ZOOM,
       basemap,
       width:1280,
-      height:960
-    });
+      height:720
+    };
+
+    // 把飞机的位置与朝向一起传过去，后端会画上飞机图标和「飞机 -> 目标点」的虚线
+    const drone=reportDroneAt(m);
+
+    if(drone){
+      body.drone_lat=drone.lat;
+      body.drone_lng=drone.lng;
+      body.drone_bearing=drone.bearing;
+    }
+
+    const d=await jsonPost('/api/mapsnapshot',body);
 
     return String((d&&d.file)||'');
 

@@ -8,6 +8,7 @@
 import io
 import json
 import pathlib
+import re
 import socket
 import sys
 import threading
@@ -198,6 +199,61 @@ try:
     chk(pm.make_map_snapshot({"lat": 23.0344, "lng": 112.467, "basemap": "不存在"})["basemap"] == "street",
         "底图类型不认识时退回街道图，不报错")
 
+    # ---------- 地图截图上要画飞机与注视虚线 ----------
+    target_lat, target_lng = 23.03441, 112.466997
+
+    plain = pm.make_map_snapshot({
+        "lat": target_lat, "lng": target_lng, "zoom": 16,
+        "basemap": "osm", "width": 640, "height": 480,
+    })
+
+    # 飞机放在目标点正北 200m，机头朝正南（就是「看向目标点」）
+    drone_lat = target_lat + 200 / 111320.0
+
+    with_drone = pm.make_map_snapshot({
+        "lat": target_lat, "lng": target_lng, "zoom": 16,
+        "basemap": "osm", "width": 640, "height": 480,
+        "drone_lat": drone_lat, "drone_lng": target_lng, "drone_bearing": 180,
+    })
+
+    chk(with_drone["drone"] is True and plain["drone"] is False,
+        "带飞机参数时如实回报 drone=true")
+
+    plain_img = Image.open(ROOT / "report_cache" / plain["file"]).convert("RGB")
+    drone_img = Image.open(ROOT / "report_cache" / with_drone["file"]).convert("RGB")
+
+    world_x, world_y = pm.mercator_world_pixel(target_lat, target_lng, 16)
+    drone_world_x, drone_world_y = pm.mercator_world_pixel(drone_lat, target_lng, 16)
+
+    left = world_x - 640 / 2.0
+    top = world_y - 480 / 2.0
+    drone_px = (int(round(drone_world_x - left)), int(round(drone_world_y - top)))
+
+    chk(0 <= drone_px[0] < 640 and 0 <= drone_px[1] < 480,
+        "飞机落在截图范围内", str(drone_px))
+    chk(drone_px[1] < 240, "飞机在目标点北边（y 更小）", str(drone_px[1]))
+
+    center_pixel = drone_img.getpixel(drone_px)
+    chk(max(abs(a - b) for a, b in zip(center_pixel, pm.DRONE_ARROW_FILL)) < 40,
+        "飞机位置上确实是箭头那个蓝色", str(center_pixel))
+
+    line_hits = 0
+    for y in range(drone_px[1], 240):
+        for x in range(drone_px[0] - 6, drone_px[0] + 7):
+            r, g, b = drone_img.getpixel((x, y))
+            if (abs(r - pm.LOOK_LINE_COLOR[0]) < 26
+                    and abs(g - pm.LOOK_LINE_COLOR[1]) < 26
+                    and abs(b - pm.LOOK_LINE_COLOR[2]) < 26):
+                line_hits += 1
+
+    chk(line_hits > 10, "飞机到目标点之间画了注视虚线", f"{line_hits} 个灰色像素")
+    chk(drone_img.tobytes() != plain_img.tobytes(), "带飞机的那张和纯地图那张不一样")
+
+    chk(pm.make_map_snapshot({
+        "lat": target_lat, "lng": target_lng, "width": 400, "height": 300,
+        "drone_lat": "坏值", "drone_lng": target_lng,
+    })["drone"] is False, "飞机参数坏掉时当作没给，图照出")
+
 finally:
     pm.cached_map_tile_bytes = real_tile_bytes
 
@@ -328,6 +384,41 @@ else:
 
     chk(len(document.inline_shapes) == 3,
         "图片 3 张（第 1 点两张 + 第 2 点缺图只贴一张）", str(len(document.inline_shapes)))
+
+    # 插图尺寸：两张图 + 字段表 + 两行图注要能排在同一页 A4 里
+    extents = re.findall(r'<wp:extent cx="(\d+)" cy="(\d+)"/>', xml)
+    chk(len(extents) == 3, "三张图各自写了尺寸", str(len(extents)))
+
+    heights_cm = [int(cy) / 360000 for _, cy in extents]
+    widths_cm = [int(cx) / 360000 for cx, _ in extents]
+
+    chk(max(heights_cm) <= pm.REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM + 0.01,
+        f"视频截图高度不超过 {pm.REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM}cm",
+        f"最高 {max(heights_cm):.2f}cm")
+    chk(min(heights_cm) <= pm.REPORT_MAP_IMAGE_MAX_HEIGHT_CM + 0.01,
+        f"地图截图更矮（按 {pm.REPORT_MAP_IMAGE_MAX_HEIGHT_CM}cm 封顶，好让整节同页）",
+        f"最矮 {min(heights_cm):.2f}cm")
+    chk(max(widths_cm) <= pm.REPORT_IMAGE_MAX_WIDTH_CM + 0.01,
+        f"宽度不超过正文宽 {pm.REPORT_IMAGE_MAX_WIDTH_CM}cm",
+        f"最宽 {max(widths_cm):.2f}cm")
+
+    # 方形图（热成像 5:4）也按高度封顶，不会横向顶破页面
+    square_width = pm.report_picture_width_cm(shots[-1].name) if shots else None
+    chk(pm.report_picture_width_cm(ROOT / "report_cache" / shots[-1].name) <= pm.REPORT_IMAGE_MAX_WIDTH_CM,
+        "按高度封顶算出来的宽度不会超过正文宽",
+        f"{pm.report_picture_width_cm(ROOT / 'report_cache' / shots[-1].name)}cm")
+    chk(pm.report_picture_width_cm(ROOT / "report_cache" / "不存在的图.jpg") == pm.REPORT_IMAGE_MAX_WIDTH_CM,
+        "图读不出来时退回正文宽，不抛异常", str(square_width))
+
+    # 插图写上「诚实的 DPI」：像素宽 / 目标显示宽 —— 按固有尺寸排的阅读器也算得对
+    chk(pm.report_image_dpi(2480, 1395, pm.REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM) == (443, 443),
+        "2480x1395 的截图写成 443dpi（14.22cm 宽）",
+        str(pm.report_image_dpi(2480, 1395, pm.REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM)))
+    chk(pm.report_image_dpi(0, 0, 8.0) == (300, 300), "尺寸无效时给个安全默认值")
+
+    saved_shot = Image.open(ROOT / "report_cache" / shots[-1].name)
+    chk(saved_shot.info.get("dpi") is not None,
+        "落盘的截图确实带了 DPI 元数据", str(saved_shot.info.get("dpi")))
 
     headings = [p.text for p in document.paragraphs if p.style.name.startswith("Heading 1")]
     chk("一、1 号排水口" in headings and "二、2 号 <桥下> & \"涵洞\"" in headings,

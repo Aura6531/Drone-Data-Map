@@ -1783,6 +1783,21 @@ console.log('\n=== 机头 → 准星 的注视指示线 ===');
     '缩放后重算起点（起点是按像素偏移算的，缩放会变）');
 }
 
+console.log('\n=== 报告里的地图截图：16:9 + 飞机与注视虚线 ===');
+{
+  chk(/function reportDroneAt\(/.test(body),
+    'function reportDroneAt()（取该时刻飞机的位置与朝向）');
+  chk(/const track=loadedTracks\.find/.test(body), '飞机位置取自已加载的航迹');
+  chk(/indexAtTime\(track\.times,Number\(m\.time\)\|\|0\)/.test(body), '按标记点的时间取航迹点');
+  chk(/bearingAt\(track\.coords,i\)/.test(body), '朝向用 bearingAt()');
+  chk(/这条航迹没加载就先不画飞机/.test(body),
+    '航迹没加载时不画飞机（图照样出，不整份失败）');
+  chk(/width:1280,\s*\n\s*height:720/.test(body),
+    '地图截图用 16:9（报告里要和视频截图排在同一页，太高会顶到下一页）');
+  chk(/body\.drone_lat=drone\.lat/.test(body) && /body\.drone_bearing=drone\.bearing/.test(body),
+    '把飞机的位置与朝向一起传给 /api/mapsnapshot');
+}
+
 console.log('\n=== DOM id 一致 ===');
 const idsInHtml = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x => x[1]));
 const idsUsed = new Set([...body.matchAll(/getElementById\('([^']+)'\)/g)].map(x => x[1]));

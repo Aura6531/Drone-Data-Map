@@ -132,6 +132,22 @@ MAP_TILE_PIXELS = 256
 # 「压缩」档：A4 正文宽约 19.7cm，按 320 ppi 折算 ≈ 2480 px 宽
 REPORT_IMAGE_WIDTH_A4 = 2480
 
+# 报告里插图的尺寸上限：一个章节要塞下 字段表 + 图 1（视频截图）+ 图 2（地图截图）
+# + 两行图注，必须都在同一页 A4 里 —— 所以都按【高度】封顶，而不是按宽度铺满。
+#
+# 两张图分档：视频截图是主内容，给大一点；地图截图只是「在哪」的提示，
+# 压扁一些，好让整节（含图注）稳稳排在一页里。热成像那种 5:4 的方图也不会顶破页宽。
+REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM = 8.0
+REPORT_MAP_IMAGE_MAX_HEIGHT_CM = 5.5
+REPORT_IMAGE_MAX_HEIGHT_CM = REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM   # 兼容旧断言/调用
+REPORT_IMAGE_MAX_WIDTH_CM = 15.9
+
+# 地图截图上画的飞机箭头 / 注视虚线，颜色与页面上的保持一致
+DRONE_ARROW_FILL = (30, 136, 229)      # #1e88e5
+LOOK_LINE_COLOR = (156, 163, 175)      # #9ca3af
+DRONE_ARROW_SIZE = 13
+DRONE_NOSE_PX = 14                     # 与前端 DRONE_NOSE_PX 对齐
+
 # ------------------------------------------------------------
 # 本地第三方资源目录
 #
@@ -3841,10 +3857,97 @@ def cached_map_tile_bytes(source, z, x, y):
     return data
 
 
-def compose_map_snapshot(lat, lng, zoom, kind, width, height):
+def mercator_world_pixel(lat, lng, zoom):
+    """经纬度 -> 整幅世界地图在 zoom 级下的像素坐标（Web 墨卡托 + XYZ 瓦片）。"""
+
+    tiles_across = 1 << zoom
+
+    lat_rad = math.radians(max(-85.05112878, min(85.05112878, lat)))
+
+    x = (lng + 180.0) / 360.0 * tiles_across * MAP_TILE_PIXELS
+
+    y = (
+        1.0
+        - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi
+    ) / 2.0 * tiles_across * MAP_TILE_PIXELS
+
+    return x, y
+
+
+def draw_dashed_line(draw, start, end, color, width=2, dash=6, gap=6):
+    """画一条虚线（PIL 没有虚线支持，自己按段画）。"""
+
+    x1, y1 = start
+    x2, y2 = end
+
+    total = math.hypot(x2 - x1, y2 - y1)
+
+    if total <= 0:
+        return
+
+    ux, uy = (x2 - x1) / total, (y2 - y1) / total
+    position = 0.0
+
+    while position < total:
+
+        stop = min(position + dash, total)
+
+        draw.line(
+            (
+                x1 + ux * position,
+                y1 + uy * position,
+                x1 + ux * stop,
+                y1 + uy * stop,
+            ),
+            fill=color,
+            width=width
+        )
+
+        position = stop + gap
+
+
+def draw_drone_arrow(draw, center, bearing, size=DRONE_ARROW_SIZE):
+    """在 center 画一个朝 bearing（自正北顺时针）的飞机箭头。
+
+    形状与颜色跟页面上的飞机图标一致；屏幕坐标 x 向右、y 向下。
+    """
+
+    try:
+        rad = math.radians(float(bearing or 0))
+
+    except (TypeError, ValueError):
+        rad = 0.0
+
+    cos_a, sin_a = math.cos(rad), math.sin(rad)
+
+    def place(dx, dy):
+        return (
+            center[0] + dx * cos_a - dy * sin_a,
+            center[1] + dx * sin_a + dy * cos_a,
+        )
+
+    # 局部坐标（机头朝上）：机尖 -> 右翼 -> 尾中缺口 -> 左翼
+    points = [
+        place(0, -size),
+        place(size * 0.62, size * 0.9),
+        place(0, size * 0.5),
+        place(-size * 0.62, size * 0.9),
+    ]
+
+    draw.polygon(
+        points,
+        fill=DRONE_ARROW_FILL,
+        outline=(255, 255, 255),
+        width=2
+    )
+
+
+def compose_map_snapshot(lat, lng, zoom, kind, width, height, drone=None):
     """按指定底图拼一张地图截图，并在正中标出目标点。
 
     不用前端 canvas 截图：瓦片跨域会污染画布，拿不到图。
+    drone 给了（lat/lng/bearing）就再画上飞机图标和「飞机 -> 目标点」的注视虚线，
+    和地图页面上看到的是同一种表达。
     """
 
     from PIL import Image, ImageDraw
@@ -3853,15 +3956,8 @@ def compose_map_snapshot(lat, lng, zoom, kind, width, height):
 
     tiles_across = 1 << zoom
 
-    # 目标点在「整幅世界地图」上的像素坐标（Web 墨卡托 + XYZ 瓦片）
-    lat_rad = math.radians(max(-85.05112878, min(85.05112878, lat)))
-
-    world_x = (lng + 180.0) / 360.0 * tiles_across * MAP_TILE_PIXELS
-
-    world_y = (
-        1.0
-        - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi
-    ) / 2.0 * tiles_across * MAP_TILE_PIXELS
+    # 目标点在「整幅世界地图」上的像素坐标
+    world_x, world_y = mercator_world_pixel(lat, lng, zoom)
 
     left = world_x - width / 2.0
     top = world_y - height / 2.0
@@ -3944,6 +4040,33 @@ def compose_map_snapshot(lat, lng, zoom, kind, width, height):
             fill=color,
             width=line_width
         )
+
+    # 飞机 + 「飞机 -> 目标点」的注视虚线（和地图页面上是同一种表达）
+    if drone and drone.get("lat") is not None and drone.get("lng") is not None:
+
+        drone_world_x, drone_world_y = mercator_world_pixel(
+            float(drone["lat"]),
+            float(drone["lng"]),
+            zoom
+        )
+
+        drone_center = (drone_world_x - left, drone_world_y - top)
+
+        try:
+            bearing_rad = math.radians(float(drone.get("bearing") or 0))
+
+        except (TypeError, ValueError):
+            bearing_rad = 0.0
+
+        # 虚线从【机头】出发（和页面上那条线一样，起点按像素偏移算）
+        nose = (
+            drone_center[0] + math.sin(bearing_rad) * DRONE_NOSE_PX,
+            drone_center[1] - math.cos(bearing_rad) * DRONE_NOSE_PX,
+        )
+
+        draw_dashed_line(draw, nose, (center_x, center_y), LOOK_LINE_COLOR, width=2)
+
+        draw_drone_arrow(draw, drone_center, drone.get("bearing"))
 
     return image
 
@@ -4052,7 +4175,13 @@ def make_video_snapshot(payload):
 
             width, height = image.size
 
-            image.save(output_path, "JPEG", quality=92, optimize=True)
+            image.save(
+                output_path,
+                "JPEG",
+                quality=92,
+                optimize=True,
+                dpi=report_image_dpi(width, height, REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM)
+            )
 
     except Exception as e:
         raise ValueError(
@@ -4114,13 +4243,33 @@ def make_map_snapshot(payload):
     width = max(320, min(width, 2560))
     height = max(240, min(height, 1920))
 
-    image = compose_map_snapshot(lat, lng, zoom, kind, width, height)
+    # 飞机的位置与朝向（可选）：给了就在图上画飞机和注视虚线
+    drone = None
+
+    if payload.get("drone_lat") is not None and payload.get("drone_lng") is not None:
+
+        try:
+            drone = {
+                "lat": float(payload["drone_lat"]),
+                "lng": float(payload["drone_lng"]),
+                "bearing": float(payload.get("drone_bearing") or 0),
+            }
+
+        except (TypeError, ValueError):
+            drone = None
+
+    image = compose_map_snapshot(lat, lng, zoom, kind, width, height, drone)
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
     name = new_report_name("map", ".jpg")
 
-    image.save(REPORT_DIR / name, "JPEG", quality=88)
+    image.save(
+        REPORT_DIR / name,
+        "JPEG",
+        quality=88,
+        dpi=report_image_dpi(image.width, image.height, REPORT_MAP_IMAGE_MAX_HEIGHT_CM)
+    )
 
     return {
         "file": name,
@@ -4129,6 +4278,7 @@ def make_map_snapshot(payload):
         "zoom": zoom,
         "width": image.width,
         "height": image.height,
+        "drone": bool(drone),
     }
 
 
@@ -4207,6 +4357,83 @@ def add_docx_internal_link(paragraph, anchor, text):
 
     link.append(run)
     paragraph._p.append(link)
+
+
+def report_image_dpi(pixel_width, pixel_height, max_height_cm):
+    """给报告插图写一个「诚实的 DPI」：像素宽 ÷ 目标显示宽。
+
+    插图的显示尺寸是按高度封顶算的（见 report_picture_width_cm），docx 里也写死了
+    wp:extent —— Word 按 wp:extent 排，本来就不会错。
+
+    写上 DPI 是为了那些「不看 wp:extent、按图片固有尺寸排」的阅读器也算出同样大小，
+    顺带让这些截图在打印时有正确的分辨率含义。
+    （实测：捆绑 LibreOffice 两者都不看，渲染结果不受影响；别拿它的光栅当尺寸依据，
+    它的整页光栅比实际页面放大约 10% 且底部会裁掉一截。）
+    """
+
+    if not pixel_width or not pixel_height:
+        return (300, 300)
+
+    width_cm = min(
+        REPORT_IMAGE_MAX_WIDTH_CM,
+        max_height_cm * (pixel_width / pixel_height)
+    )
+
+    dpi = pixel_width / (width_cm / 2.54)
+
+    return (round(dpi), round(dpi))
+
+
+def report_image_pixel_size(path):
+    """读一张图的像素尺寸；读不出来就返回 None。"""
+
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            return image.size
+
+    except Exception:
+        return None
+
+
+def report_picture_width_cm(path, max_height_cm=REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM):
+    """算这张图在报告里该多宽：先按高度封顶，再按正文宽度封顶。
+
+    一个点那一节要塞下：字段表 + 图 1（视频截图）+ 图 2（地图截图）+ 两行图注，
+    必须都在同一页 A4 里。所以按【高度】封顶，而不是按正文宽度铺满 ——
+    热成像那种 5:4 的方图也不会把章节顶到下一页。
+    """
+
+    size = report_image_pixel_size(path)
+
+    if not size or not size[0] or not size[1]:
+        return REPORT_IMAGE_MAX_WIDTH_CM
+
+    width = max_height_cm * (size[0] / size[1])
+
+    return round(min(width, REPORT_IMAGE_MAX_WIDTH_CM), 2)
+
+
+def add_report_picture(document, path, max_height_cm=REPORT_VIDEO_IMAGE_MAX_HEIGHT_CM):
+    """按上面算出来的宽度插图（返回段落，方便控制间距）。
+
+    keep_with_next：图要和紧跟的图注留在同一页 —— 不然会出现
+    「图在这一页底、说明在下一页」这种很难看的排法。
+    """
+
+    from docx.shared import Cm, Pt
+
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(6)
+    paragraph.paragraph_format.keep_with_next = True
+
+    paragraph.add_run().add_picture(
+        str(path),
+        width=Cm(report_picture_width_cm(path, max_height_cm))
+    )
+
+    return paragraph
 
 
 def docx_point_field_table(document, point):
@@ -4462,18 +4689,18 @@ def build_docx_report(payload):
         map_image = resolve_report_image(point["map_image"])
 
         if video_image:
-            document.add_paragraph()
-            document.add_picture(str(video_image), width=Cm(15.9))
+            add_report_picture(document, video_image)
 
             caption = document.add_paragraph(
                 f"图 1　目标点视频截图（{point['video'] or '-'}　"
                 f"{point['time_text']}）"
             )
             caption.runs[0].font.size = Pt(9)
+            caption.paragraph_format.space_after = Pt(2)
+            caption.paragraph_format.keep_with_next = True   # 图 2 跟着它一起走
 
         if map_image:
-            document.add_paragraph()
-            document.add_picture(str(map_image), width=Cm(15.9))
+            add_report_picture(document, map_image, REPORT_MAP_IMAGE_MAX_HEIGHT_CM)
 
             caption = document.add_paragraph(
                 f"图 2　目标点地图截图（底图："
@@ -4481,6 +4708,7 @@ def build_docx_report(payload):
                 f"缩放 {point['zoom']} 级）"
             )
             caption.runs[0].font.size = Pt(9)
+            caption.paragraph_format.space_after = Pt(2)
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
