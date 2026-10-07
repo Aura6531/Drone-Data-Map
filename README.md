@@ -7,6 +7,17 @@
 
 ---
 
+## ▶ 讲解视频
+
+15 分钟完整演示（从导入数据到出 Word 报告）：
+
+**▶ [YouTube](https://youtu.be/7mKu2h0WP0g)**　　**▶ [b 站（Bilibili）](https://www.bilibili.com/video/BV1nhpu6pE3j/)**
+
+- YouTube：<https://youtu.be/7mKu2h0WP0g>
+- b 站：<https://www.bilibili.com/video/BV1nhpu6pE3j/>
+
+---
+
 ## 它解决什么问题
 
 巡查录像的痛点是"**找到了地点，找不到画面对应的那一秒**"。
