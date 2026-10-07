@@ -131,7 +131,8 @@ TIANDITU_TILE_SUBDOMAINS = 8
 
 # ------------------------------------------------------------
 # 天地图地名搜索（地图搜索框用）
-# key 可在系统环境变量 TIANDITU_KEY 中配置，也可直接填在下面。
+# key 只从**环境变量 TIANDITU_KEY** 或数据目录下的 tianditu_key.txt 读取；
+# 不要把 key 写进源码 —— 源码是要公开的，写进来就等于泄了。
 # 申请地址：https://lbs.tianditu.gov.cn/authorization/authorization.html
 # （旧的 console.tianditu.gov.cn 主机目前返回 502，别再指向它）
 # ------------------------------------------------------------

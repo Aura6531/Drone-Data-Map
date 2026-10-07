@@ -3,7 +3,8 @@ from pathlib import Path
 from collections import Counter
 sys.stdout.reconfigure(encoding="utf-8")
 
-SERVED = Path(r"<仓库根>\Data\DJI_202609240950_001")
+# 数据目录默认取 <仓库根>/Data（示例架次）
+SERVED = Path(__file__).resolve().parent / "Data" / "DJI_202609240950_001"
 RX_FOCAL = re.compile(r"\[focal_len:\s*([-\d.]+)\]")
 RX_DZOOM = re.compile(r"\[dzoom_ratio:\s*([-\d.]+)\]")
 

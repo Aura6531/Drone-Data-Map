@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-DIR = Path(r"<仓库根>\Data\DJI_202609240950_001")
+DIR = Path(__file__).resolve().parent / "Data" / "DJI_202609240950_001"
 
 FIELDS = {
     "focal_len":  re.compile(r"\[focal_len:\s*([-\d.]+)\]"),

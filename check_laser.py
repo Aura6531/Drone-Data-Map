@@ -1,10 +1,13 @@
-import subprocess, sys, io, re, os
+import subprocess, sys, io, re, os, shutil
 from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
-FF = r"ffmpeg.exe"
-SRC = r"<仓库根>\Data\DJI_202609240950_001\DJI_20260924095258_0001_V.MP4"
-OUT = Path(r"<仓库根>\lens_probe")
+ROOT_DIR = Path(__file__).resolve().parent
+# ffmpeg：先看环境变量 FFMPEG，再找 PATH，最后用打包目录里那份
+FF = (os.environ.get("FFMPEG") or shutil.which("ffmpeg")
+      or str(ROOT_DIR / "packaging" / "payload" / "ffmpeg" / "ffmpeg.exe"))
+SRC = str(ROOT_DIR / "Data" / "DJI_202609240950_001" / "DJI_20260924095258_0001_V.MP4")
+OUT = ROOT_DIR / "lens_probe"
 OUT.mkdir(parents=True, exist_ok=True)
 
 for idx in (1, 2):

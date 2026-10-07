@@ -7,8 +7,8 @@
     python -B migrate_projects.py --apply --geojson   # 再补 SRT 与 GeoJSON
 
 为什么 --apply 需要提权运行：
-    <仓库根>\\Code、Project、Data 三个目录缺少沙箱自身的授权项，
-    受限命令写入会被拒（诊断报告见 <仓库根>\\_acl_reports\\）。
+    仓库根下的 Code、Project、Data 三个目录在某些受管环境下缺少写权限，
+    受限命令写入会被拒（诊断报告见根目录的 _acl_reports\\）。
     生成 3.4MB 的 GeoJSON 也没法走工具后端，所以这一步要一次提权执行。
 
 安全措施：
@@ -23,7 +23,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(r"<仓库根>")
+ROOT = Path(__file__).resolve().parent
 CODE = ROOT / "Code"
 DATA = ROOT / "Data"
 PROJECT = ROOT / "Project"

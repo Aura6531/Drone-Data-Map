@@ -2,7 +2,8 @@ import json, sys, io
 from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
-g = json.loads(Path(r"<仓库根>\Data\DJI_202609240950_001\DJI_20260924095258_0001_V.geojson").read_text(encoding="utf-8"))
+SAMPLE = Path(__file__).resolve().parent / "Data" / "DJI_202609240950_001"
+g = json.loads((SAMPLE / "DJI_20260924095258_0001_V.geojson").read_text(encoding="utf-8"))
 f = g["features"][0]
 coords = f["geometry"]["coordinates"]
 times = f["properties"]["point_times"]

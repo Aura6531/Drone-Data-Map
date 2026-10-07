@@ -1,11 +1,12 @@
 """验证：用 SRT 遥测的 alt 替代 3D GeoJSON 的 point_heights 是否等价。"""
 import json, sys, io
 from pathlib import Path
-sys.path.insert(0, r"<仓库根>\Code")
+ROOT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT_DIR / "Code"))
 sys.stdout.reconfigure(encoding="utf-8")
 import project_manager as pm
 
-ROOT = Path(r"<仓库根>\Data\DJI_202609240950_001")
+ROOT = ROOT_DIR / "Data" / "DJI_202609240950_001"
 TAG = "V"
 
 plain = json.loads((ROOT / f"DJI_20260924095258_0001_{TAG}.geojson").read_text(encoding="utf-8"))

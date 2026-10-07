@@ -3,11 +3,18 @@ from urllib.parse import urlencode
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+# key 现在放在**数据目录**（仓库根）；老版本放 Code/ 下，两个位置都试一下
+ROOT_DIR = pathlib.Path(__file__).resolve().parent
 KEY = ""
-for line in pathlib.Path(r"<仓库根>\Code\tianditu_key.txt").read_text(encoding="utf-8").splitlines():
-    line = line.strip()
-    if line and not line.startswith("#"):
-        KEY = line
+for key_file in (ROOT_DIR / "tianditu_key.txt", ROOT_DIR / "Code" / "tianditu_key.txt"):
+    if not key_file.is_file():
+        continue
+    for line in key_file.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            KEY = line
+            break
+    if KEY:
         break
 
 V2 = "https://api.tianditu.gov.cn/v2/search"
