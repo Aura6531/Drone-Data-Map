@@ -1,0 +1,100 @@
+个人使用许可（禁止商业使用）  v1.0
+Personal Use License (Non-Commercial)  v1.0
+
+版权所有 (C) 2026 Aura6531。保留所有权利。
+Copyright (C) 2026 Aura6531. All rights reserved.
+
+本许可同时以中文和英文书写。中英文如有冲突，以中文为准。
+This license is written in both Chinese and English. If there is any conflict,
+the Chinese text prevails.
+
+────────────────────────────────────────────────────────────────────────
+一、允许做的事（Grant of rights）
+1. 你可以在**个人的、非商业的**目的下：运行、复制、修改本软件，并为自己使用
+   而制作衍生作品。
+2. 你可以把本软件用于个人的学习、研究、业余项目与自用工具。
+
+1. You may, for **personal and non-commercial** purposes: run, copy and modify
+   this software, and create derivative works for your own use.
+2. You may use this software for personal study, research, hobby projects and
+   your own private tooling.
+
+────────────────────────────────────────────────────────────────────────
+二、禁止做的事（Prohibitions）
+未经版权人事先书面许可，你**不得**：
+1. 将本软件或其衍生作品用于任何**商业用途**。商业用途包括但不限于：
+   - 在营利性公司、机构内部使用（含内部经营、生产、交付流程）；
+   - 为客户或第三方提供交付、咨询、外包、验收等有偿或经营性服务；
+   - 作为托管服务、在线服务、SaaS 或任何形式的网络服务对外提供；
+   - 与硬件、设备、服务或培训捆绑销售，或用于招投标、生产运营；
+   - 转售、出租、许可、再分发，或收取任何费用。
+2. 再分发本软件或其衍生作品（无论是否修改、是否收费）。
+3. 删除、隐藏或修改本软件中的版权声明与本许可文本。
+
+Without the prior written permission of the copyright holder, you may **not**:
+1. Use this software or any derivative work for any **commercial purpose**,
+   including but not limited to: internal use within a for-profit organisation;
+   paid or commercial delivery, consulting or outsourcing services for clients;
+   hosting it as an online or SaaS service; bundling it with hardware, devices,
+   services or training; or use in tenders and production operations.
+2. Redistribute this software or any derivative work, modified or not, with or
+   without a fee.
+3. Remove, obscure or alter the copyright notices or this license text.
+
+────────────────────────────────────────────────────────────────────────
+三、条件（Conditions）
+1. 本软件的副本与衍生作品中必须完整保留上述版权声明与本许可文本。
+2. 若你修改了本软件，须在修改过的文件中注明「已修改」及修改日期。
+3. 本许可不授予商标权，也不授予任何专利许可。
+
+1. Copies and derivative works must retain the copyright notice above and this
+   license text in full.
+2. If you modify the software, the modified files must carry a notice stating
+   that they were changed, together with the date of change.
+3. This license grants no trademark rights and no patent license.
+
+────────────────────────────────────────────────────────────────────────
+四、第三方组件（Third-party components）
+本软件在运行或打包时会使用第三方组件，它们各自遵循自己的许可，与本许可无关：
+- FFmpeg（运行期调用；其二进制为 GPL 构建）— https://ffmpeg.org/legal.html
+- Leaflet（地图库，BSD-2-Clause）— https://github.com/Leaflet/Leaflet
+- 天地图瓦片服务（底图数据，遵循天地图服务条款，需自备 key）
+- DJI 视频 / SRT 遥测格式相关解析为本项目自行实现，不含 DJI 代码
+
+This software uses third-party components at runtime or when packaged; each is
+governed by its own license and is not covered by this license:
+- FFmpeg (invoked at runtime; its binaries are GPL builds)
+- Leaflet (map library, BSD-2-Clause)
+- Tianditu tile service (base map data; subject to Tianditu's terms; bring your own key)
+
+────────────────────────────────────────────────────────────────────────
+五、无担保（No warranty）
+本软件按「现状」提供，不附带任何明示或默示的担保，包括但不限于对适销性、
+特定用途适用性、准确性及不侵权的担保。因使用或无法使用本软件而产生的任何
+直接、间接、偶然、特殊或后果性损失，版权人在任何情况下均不承担责任。
+测量、坐标、报告等输出**仅供辅助参考**，不得作为测绘、执法、工程或安全决策的
+唯一依据。
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, ACCURACY AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE. Outputs such
+as measurements, coordinates and reports are for reference only and must not be
+the sole basis for surveying, enforcement, engineering or safety decisions.
+
+────────────────────────────────────────────────────────────────────────
+六、终止（Termination）
+你一旦违反本许可的任何条款，本许可授予你的权利即自动终止，无需另行通知。
+终止后你必须停止使用并销毁本软件的所有副本。
+
+Your rights under this license terminate automatically, without notice, if you
+breach any of its terms. Upon termination you must stop using the software and
+destroy all copies.
+
+────────────────────────────────────────────────────────────────────────
+七、商业授权（Commercial licensing）
+需要商业使用或再分发，请先取得书面授权：
+For commercial use or redistribution, please obtain written permission first:
+
+    联系方式 / Contact：<在此填写邮箱或主页>
