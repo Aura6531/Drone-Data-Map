@@ -2,7 +2,7 @@ import re, sys, io, bisect
 from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
-SERVED = Path(__file__).resolve().parent / "Data" / "DJI_202609240950_001"
+SERVED = Path(r"<仓库根>\Data\DJI_202609240950_001")
 CUE = re.compile(r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->")
 LAT = re.compile(r"\[latitude:\s*([-\d.]+)\]")
 LON = re.compile(r"\[longitude:\s*([-\d.]+)\]")

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>无人机三维轨迹</title>
+<title>3D Track Preview</title>
 
 <link rel="stylesheet"
       href="https://cesium.com/downloads/cesiumjs/releases/1.122/Build/Cesium/Widgets/widgets.css">
@@ -288,18 +288,18 @@ button:disabled {
 <body>
 
 <div class="header">
-    无人机巡查数据管理
+    Drone Survey Data
 </div>
 
 <div class="page">
 
     <div class="card">
-        <h1>三维轨迹预览</h1>
+        <h1>3D track preview</h1>
         <div class="description">
-            读取 DJI 时间-位置信息中的高度数据，以三维方式显示无人机实际飞行轨迹。
+            Reads altitude from the DJI time-position data and shows the actual flight path in 3D.
         </div>
 
-        <label for="projectSelect">选择项目</label>
+        <label for="projectSelect">Select project</label>
         <select id="projectSelect"></select>
 
         <div id="projectNotice"
@@ -312,17 +312,17 @@ button:disabled {
         <div class="toolbar">
             <button id="refreshBtn"
                     class="secondary">
-                重新扫描
+                Rescan
             </button>
 
             <button id="loadAllBtn"
                     class="primary">
-                加载全部 3D 轨迹
+                Load all 3D tracks
             </button>
 
             <button id="clearBtn"
                     class="secondary">
-                清除地图
+                Clear map
             </button>
         </div>
 
@@ -354,8 +354,8 @@ button:disabled {
         </div>
 
         <div class="hint">
-            鼠标左键旋转视角；右键平移；滚轮缩放。
-            点击三维轨迹可定位到对应视频时间并播放。
+            Drag with the left button to rotate, right button to pan, wheel to zoom.
+            Click a 3D track to locate the matching video time and play it.
         </div>
 
     </div>
@@ -367,7 +367,7 @@ button:disabled {
     <div class="video-dialog">
         <div class="video-dialog-head">
             <div>
-                <div id="videoTitle" class="video-title">视频播放</div>
+                <div id="videoTitle" class="video-title">Video player</div>
                 <div id="videoInfo" class="video-info"></div>
             </div>
             <button id="videoClose" class="video-close" type="button">×</button>
@@ -501,7 +501,7 @@ async function api(url) {
     if (!response.ok || data.error) {
         throw new Error(
             data.error ||
-            ("请求失败：" + response.status)
+            ("Request failed: " + response.status)
         );
     }
 
@@ -544,7 +544,7 @@ function openVideoAt(
     const segmentEnd = Number(get("video_end"));
 
     if (!video || !videoPath || !Number.isFinite(folderIndex)) {
-        show(mapNotice, "无法确定对应的视频文件。", true);
+        show(mapNotice, "Could not determine the matching video file.", true);
         return;
     }
 
@@ -556,13 +556,13 @@ function openVideoAt(
 
     videoTitle.textContent = video;
     videoInfo.textContent =
-        "轨迹段 " + String(segment)
-        + " · 点击位置 " + formatTime(pointTime)
-        + " · 高度 " + Number(height).toFixed(2) + " m";
+        "Segment " + String(segment)
+        + " · clicked at " + formatTime(pointTime)
+        + " · altitude " + Number(height).toFixed(2) + " m";
 
     videoStatus.textContent =
-        "正在定位到 " + formatTime(pointTime)
-        + "，播放至轨迹段结束 " + formatTime(segmentEnd);
+        "Locating " + formatTime(pointTime)
+        + ", playing to the end of the segment " + formatTime(segmentEnd);
 
     videoModal.style.display = "flex";
 
@@ -576,14 +576,14 @@ function openVideoAt(
         try {
             videoPlayer.currentTime = target;
         } catch (error) {
-            videoStatus.textContent = "视频已打开，正在等待定位……";
+            videoStatus.textContent = "Video opened, waiting to seek…";
         }
 
         const playPromise = videoPlayer.play();
         if (playPromise && typeof playPromise.catch === "function") {
             playPromise.catch(() => {
                 videoStatus.textContent =
-                    "视频已定位到 " + formatTime(target) + "，请点击播放。";
+                    "Video positioned at " + formatTime(target) + " — press play.";
             });
         }
 
@@ -592,7 +592,7 @@ function openVideoAt(
                 videoPlayer.pause();
                 videoPlayer.removeEventListener("timeupdate", onTimeUpdate);
                 videoStatus.textContent =
-                    "已播放至轨迹段结束 " + formatTime(end);
+                    "Played to the end of the segment " + formatTime(end);
             }
         };
 
@@ -658,7 +658,7 @@ function handleTrajectoryClick(movement) {
     }
 
     if (!Array.isArray(pointTimes) || pointTimes.length !== positions.length) {
-        show(mapNotice, "当前轨迹缺少可用于定位视频的时间索引。", true);
+        show(mapNotice, "This track has no time index, so the video cannot be located.", true);
         return;
     }
 
@@ -688,7 +688,7 @@ function handleTrajectoryClick(movement) {
 
     const pointTime = Number(pointTimes[bestIndex]);
     if (!Number.isFinite(pointTime)) {
-        show(mapNotice, "无法确定点击位置对应的视频时间。", true);
+        show(mapNotice, "Could not determine the video time for the clicked position.", true);
         return;
     }
 
@@ -775,12 +775,12 @@ function initViewer() {
         baseLayer.errorEvent.addEventListener(
             function (error) {
                 console.error(
-                    "三维底图加载错误：",
+                    "3D base map error: ",
                     error
                 );
                 show(
                     mapNotice,
-                    "底图图层加载失败，请查看浏览器控制台。",
+                    "The base map layer failed to load; check the browser console.",
                     true
                 );
             }
@@ -875,59 +875,59 @@ function showEntityInfo(entity, clickedTime=null, clickedLat=null, clickedLon=nu
 
     infoPanel.innerHTML = `
         <div class="info-title">
-            三维轨迹信息
+            3D track info
         </div>
 
         ${Number.isFinite(Number(clickedTime)) ? `
         <div class="info-row">
-            <b>点击位置时间：</b>${formatTime(clickedTime)}
+            <b>Clicked time: </b>${formatTime(clickedTime)}
         </div>
         <div class="info-row">
-            <b>点击位置：</b>${Number(clickedLon).toFixed(6)}, ${Number(clickedLat).toFixed(6)}
+            <b>Clicked position: </b>${Number(clickedLon).toFixed(6)}, ${Number(clickedLat).toFixed(6)}
         </div>
         <div class="info-row">
-            <b>点击高度：</b>${Number(clickedHeight).toFixed(2)} m
+            <b>Clicked altitude: </b>${Number(clickedHeight).toFixed(2)} m
         </div>` : ""}
 
         <div class="info-row">
-            <b>视频：</b>${esc(video)}
+            <b>Video: </b>${esc(video)}
         </div>
 
         <div class="info-row">
-            <b>轨迹段：</b>${esc(segment)}
+            <b>Segment: </b>${esc(segment)}
         </div>
 
         <div class="info-row">
-            <b>时间：</b>
+            <b>Time: </b>
             ${formatTime(start)}
             →
             ${formatTime(end)}
         </div>
 
         <div class="info-row">
-            <b>高度类型：</b>
+            <b>Altitude type: </b>
             ${heightType === "relative"
-                ? "相对高度"
-                : "绝对高度"}
+                ? "relative"
+                : "absolute"}
         </div>
 
         <div class="info-row">
-            <b>最低高度：</b>
+            <b>Min altitude: </b>
             ${Number.isFinite(minHeight)
                 ? minHeight.toFixed(2) + " m"
                 : "-"}
         </div>
 
         <div class="info-row">
-            <b>最高高度：</b>
+            <b>Max altitude: </b>
             ${Number.isFinite(maxHeight)
                 ? maxHeight.toFixed(2) + " m"
                 : "-"}
         </div>
 
         <div class="hint">
-            当前三维高度直接来自 DJI SRT。
-            第一版优先使用相对高度，不进行地形高程换算。
+            The 3D altitude comes straight from the DJI SRT.
+            This version prefers relative altitude and does not convert to terrain elevation.
         </div>
     `;
 
@@ -983,7 +983,7 @@ function addGeo3D(data, colorIndex, folderIndex, videoPath) {
             viewer.entities.add({
                 name:
                     feature.properties?.video
-                    || "三维轨迹",
+                    || "3D track",
 
                 polyline: {
                     positions:
@@ -1130,7 +1130,7 @@ async function loadAll() {
 
         show(
             mapNotice,
-            "当前项目没有可加载的 3D GeoJSON。",
+            "This project has no loadable 3D GeoJSON.",
             true
         );
 
@@ -1139,7 +1139,7 @@ async function loadAll() {
 
     loadAllBtn.disabled = true;
     loadAllBtn.textContent =
-        "正在加载……";
+        "Loading…";
 
     try {
 
@@ -1205,7 +1205,7 @@ async function loadAll() {
 
         loadAllBtn.disabled = false;
         loadAllBtn.textContent =
-            "加载全部 3D 轨迹";
+            "Load all 3D tracks";
     }
 }
 
@@ -1249,7 +1249,7 @@ function updateStats(datas) {
 
         <div class="stat">
             <div class="stat-title">
-                轨迹段
+                Segments
             </div>
             <div class="stat-value">
                 ${segments}
@@ -1258,7 +1258,7 @@ function updateStats(datas) {
 
         <div class="stat">
             <div class="stat-title">
-                轨迹要素
+                Features
             </div>
             <div class="stat-value">
                 ${features}
@@ -1267,7 +1267,7 @@ function updateStats(datas) {
 
         <div class="stat">
             <div class="stat-title">
-                三维定位记录
+                3D position records
             </div>
             <div class="stat-value">
                 ${records.toLocaleString()}
@@ -1313,7 +1313,7 @@ async function scanFiles() {
 
             show(
                 fileNotice,
-                "当前项目没有 GeoJSON。请先在视频结构检测页面提取 SRT 并生成 GeoJSON。",
+                "This project has no GeoJSON. Extract the SRT and make GeoJSON on the Video Inspector page first.",
                 true
             );
 
@@ -1347,12 +1347,12 @@ async function scanFiles() {
                     <div class="file-meta">
                         ${esc(f.folder_name)}
                         ·
-                        记录
+                        Records
                         ${Number(
                             f.record_count || 0
                         ).toLocaleString()}
                         ·
-                        轨迹段
+                        Segments
                         ${esc(
                             f.segment_count ?? "-"
                         )}
@@ -1360,7 +1360,7 @@ async function scanFiles() {
                 </div>
 
                 <button class="secondary">
-                    加载 3D
+                    Load 3D
                 </button>
             `;
 
@@ -1410,7 +1410,7 @@ async function loadProjects() {
 
             show(
                 projectNotice,
-                "当前没有项目。",
+                "No project selected.",
                 true
             );
 
@@ -1437,7 +1437,7 @@ async function loadProjects() {
 
         show(
             projectNotice,
-            "当前项目："
+            "Project: "
             + projectSelect.value
         );
 
@@ -1459,7 +1459,7 @@ projectSelect.addEventListener(
 
         show(
             projectNotice,
-            "当前项目："
+            "Project: "
             + projectSelect.value
         );
 

@@ -10,7 +10,7 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>无人机巡查媒体识别</title>
+    <title>Media Inspector</title>
 
     <style>
 
@@ -465,7 +465,7 @@
 <header class="header">
 
     <div class="header-title">
-        无人机巡查数据管理
+        Drone Survey Data
     </div>
 
 </header>
@@ -481,13 +481,13 @@
     <section class="card">
 
         <h1>
-            项目媒体识别
+            Project media
         </h1>
 
         <div class="description">
 
-            自动读取当前项目中的数据文件夹，
-            识别无人机视频，并查找对应的外部 SRT 遥测文件。
+            Reads the data folders of the current project,
+            finds drone videos and their matching external SRT telemetry files.
 
         </div>
 
@@ -496,14 +496,14 @@
             class="form-label"
             for="projectSelect"
         >
-            选择项目
+            Select project
         </label>
 
 
         <select id="projectSelect">
 
             <option value="">
-                正在读取项目……
+                Reading projects…
             </option>
 
         </select>
@@ -513,7 +513,7 @@
             id="currentProject"
             class="current-project"
         >
-            当前项目：未选择
+            Project: none selected
         </div>
 
 
@@ -536,14 +536,14 @@
         <div class="toolbar">
 
             <h2>
-                媒体统计
+                Media summary
             </h2>
 
             <button
                 id="refreshButton"
                 class="button"
             >
-               重新识别
+               Rescan
             </button>
 
         </div>
@@ -554,7 +554,7 @@
             <div class="summary-item">
 
                 <div class="summary-label">
-                    数据文件夹
+                    Data folders
                 </div>
 
                 <div
@@ -570,7 +570,7 @@
             <div class="summary-item">
 
                 <div class="summary-label">
-                    视频
+                    Videos
                 </div>
 
                 <div
@@ -586,7 +586,7 @@
             <div class="summary-item">
 
                 <div class="summary-label">
-                    外部 SRT
+                    External SRT
                 </div>
 
                 <div
@@ -602,7 +602,7 @@
             <div class="summary-item">
 
                 <div class="summary-label">
-                    已匹配
+                    Matched
                 </div>
 
                 <div
@@ -618,7 +618,7 @@
             <div class="summary-item">
 
                 <div class="summary-label">
-                    待处理
+                    Pending
                 </div>
 
                 <div
@@ -643,14 +643,14 @@
     <section class="card">
 
         <h2>
-            视频文件
+            Video file
         </h2>
 
 
         <div id="videoContainer">
 
             <div class="empty">
-                暂无数据。
+                No data.
             </div>
 
         </div>
@@ -753,7 +753,7 @@
 
                 throw new Error(
                     data.error ||
-                    "无法读取项目列表。"
+                    "Could not read the project list."
                 );
             }
 
@@ -775,7 +775,7 @@
                 option.value = "";
 
                 option.textContent =
-                    "暂无项目";
+                    "No projects";
 
                 projectSelect.appendChild(
                     option
@@ -851,30 +851,30 @@
         if (!projectName) {
 
             currentProject.textContent =
-                "当前项目：未选择";
+                "Project: none selected";
 
             resetSummary();
 
             videoContainer.innerHTML =
-                '<div class="empty">暂无数据。</div>';
+                '<div class="empty">No data.</div>';
 
             return;
         }
 
 
         currentProject.textContent =
-            "当前项目：" + projectName;
+            "Project: " + projectName;
 
 
         refreshButton.disabled =
             true;
 
         refreshButton.textContent =
-            "正在识别……";
+            "Scanning…";
 
 
         showMessage(
-            "正在读取项目数据……",
+            "Reading project data…",
             "loading"
         );
 
@@ -899,7 +899,7 @@
 
                 throw new Error(
                     data.error ||
-                    "媒体识别失败。"
+                    "Media scan failed."
                 );
             }
 
@@ -916,7 +916,7 @@
             resetSummary();
 
             videoContainer.innerHTML =
-                '<div class="empty">无法读取媒体数据。</div>';
+                '<div class="empty">Could not read media data.</div>';
 
 
             showMessage(
@@ -930,7 +930,7 @@
                 false;
 
             refreshButton.textContent =
-                "重新识别";
+                "Rescan";
         }
     }
 
@@ -973,7 +973,7 @@
         ) {
 
             videoContainer.innerHTML =
-                '<div class="empty">当前项目没有数据文件夹。</div>';
+                '<div class="empty">This project has no data folders.</div>';
 
             return;
         }
@@ -1070,7 +1070,7 @@
 
 
                     empty.textContent =
-                        "该文件夹没有发现视频。";
+                        "No videos found in this folder.";
 
 
                     list.appendChild(
@@ -1153,13 +1153,13 @@
 
 
         meta.textContent =
-            "大小："
+            "Size: "
             +
             formatSize(
                 video.size
             )
             +
-            "　相对路径："
+            "  Relative path: "
             +
             video.relative_path;
 
@@ -1187,7 +1187,7 @@
 
 
             status.textContent =
-                "✓ 已找到对应 SRT："
+                "✓ Matching SRT found: "
                 +
                 video.srt.name;
 
@@ -1199,7 +1199,7 @@
 
 
             status.textContent =
-                "未找到对应外部 SRT";
+                "No matching external SRT";
         }
 
 

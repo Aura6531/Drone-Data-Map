@@ -2,7 +2,7 @@ import json, sys, io, re
 from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent / "Data" / "DJI_202609240950_001"
+ROOT = Path(r"<仓库根>\Data\DJI_202609240950_001")
 
 print("=== 从现有 3D 文件里精确量出 point_heights 占多少字节 ===")
 for tag in ("V", "S", "T"):

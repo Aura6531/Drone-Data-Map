@@ -41,26 +41,26 @@ const { compassText, groundCenterDistance, lensInfoOf, opticalFocalOf, isInfrare
 let ok = true;
 const chk = (c, label, extra = '') => { ok &&= !!c; console.log(`  ${c ? '[OK]' : '[FAIL]'} ${label}${extra ? ' -> ' + extra : ''}`); };
 
-console.log('=== 1) 中文朝向格式（用户要的“东偏南 35°”）===');
+console.log('=== 1) 英文朝向格式（"35° south of east"）===');
 const cases = [
-  [125, '东偏南 35°'],
-  [35, '北偏东 35°'],
-  [170, '南偏东 10°'],
-  [190, '南偏西 10°'],
-  [350, '北偏西 10°'],
-  [0, '正北'],
-  [90, '正东'],
-  [180, '正南'],
-  [270, '正西'],
-  [45, '北偏东 45°'],
-  [-90, '正西'],
-  [360, '正北'],
+  [125, '35° south of east'],
+  [35, '35° east of north'],
+  [170, '10° east of south'],
+  [190, '10° west of south'],
+  [350, '10° west of north'],
+  [0, 'due N'],
+  [90, 'due E'],
+  [180, 'due S'],
+  [270, 'due W'],
+  [45, '45° east of north'],
+  [-90, 'due W'],
+  [360, 'due N'],
   [235, '西南'],
 ];
 for (const [deg, expect] of cases) {
   const got = compassText(deg);
-  if (expect === '西南') {           // 235 度：与南、西各差 55/35 -> 应在西偏南 55 或南偏西 55
-    chk(typeof got === 'string' && /偏/.test(got), `235° 给出偏角表述`, got);
+  if (expect === '西南') {           // 235 度：与南、西各差 55/35 -> 应在 west/south of 之一
+    chk(typeof got === 'string' && / of /.test(got), `235° 给出偏角表述`, got);
     continue;
   }
   chk(got === expect, `${deg}° -> ${expect}`, got);
@@ -70,14 +70,17 @@ chk(compassText(undefined) === '—', 'undefined -> “—”');
 
 console.log('\n=== 2) 朝向文本反向解析回来，应与原角度一致（往返一致性）===');
 const NAMES = COMPASS_NAMES;
+// 英文写法：`due N` / `35° south of east`。反向解析时把全称折回单字母。
+const DIR_INDEX = { north: 0, east: 1, south: 2, west: 3, N: 0, E: 1, S: 2, W: 3 };
 function parseCompass(text) {
-  let m = text.match(/^正(.)$/);
-  if (m) { const i = NAMES.indexOf(m[1]); return i < 0 ? null : i * 90; }
-  m = text.match(/^(.)偏(.)\s+(\d+)°$/);
+  let m = text.match(/^due ([NESW])$/);
+  if (m) { const i = DIR_INDEX[m[1]]; return i < 0 ? null : i * 90; }
+  m = text.match(/^(\d+)° (north|east|south|west) of (north|east|south|west)$/);
   if (!m) return null;
-  const i = NAMES.indexOf(m[1]), j = NAMES.indexOf(m[2]);
+  const off = Number(m[1]);
+  const j = DIR_INDEX[m[2]];   // 偏往哪一侧
+  const i = DIR_INDEX[m[3]];   // 基准方向
   if (i < 0 || j < 0) return null;
-  const off = Number(m[3]);
   const cw = ((j - i + 4) % 4) === 1;
   return (((i * 90 + (cw ? off : -off)) % 360) + 360) % 360;
 }
@@ -134,24 +137,24 @@ const info = (f, z) => lensInfoOf('DJI_x_V.mp4', f, z);
 
 console.log('  光学焦距 × 数码变焦 -> 显示：');
 for (const [f, z, expect] of [
-  [24, 1, '广角 1×'],
-  [70, 1, '中长焦 3×'],
-  [168, 1, '长焦 7×'],
-  [140, 2, '中长焦 6×'],
-  [218.4, 1.3, '长焦 9.1×'],
-  [81.12, 3.38, '广角 3.4×'],
+  [24, 1, 'Wide 1×'],
+  [70, 1, 'Mid tele 3×'],
+  [168, 1, 'Tele 7×'],
+  [140, 2, 'Mid tele 6×'],
+  [218.4, 1.3, 'Tele 9.1×'],
+  [81.12, 3.38, 'Wide 3.4×'],
 ]) {
   const got = info(f, z);
   console.log(`    光学 ${(f / z).toFixed(1).padStart(5)} mm  数码 ${String(z).padStart(4)}×  ->  ${got.text}`);
   chk(got.text === expect, `显示为「${expect}」`, got.text);
 }
 
-chk(info(81, 3.38).name === '广角', '广角开 3.38× 数码变焦仍判广角（必须用光学焦距）');
-chk(info(237, 3.38).name === '中长焦', '中长焦开 3.38× 数码变焦仍判中长焦');
-chk(info(229.1, 1).name === '长焦', '229.1 mm -> 长焦');
+chk(info(81, 3.38).name === 'Wide', '广角开 3.38× 数码变焦仍判广角（必须用光学焦距）');
+chk(info(237, 3.38).name === 'Mid tele', '中长焦开 3.38× 数码变焦仍判中长焦');
+chk(info(229.1, 1).name === 'Tele', '229.1 mm -> Tele');
 chk(info(null, 1).text === '—', '焦距缺失 -> —');
-chk(lensInfoOf('DJI_x_T.mp4', 52.7, 1).text === '红外', 'T 路 -> 红外（不带倍率）');
-chk(lensInfoOf('DJI_x_T.mp4', null, 1).text === '红外', '红外优先级高于焦距判断');
+chk(lensInfoOf('DJI_x_T.mp4', 52.7, 1).text === 'IR', 'T 路 -> IR（不带倍率）');
+chk(lensInfoOf('DJI_x_T.mp4', null, 1).text === 'IR', '红外优先级高于焦距判断');
 chk(isInfraredPath('DJI_x_T.MP4') && !isInfraredPath('DJI_x_V.mp4') && !isInfraredPath('DJI_x_S.mp4'),
   '只有 _T 判为红外');
 

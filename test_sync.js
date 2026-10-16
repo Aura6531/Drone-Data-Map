@@ -35,29 +35,44 @@ ${extractFn('ensureMapIcons')}
 ${extractFn('iconsUsable')}
 ${extractFn('indexAtTime')}
 ${extractFn('streamKeyOf')}
+${extractFn('flightStemOfForMatch')}
+${extractFn('trackMatchesPath')}
 ${extractFn('trackForClip')}
 ${extractFn('syncDroneMarker')}
-return {syncDroneMarker,ensureMapIcons,iconsUsable,indexAtTime,trackForClip};`;
+return {syncDroneMarker,ensureMapIcons,iconsUsable,indexAtTime,trackForClip,trackMatchesPath,flightStemOfForMatch};`;
 
 const build = new Function(
   'L', 'clip', 'map', 'telemetry', 'videoPlayer', 'loadedTracks',
   'renderTelemetry', 'syncCrosshair', 'syncFootprint', 'followViewport', 'syncMapPip',
+  'updateTargetMarker',
   'telemetryIndexAt', 'proxyBucketOf', 'bearingAt', 'noteMissingTrack',
   code
 );
 
 // ---------- 真实数据 ----------
-const gj = JSON.parse(fs.readFileSync(path.join(DIR, 'DJI_20260924095258_0001_V.geojson'), 'utf8'));
+// 一次拍摄现在只有**一份**航迹：文件名去掉了 `_V/_S/_T`（三路合一的合并航迹），
+// 三路的视频文件名在 properties.videos 里（V/S/T -> 文件名）。
+const GEOJSON = 'DJI_20260924095258_0001.geojson';
+const gj = JSON.parse(fs.readFileSync(path.join(DIR, GEOJSON), 'utf8'));
 const f0 = gj.features[0];
-const relPath = 'DJI_20260924095258_0001_V.geojson';
+const relPath = GEOJSON;
 
+// 播放的还是**某一路视频**（_V），而航迹只有合并的那一份 ——
+// 这正是 trackForClip() 要接上的那根线（靠文件名是接不上的，见页面里的
+// flightStemOfForMatch / trackMatchesPath）。
 function makeTrack() {
   return {
     coords: f0.geometry.coordinates,
     times: f0.properties.point_times,
     heights: [],
     fileInfo: { relative_path: relPath, folder_index: 0 },
-    video: 'DJI_20260924095258_0001_V.MP4',
+    // 合并航迹的这两个字段：video 是参考路（V）的文件名，
+    // videos 是「路 -> 文件名」表；videoRel 是 addGeo 算好存下来的
+    // 「这份 geojson 对应哪个视频」。
+    video: f0.properties.video,
+    videos: f0.properties.videos,
+    referenceStream: f0.properties.reference_stream,
+    videoRel: f0.properties.video,
     videoEnd: Number(f0.properties.video_end || 0),
   };
 }
@@ -127,6 +142,7 @@ function run(withLeaflet, opts = {}) {
     () => calls.reached.push('syncFootprint'),
     () => calls.reached.push('followViewport'),
     () => calls.reached.push('syncMapPip'),
+    () => calls.reached.push('updateTargetMarker'),
     () => 0,
     () => 0,
     () => 90,
@@ -147,9 +163,10 @@ console.log('=== 正常路径：航迹已加载、Leaflet 可用 ===');
   chk(!r.threw, '不抛异常', r.threw ? r.threw.constructor.name + ': ' + r.threw.message : '');
   chk(r.calls.divIcon === 3, '按需建出三个图标', String(r.calls.divIcon));
   chk((r.calls.marker || 0) >= 1, '建了飞机箭头 marker', String(r.calls.marker || 0));
-  chk(r.calls.reached.length === 5, '走到了函数最后（5 个下游调用都执行了）',
+  chk(r.calls.reached.length === 6, '走到了函数最后（6 个下游调用都执行了）',
     r.calls.reached.join(' -> ') || '（一个都没执行）');
-  chk(r.calls.reached.join(',') === 'renderTelemetry,syncCrosshair,syncFootprint,followViewport,syncMapPip',
+  chk(r.calls.reached.join(',') ===
+    'renderTelemetry,syncCrosshair,syncFootprint,updateTargetMarker,followViewport,syncMapPip',
     '顺序正确');
   chk(r.clip.droneLatLng && Number.isFinite(r.clip.droneLatLng.lat), '记下了飞机位置',
     r.clip.droneLatLng ? `${r.clip.droneLatLng.lat.toFixed(5)},${r.clip.droneLatLng.lng.toFixed(5)}` : 'null');
@@ -161,7 +178,41 @@ console.log('\n=== 二次调用：不应重复建图标/箭头 ===');
   const r = run(true);
   const r2 = run(true);
   chk(r2.calls.divIcon === 3, '每次都是三个图标（不重复创建）', String(r2.calls.divIcon));
-  chk(r2.calls.reached.length === 5, '同样走到最后');
+  chk(r2.calls.reached.length === 6, '同样走到最后');
+}
+
+// 合并航迹之前没有这一节：那时一次拍摄有三份 geojson（_V/_S/_T），
+// 视频名换成 .geojson 就和航迹文件名相等，靠字符串比就够。
+// 现在文件名去掉了后缀，**必须**按「拍摄公共名」对 —— 这条线断了的话，
+// 表现就是这一节上面那一片失败（地图不动、信息栏却正常）。
+console.log('\n=== 合并航迹：任一路视频都要对到那份唯一的航迹 ===');
+{
+  const r = run(true);
+  const want = makeTrack().fileInfo.relative_path;
+  const found = r.api.trackForClip();
+
+  chk(found && found.fileInfo.relative_path === want, 'trackForClip 用 _V 视频找到了合并航迹',
+    found ? found.fileInfo.relative_path : 'null');
+
+  // 三路（V/S/T）都得对上同一条，不能只对 V 管用
+  for (const suf of ['V', 'S', 'T']) {
+    const c = run(true).clip;
+    c.path = relPath.replace(/\.geojson$/i, '_' + suf + '.MP4');
+    c.track = null;
+    const f = r.api.trackForClip();
+    chk(f && f.fileInfo.relative_path === want,
+      `_${suf} 视频也对到同一条合并航迹`, f ? f.fileInfo.relative_path : 'null');
+  }
+
+  // 顺手盯住「为什么能对上」的那两级判据本身
+  chk(r.api.flightStemOfForMatch('DJI_20260924095258_0001_V.MP4') === 'dji_20260924095258_0001',
+    '拍摄公共名：_V 视频去掉后缀');
+  chk(r.api.flightStemOfForMatch(relPath) === 'dji_20260924095258_0001',
+    '拍摄公共名：合并航迹名去掉后缀后与视频相同');
+  chk(r.api.trackMatchesPath(relPath, 'DJI_20260924095258_0001_T.MP4'),
+    '合并航迹与 _T 视频判为同一次拍摄（提示/补加载共用这套判据）');
+  chk(!r.api.trackMatchesPath('DJI_20260924101516_0001.geojson', 'DJI_20260924095258_0001_V.MP4'),
+    '不同架次不会被误判成同一次拍摄');
 }
 
 console.log('\n=== 边界：这些情况下会提前返回（但不能静默无感）===');

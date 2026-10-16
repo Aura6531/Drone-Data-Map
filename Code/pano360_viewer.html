@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>360 Panorama Viewer</title>
+<!--
+  Avata 360 预览器（任务①）。
+
+  为什么需要它：Avata 360 的 `.OSV` 是**两路半球鱼眼**、十几 GB，浏览器没法直接放。
+  后端按需把它转成等距柱状全景（pano360_service.py），这里再：
+    · 拖拽 / 方向键转视角（透视小窗，从等距柱状上采）
+    · 滚轮 / 按钮缩放视场
+    · 顶上一行显示当前朝向（含**正北**，north_yaw 由太阳位置独立算出）
+    · 时间轴拖动 -> 向后端要那个时刻的全景
+
+  北向的可靠性：north_yaw 只用到太阳的**方位角**，而像面方位角与极角标定无关 ——
+  所以即使 FOV 还没定准，北向也是可信的（见 pano360_north.py 的推导）。
+-->
+<style>
+  :root{
+    --bg:#0f172a; --panel:rgba(15,23,42,.72); --line:rgba(148,163,184,.34);
+    --fg:#e2e8f0; --dim:#94a3b8; --accent:#38bdf8; --north:#f43f5e; --ok:#4ade80;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+            font:13px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",
+                 "PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
+  #stage{position:fixed;inset:0;cursor:grab;touch-action:none}
+  #stage.dragging{cursor:grabbing}
+  canvas{display:block;width:100%;height:100%}
+
+  .panel{position:absolute;background:var(--panel);border:1px solid var(--line);
+         border-radius:10px;backdrop-filter:blur(7px) saturate(1.6);
+         -webkit-backdrop-filter:blur(7px) saturate(1.6);
+         box-shadow:0 2px 12px rgba(0,0,0,.35)}
+  /* 顶部：朝向读数 */
+  #hud{left:10px;top:10px;right:10px;padding:8px 12px;display:flex;
+       align-items:center;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+  #hud .k{color:var(--dim);font-size:11px}
+  #hud b{font-size:14px}
+  #hud .sep{width:1px;height:18px;background:var(--line)}
+  #northVal{color:var(--north)}
+
+  /* 底部：时间轴 + 素材选择 */
+  #bottom{left:10px;right:10px;bottom:10px;padding:10px 12px;
+          display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  #bottom select,#bottom input[type=range]{height:30px}
+  #bottom select{background:#1e293b;color:var(--fg);border:1px solid var(--line);
+                 border-radius:7px;padding:0 8px;max-width:280px;min-width:0}
+  #time{flex:1 1 260px;min-width:160px;accent-color:var(--accent)}
+  #timeVal{font-variant-numeric:tabular-nums;color:var(--accent);min-width:74px}
+  button{height:30px;padding:0 11px;border-radius:7px;border:1px solid var(--line);
+         background:#1e293b;color:var(--fg);cursor:pointer;font-size:12px;font-weight:600}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button[aria-pressed="true"]{background:#0c4a6e;border-color:var(--accent);color:#e0f2fe}
+
+  /* 右侧：小工具（视角预设 / 方位刻度） */
+  #tools{right:10px;top:62px;padding:8px;display:flex;flex-direction:column;gap:6px}
+  #tools button{width:100%;text-align:left}
+
+  #msg{left:50%;top:50%;transform:translate(-50%,-50%);padding:16px 20px;
+       max-width:520px;text-align:center;line-height:1.7;display:none}
+  #msg b{color:var(--accent)}
+  .badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;
+         font-weight:700;background:#0c4a6e;color:#bae6fd}
+  .warn{color:#fbbf24}
+  #loading{position:absolute;left:50%;bottom:64px;transform:translateX(-50%);
+           padding:6px 12px;border-radius:999px;background:var(--panel);
+           border:1px solid var(--line);display:none;font-size:12px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv"></canvas></div>
+
+<div id="hud" class="panel">
+  <span><span class="k">yaw</span> <b id="yawVal">–</b></span>
+  <span class="sep"></span>
+  <span><span class="k">pitch</span> <b id="pitchVal">–</b></span>
+  <span class="sep"></span>
+  <span><span class="k">fov</span> <b id="fovVal">–</b></span>
+  <span class="sep"></span>
+  <span><span class="k">facing</span> <b id="dirVal">–</b></span>
+  <span class="sep"></span>
+  <span><span class="k">north</span> <b id="northVal">–</b></span>
+  <span class="sep"></span>
+  <span><span class="k">panorama</span> <b id="panoVal">–</b></span>
+</div>
+
+<div id="tools" class="panel">
+  <button data-look="north">Look north</button>
+  <button data-look="east">Look east</button>
+  <button data-look="south">Look south</button>
+  <button data-look="west">Look west</button>
+  <button data-look="down">Look down (map)</button>
+  <button data-look="up">Look up (sky)</button>
+</div>
+
+<div id="bottom" class="panel">
+  <label class="k" for="pick">Clip</label>
+  <select id="pick"></select>
+  <input id="time" type="range" min="0" max="1" step="0.5" value="0">
+  <span id="timeVal">0.0 s</span>
+  <button id="prev" title="previous frame">◀</button>
+  <button id="next" title="next frame">▶</button>
+  <button id="sharp" aria-pressed="false" title="render at higher resolution">Hi-res</button>
+</div>
+
+<div id="msg" class="panel"></div>
+<div id="loading">rendering…</div>
+
+<script>
+'use strict';
+
+// ---------------------------------------------------------------- 元素
+const $ = (id) => document.getElementById(id);
+const cv = $('cv'), stage = $('stage');
+const ctx = cv.getContext('2d', { alpha: false });
+const qs = new URLSearchParams(location.search);
+
+// ---------------------------------------------------------------- 状态
+const S = {
+  project: qs.get('name') || '',
+  clips: [],
+  clip: null,
+  t: Number(qs.get('t') || 0),
+  ew: 2048,                 // 全景宽度（Hi-res 用 4096）
+  equi: null,               // 当前全景（ImageBitmap / HTMLImageElement）
+  equiW: 0, equiH: 0,
+  yaw: 0, pitch: 0, fov: 90,
+  northYaw: null,           // 度；null = 未知
+  dragging: false, lastX: 0, lastY: 0,
+  loading: false, pending: null,
+};
+
+// ---------------------------------------------------------------- 投影
+// 等距柱状 -> 透视。为每个输出像素算它在全景图上的 (u, v)。
+// 用等距柱状的好处：每列是一个方位角、每行是一个仰角，所以
+//   u = (azimuth(px) + 180) / 360 * W
+//   v = (90 - elevation(px)) / 180 * H
+// 这一步与相机在真实世界的朝向无关，north 只在显示读数时用。
+function renderView() {
+  if (!S.equi) return;
+  const W = cv.width, H = cv.height;
+  const f = 0.5 * W / Math.tan(S.fov * Math.PI / 360);   // 焦距（像素）
+  const out = ctx.createImageData(W, H);
+  const d = out.data;
+  const src = S.equiData;                                 // ImageData，避开发 drawImage 逐点
+  if (!src) return;
+  const sw = S.equiW, sh = S.equiH, sd = src.data;
+  const cy = Math.cos(S.yaw * Math.PI / 180), sy = Math.sin(S.yaw * Math.PI / 180);
+  const cp = Math.cos(S.pitch * Math.PI / 180), sp = Math.sin(S.pitch * Math.PI / 180);
+
+  for (let j = 0; j < H; j++) {
+    const yc = j - H / 2;
+    for (let i = 0; i < W; i++) {
+      const xc = i - W / 2;
+      // 相机系方向（x 右、y 上、z 前）
+      let dx = xc, dy = -yc, dz = f;
+      // 先绕 x 轴俯仰，再绕 y 轴偏航
+      const dy2 = dy * cp - dz * sp;
+      const dz2 = dy * sp + dz * cp;
+      const dx3 = dx * cy + dz2 * sy;
+      const dz3 = -dx * sy + dz2 * cy;
+      const n = Math.hypot(dx3, dy2, dz3);
+      const ex = dx3 / n, ey = dy2 / n, ez = dz3 / n;
+      // 仰角 / 方位角
+      const el = Math.asin(Math.max(-1, Math.min(1, ey)));
+      const az = Math.atan2(ex, ez);
+      let u = Math.round((az / (2 * Math.PI) + 0.5) * sw) % sw;
+      if (u < 0) u += sw;
+      let v = Math.round((0.5 - el / Math.PI) * sh);
+      if (v < 0) v = 0; else if (v >= sh) v = sh - 1;
+      const si = (v * sw + u) * 4, di = (j * W + i) * 4;
+      d[di] = sd[si]; d[di + 1] = sd[si + 1]; d[di + 2] = sd[si + 2]; d[di + 3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+// ---------------------------------------------------------------- HUD
+const DIRS = [['N', 0], ['NE', 45], ['E', 90], ['SE', 135], ['S', 180],
+              ['SW', 225], ['W', 270], ['NW', 315]];
+function bearing() {
+  // 地理方位角 = north_yaw + 相机系经度；相机系经度就是 yaw（0 = 全景图正前方）
+  const n = S.northYaw;
+  return n == null ? null : ((n + S.yaw) % 360 + 360) % 360;
+}
+function compass(b) {
+  if (b == null) return null;
+  let best = DIRS[0], bd = 1e9;
+  for (const d of DIRS) {
+    const dd = Math.abs(((b - d[1]) + 180) % 360 - 180);
+    if (dd < bd) { bd = dd; best = d; }
+  }
+  return best[0] + (bd > 0.5 ? '' : '');
+}
+function updateHud() {
+  $('yawVal').textContent = S.yaw.toFixed(1) + '°';
+  $('pitchVal').textContent = S.pitch.toFixed(1) + '°';
+  $('fovVal').textContent = S.fov.toFixed(0) + '°';
+  const b = bearing();
+  if (b == null) {
+    $('dirVal').textContent = '—';
+    $('northVal').textContent = 'unknown';
+    $('northVal').className = 'warn';
+  } else {
+    $('dirVal').textContent = compass(b) + ' (' + b.toFixed(0) + '°)';
+    $('northVal').textContent = ((S.northYaw % 360 + 360) % 360).toFixed(1) + '°';
+    $('northVal').className = '';
+  }
+  $('panoVal').textContent = S.equiW + '×' + S.equiH;
+}
+
+// ---------------------------------------------------------------- 取全景
+function showMsg(html) { const m = $('msg'); m.innerHTML = html; m.style.display = 'block'; }
+function hideMsg() { $('msg').style.display = 'none'; }
+
+async function loadFrame(t, hiRes) {
+  if (!S.clip) return;
+  const ew = hiRes ? 4096 : 2048;
+  S.loading = true;
+  $('loading').style.display = 'block';
+  const url = '/api/pano360/frame?' + new URLSearchParams({
+    name: S.project, rel: S.clip.relative_path, t: t.toFixed(2), ew: String(ew),
+  });
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    await new Promise((res, rej) => {
+      img.onload = res; img.onerror = () => rej(new Error('render failed'));
+      img.src = url;
+    });
+    // 画到离屏 canvas 取像素（透视投影要逐像素采，不能靠 drawImage 变换）
+    const off = document.createElement('canvas');
+    off.width = img.naturalWidth; off.height = img.naturalHeight;
+    off.getContext('2d').drawImage(img, 0, 0);
+    S.equiData = off.getContext('2d').getImageData(0, 0, off.width, off.height);
+    S.equiW = off.width; S.equiH = off.height;
+    S.equi = img;
+    S.ew = ew;
+    hideMsg();
+    renderView(); updateHud();
+  } catch (e) {
+    showMsg('<b>Could not render that frame.</b><br>' + String(e.message || e));
+  } finally {
+    S.loading = false;
+    $('loading').style.display = 'none';
+  }
+}
+
+// ---------------------------------------------------------------- 尺寸
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(cv.clientWidth * dpr);
+  cv.height = Math.round(cv.clientHeight * dpr);
+  renderView();
+}
+window.addEventListener('resize', resize);
+
+// ---------------------------------------------------------------- 交互
+stage.addEventListener('pointerdown', (e) => {
+  S.dragging = true; S.lastX = e.clientX; S.lastY = e.clientY;
+  stage.classList.add('dragging'); stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', (e) => {
+  if (!S.dragging) return;
+  const k = S.fov / cv.clientWidth;                 // 每像素多少度（跟着视场走）
+  S.yaw -= (e.clientX - S.lastX) * k;
+  S.pitch += (e.clientY - S.lastY) * k;
+  S.pitch = Math.max(-89.9, Math.min(89.9, S.pitch));
+  S.yaw = ((S.yaw + 180) % 360 + 360) % 360 - 180;
+  S.lastX = e.clientX; S.lastY = e.clientY;
+  renderView(); updateHud();
+});
+const stop = (e) => { S.dragging = false; stage.classList.remove('dragging'); };
+stage.addEventListener('pointerup', stop);
+stage.addEventListener('pointercancel', stop);
+
+stage.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const k = Math.exp(e.deltaY * 0.0012);
+  S.fov = Math.max(12, Math.min(140, S.fov * k));
+  renderView(); updateHud();
+}, { passive: false });
+
+window.addEventListener('keydown', (e) => {
+  const st = 3;
+  if (e.key === 'ArrowLeft') S.yaw -= st;
+  else if (e.key === 'ArrowRight') S.yaw += st;
+  else if (e.key === 'ArrowUp') S.pitch = Math.min(89.9, S.pitch + st);
+  else if (e.key === 'ArrowDown') S.pitch = Math.max(-89.9, S.pitch - st);
+  else if (e.key === '+' || e.key === '=') S.fov = Math.max(12, S.fov / 1.15);
+  else if (e.key === '-') S.fov = Math.min(140, S.fov * 1.15);
+  else return;
+  e.preventDefault(); renderView(); updateHud();
+});
+
+document.querySelectorAll('#tools button').forEach((b) => {
+  b.addEventListener('click', () => {
+    const look = b.dataset.look;
+    // 相机系 yaw：地理方位角 = north_yaw + yaw  =>  yaw = 目标方位 - north_yaw
+    const n = S.northYaw;
+    if (look === 'down') { S.pitch = -89.9; }
+    else if (look === 'up') { S.pitch = 89.9; }
+    else {
+      const want = { north: 0, east: 90, south: 180, west: 270 }[look];
+      if (n == null) {
+        showMsg('<b>North is not known for this clip.</b><br>' +
+          'Run <code>pano360_north.py</code> on it (it uses the sun position) and set ' +
+          '<code>NORTH_YAW</code> in <code>pano360_service.py</code>.');
+        return;
+      }
+      S.pitch = 0;
+      S.yaw = ((want - n + 180) % 360 + 360) % 360 - 180;
+    }
+    renderView(); updateHud();
+  });
+});
+
+// 时间轴
+let reqTimer = null;
+function scheduleLoad(delay) {
+  clearTimeout(reqTimer);
+  reqTimer = setTimeout(() => loadFrame(S.t, $('sharp').getAttribute('aria-pressed') === 'true'),
+                        delay == null ? 180 : delay);
+}
+$('time').addEventListener('input', () => {
+  S.t = Number($('time').value);
+  $('timeVal').textContent = S.t.toFixed(1) + ' s';
+  scheduleLoad();
+});
+$('prev').addEventListener('click', () => {
+  S.t = Math.max(0, S.t - 1); $('time').value = S.t;
+  $('timeVal').textContent = S.t.toFixed(1) + ' s'; scheduleLoad(0);
+});
+$('next').addEventListener('click', () => {
+  S.t = Math.min(Number($('time').max), S.t + 1); $('time').value = S.t;
+  $('timeVal').textContent = S.t.toFixed(1) + ' s'; scheduleLoad(0);
+});
+$('sharp').addEventListener('click', (e) => {
+  const on = e.currentTarget.getAttribute('aria-pressed') === 'true';
+  e.currentTarget.setAttribute('aria-pressed', on ? 'false' : 'true');
+  scheduleLoad(0);
+});
+$('pick').addEventListener('change', () => {
+  S.clip = S.clips.find((c) => c.relative_path === $('pick').value) || null;
+  if (!S.clip) return;
+  const span = (S.clip.info && S.clip.info.srt_span) || [0, S.clip.info.duration || 0];
+  S.t = Math.max(0, Math.min(S.t, span[1]));
+  $('time').min = 0; $('time').max = span[1]; $('time').value = S.t;
+  $('timeVal').textContent = S.t.toFixed(1) + ' s';
+  S.northYaw = (S.clip.info && S.clip.info.north_yaw != null)
+    ? S.clip.info.north_yaw
+    : (typeof NORTH_YAW_FALLBACK === 'object' ? NORTH_YAW_FALLBACK[S.clip.name] : null);
+  updateHud();
+  loadFrame(S.t, $('sharp').getAttribute('aria-pressed') === 'true');
+});
+
+// ---------------------------------------------------------------- 启动
+// 北向的本地兜底（后端没给时用）。值由 pano360_north.py 实测。
+const NORTH_YAW_FALLBACK = {
+  'DJI_20261014110343_0002_D.OSV': -138.71,
+};
+
+async function boot() {
+  const proj = S.project;
+  if (!proj) {
+    const sel = prompt('Project name?  (e.g. test)', 'test');
+    if (!sel) { showMsg('No project selected. Open this page as ' +
+      '<code>?name=&lt;project&gt;</code>.'); return; }
+    S.project = sel;
+  }
+  try {
+    const r = await fetch('/api/pano360/list?name=' + encodeURIComponent(S.project));
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    S.clips = d.items || [];
+    if (!S.clips.length) {
+      showMsg('<b>No 360 footage in this project.</b><br>' +
+        'Add the folder that contains the <code>.OSV</code> files to the project, ' +
+        'then reload.');
+      return;
+    }
+    const sel = $('pick');
+    sel.innerHTML = S.clips.map((c) =>
+      `<option value="${c.relative_path}">${c.name} · ${c.size_mb} MB</option>`).join('');
+    // 支持 ?rel=... 指定看哪一段（从图墙的 360 卡片跳过来时会带上）
+    const wantRel = qs.get('rel');
+    S.clip = (wantRel && S.clips.find((c) => c.relative_path === wantRel)) || S.clips[0];
+    if (S.clip) sel.value = S.clip.relative_path;
+    const info = S.clip.info || {};
+    S.northYaw = info.north_yaw != null ? info.north_yaw
+      : (NORTH_YAW_FALLBACK[S.clip.name] ?? null);
+    const span = info.srt_span || [0, info.duration || 0];
+    $('time').max = span[1] || 1;
+    $('time').value = Math.min(S.t, span[1] || 0);
+    $('timeVal').textContent = Number($('time').value).toFixed(1) + ' s';
+    S.t = Number($('time').value);
+    // 从图墙跳过来时会带 yaw/pitch：直接把镜头对准目标点
+    if (qs.get('yaw') != null) S.yaw = Number(qs.get('yaw')) || 0;
+    if (qs.get('pitch') != null) S.pitch = Number(qs.get('pitch')) || 0;
+    if (qs.get('fov') != null) S.fov = Math.max(12, Math.min(140, Number(qs.get('fov')) || 90));
+    resize();
+    await loadFrame(S.t, false);
+  } catch (e) {
+    showMsg('<b>Could not load the 360 clip list.</b><br>' + String(e.message || e));
+  }
+}
+
+// 素材为空时给一句人话解释？这里不需要 —— 交给 boot() 的提示。
+boot();
+</script>
+</body>
+</html>

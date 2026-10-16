@@ -108,6 +108,7 @@ const build = new Function(
   'map', 'geoFiles', 'videoPathFromGeojson', 'openVideoFromPopup',
   'shortFileName', 'formatTime', 'projectSelect', 'TRACK_FOCUS_ZOOM',
   'alert', 'confirm', 'document',
+  'trackMatchesPath',
   code
 );
 
@@ -138,19 +139,33 @@ function fresh(markers, reportAvailable = true) {
     16,
     (m) => calls.alerts.push(String(m)),
     () => calls.confirmAnswer,
-    { createElement: makeEl, body: { appendChild() {}, removeChild() {} } }
+    { createElement: makeEl, body: { appendChild() {}, removeChild() {} } },
+    // 与页面同源：去掉扩展名/.3d/_V|_S|_T 后比较（trackMatchesPath 的最小实现）。
+    // jumpToMarker 反查「标记点存的那路视频属于哪份航迹」时用它 ——
+    // 合并航迹的文件名没有 _V/_S/_T，不能拿航迹名推视频名去比。
+    // 注意：它必须是**最后一个**实参（生成函数的最后一个是 code），
+    // 否则整串实参会错位（踩过：openVideoFromPopup 收到了相对路径字符串）。
+    (trackPath, want) => {
+      const stem = (s) => String(s || '').replace(/\.(mp4|mov|srt|geojson|osv)$/i, '')
+        .replace(/\.3d$/i, '').replace(/_[VST]$/i, '').toLowerCase();
+      return stem(trackPath) === stem(want);
+    }
   );
   // 让函数里对 projectMarkers 的重新赋值能被外面看到（删完要检查）
   return { api, state, markers: () => api.getMarkers(), checked: () => api.getChecked() };
 }
 
 const A = { id: 'a', name: '1 号排水口', lat: 23.03441, lng: 112.466997, video: 'DJI_x_0001_V.mp4', time: 608.274, created: '2026-10-05T01:00:00.000Z' };
-const B = { id: 'b', name: '2 号 <桥下> & "涵洞"', lat: 23.040001, lng: 112.470002, video: 'DJI_x_0001_T.mp4', time: 30.5, created: '2026-10-05T02:00:00.000Z' };
+// 第二个架次（序号不同）。**不能**还用 _0001 的另一路：合并航迹的文件名去掉了
+// _V/_S/_T，`DJI_x_0001.geojson` 是「_0001 这次拍摄」的唯一一份，两路都在它里面 ——
+// 所以拿同一架次的两路视频去断言「文件夹序号跟着换」是测不出来的（两路必然同属一份航迹）。
+const B = { id: 'b', name: '2 号 <桥下> & "涵洞"', lat: 23.040001, lng: 112.470002, video: 'DJI_x_0002_T.mp4', time: 30.5, created: '2026-10-05T02:00:00.000Z' };
 const C = { id: 'c', name: '3 号取水口', lat: 23.05, lng: 112.48, video: 'DJI_x_0001_V.mp4', time: 12, created: '2026-10-05T00:30:00.000Z' };
 
+// 两个架次各一份合并航迹（名字不带流后缀），视频名才带 _V/_T
 const geoFiles = [
-  { relative_path: 'DJI_x_0001_V.geojson', folder_index: 0 },
-  { relative_path: 'DJI_x_0001_T.geojson', folder_index: 1 },
+  { relative_path: 'DJI_x_0001.geojson', folder_index: 0 },
+  { relative_path: 'DJI_x_0002.geojson', folder_index: 1 },
 ];
 
 console.log('=== 1) 按创建时间排序：新的在上面 ===');
@@ -172,8 +187,8 @@ console.log('\n=== 2) 全选 / 半选态 ===');
   r.api.updateMarkerBar();
   chk(el.markerSelectAll.indeterminate === true && el.markerSelectAll.checked === false,
     '勾 1/3：半选态');
-  chk(String(el.markerCount.textContent).indexOf('已选 1 / 共 3') >= 0,
-    '计数写成「已选 n / 共 m」', String(el.markerCount.textContent));
+  chk(String(el.markerCount.textContent).indexOf('1 of 3 selected') >= 0,
+    '计数写成「n of m selected」', String(el.markerCount.textContent));
 
   r.checked().add('b'); r.checked().add('c');
   r.api.updateMarkerBar();
@@ -209,7 +224,7 @@ console.log('\n=== 3) 列表渲染 ===');
   const empty = fresh([]);
   el.markerList.children = [];
   empty.api.renderMarkerList();
-  chk(el.markerList.children.length === 1 && /还没有标记点/.test(el.markerList.children[0].textContent),
+  chk(el.markerList.children.length === 1 && /No markers yet/.test(el.markerList.children[0].textContent),
     '没有标记点时给出说明文字，而不是空白列表');
   chk(el.markerDeleteBtn.disabled === true, '没有标记点时批量按钮禁用');
 }
@@ -253,7 +268,7 @@ console.log('\n=== 5) 复制「名称 + 纬度 + 经度」表格 ===');
   const tsv = r.api.markersTsv(r.api.sortedMarkers());
   const lines = tsv.split('\r\n');
   chk(lines.length === 4, '表头 + 3 行', String(lines.length));
-  chk(lines[0] === '名称\t纬度\t经度', '第一行是表头（制表符分隔，粘 Excel 正好三列）', lines[0]);
+  chk(lines[0] === 'Name\tLat\tLng', '第一行是表头（制表符分隔，粘 Excel 正好三列）', lines[0]);
   chk(lines[1] === '2 号 <桥下> & "涵洞"\t23.040001\t112.470002', '数据行按创建时间倒序（最新在前）', lines[1]);
   chk(lines[1].split('\t').length === 3, '每行三列');
 }
@@ -272,7 +287,7 @@ console.log('\n=== 6) 导出 KML ===');
   chk(kml.indexOf('<?xml') === 0, '带 XML 声明');
 
   const fname = r.api.markerKmlFileName();
-  chk(/^标记点_东莞2_\d{4}-\d{2}-\d{2}\.kml$/.test(fname), '文件名是 标记点_<项目名>_<日期>.kml', fname);
+  chk(/^markers_东莞2_\d{4}-\d{2}-\d{2}\.kml$/.test(fname), '文件名是 markers_<项目名>_<日期>.kml', fname);
 }
 
 console.log('\n=== 7) 点一行：地图跳 16 级 + 视频跳到那一帧 ===');
@@ -296,7 +311,8 @@ console.log('\n=== 7) 点一行：地图跳 16 级 + 视频跳到那一帧 ===')
   calls.opened.length = 0;
   r.api.jumpToMarker('b');
   chk(calls.opened[0].folder_index === 1 && calls.opened[0].relative_path === B.video,
-    '换一路视频（热成像）时文件夹序号也跟着换');
+    '换一个架次（_0002 的热成像）时文件夹序号也跟着换',
+    `folder_index=${calls.opened[0].folder_index} path=${calls.opened[0].relative_path}`);
 
   // 没有视频信息的点：只跳地图，不报错
   calls.opened.length = 0;
@@ -309,7 +325,7 @@ console.log('\n=== 8) 一个都没勾就点导出：页面提示 ===');{
   const r = fresh([A, B, C]);
   calls.alerts.length = 0;
   chk(r.api.pickedForExport() === null, '返回 null（调用方不再往下走）');
-  chk(calls.alerts.length === 1 && /请先选择要导出的标记点/.test(calls.alerts[0]), '弹出「请先选择要导出的标记点」的提示', calls.alerts[0]);
+  chk(calls.alerts.length === 1 && /Select the markers to export/.test(calls.alerts[0]), '弹出「Select the markers to export」的提示', calls.alerts[0]);
 
   r.checked().add('a');
   const picked = r.api.pickedForExport();
@@ -447,8 +463,8 @@ console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ==
     '标记点入口不带 photo_pause_at -> 不倒计时（照片那条路才倒计时）',
     JSON.stringify(countdownCalls));
   chk(currentTime === 90, '但确实定位到了该标记点的时间', String(currentTime));
-  chk(/未自动播放/.test(videoStatus.textContent), '状态栏写明未自动播放', videoStatus.textContent);
-  chk(/已定位到/.test(videoInfo.textContent), '信息栏也写成「已定位到」，不写「开始播放」',
+  chk(/not playing/.test(videoStatus.textContent), '状态栏写明未自动播放', videoStatus.textContent);
+  chk(/Positioned at/.test(videoInfo.textContent), '信息栏也写成「Positioned at」，不写「Playing」',
     videoInfo.textContent);
   chk(syncCalls.length >= 2, '箭头/准星仍然同步到了该时刻', syncCalls.join(','));
 
@@ -515,7 +531,7 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
   let result = run(base, '东莞2-1');
   chk(added.length === 0 && result.markers.length === 2, '重名：不新增、不落库',
     `新增 ${added.length} 个，共 ${result.markers.length} 个`);
-  chk(errors.length === 1 && /已经有叫「东莞2-1」的标记点/.test(errors[0]),
+  chk(errors.length === 1 && /already exists/.test(errors[0]),
     '给出重名提示', errors[0]);
   chk(closed === 0, '重名时不关弹窗（让用户当场改）');
   chk(saved === 0, '重名时也不写回项目');

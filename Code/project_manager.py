@@ -19,6 +19,9 @@ from pathlib import Path
 from tkinter import filedialog
 from urllib.parse import urlparse, parse_qs, urlencode, quote as url_quote
 
+import i18n
+import settings_store
+
 
 # ============================================================
 # Windows 高 DPI 适配
@@ -114,6 +117,9 @@ PROJECT_MEDIA_HTML = CODE_DIR / "project_media.html"
 PROJECT_VIDEO_INSPECTOR_HTML = CODE_DIR / "project_video_inspector.html"
 PROJECT_GEOJSON_PREVIEW_HTML = CODE_DIR / "project_geojson_preview.html"
 PROJECT_GEO3D_PREVIEW_HTML = CODE_DIR / "project_geo3d_preview.html"
+# 360 全景预览器（Avata 360 的 .OSV 双鱼眼 -> 等距柱状 -> 可拖拽透视）
+PANO360_VIEWER_HTML = CODE_DIR / "pano360_viewer.html"
+PANO360_PLAYER_HTML = CODE_DIR / "pano360_player.html"
 # 瓦片缓存放在工作区根目录（与视频转码缓存一致），不放在代码目录
 MAP_TILE_CACHE_DIR = TEST_DIR / "tile_cache"
 MAP_TILE_CACHE_SECONDS = 7 * 24 * 60 * 60
@@ -131,8 +137,7 @@ TIANDITU_TILE_SUBDOMAINS = 8
 
 # ------------------------------------------------------------
 # 天地图地名搜索（地图搜索框用）
-# key 只从**环境变量 TIANDITU_KEY** 或数据目录下的 tianditu_key.txt 读取；
-# 不要把 key 写进源码 —— 源码是要公开的，写进来就等于泄了。
+# key 可在系统环境变量 TIANDITU_KEY 中配置，也可直接填在下面。
 # 申请地址：https://lbs.tianditu.gov.cn/authorization/authorization.html
 # （旧的 console.tianditu.gov.cn 主机目前返回 502，别再指向它）
 # ------------------------------------------------------------
@@ -294,6 +299,20 @@ SRT_FIELD_RES = {
     "focal": re.compile(r"\[focal_len:\s*(-?\d+(?:\.\d+)?)\]"),
     "dzoom": re.compile(r"\[dzoom_ratio:\s*(-?\d+(?:\.\d+)?)\]"),
     "alt": re.compile(r"\[rel_alt:\s*(-?\d+(?:\.\d+)?)"),
+    # 海拔。与 alt 只差一个常数（起飞点海拔）—— 用户 2026-10-15 指出
+    # 「因为是山顶起飞，起飞点高度 0m（非海拔），有些片段飞到山顶侧下方，
+    # 高度为负值。这个是正常情况，换算成海拔就没问题了」。
+    "alt_abs": re.compile(r"abs_alt:\s*(-?\d+(?:\.\d+)?)"),
+    # `FrameCnt` = **这一路视频里该帧的帧号**（SRT 每行都带）。
+    #
+    # 为什么要它（用户 2026-10-15 的要求）：一次拍摄有三路视频（V 可见光 4K /
+    # S 1080p / T 热成像），定位数据几乎相同（实测差 0~6 m），所以地图上只该画一条。
+    # 但**帧号三路各不相同**，而且**推不出来**：
+    #   · 三路帧率不同（29.78 / 29.75 / 30.00），跑 1228 秒就累积出几百帧偏差
+    #   · 实测"同一时刻 T−V" 前 1/4 中位 +50、后 1/4 中位 +231（漂移 181 帧）
+    #   · 三路都有丢帧（FrameCnt 不连续：V 49 处、S 10 处、T 11 处）
+    # 所以必须**逐点各自记录**，否则跳到另两路视频时会定位到错的画面。
+    "frame_cnt": re.compile(r"FrameCnt:\s*(\d+)"),
 }
 
 
@@ -373,7 +392,11 @@ def json_response(handler, data, status=200):
 
     handler.end_headers()
 
-    handler.wfile.write(body)
+    # 走统一出口：HEAD 请求时这里会被丢弃（只发头，不发正文）
+    if hasattr(handler, "_write_body"):
+        handler._write_body(body)
+    else:
+        handler.wfile.write(body)
 
 
 # ============================================================
@@ -408,6 +431,30 @@ def get_project_directories():
 # ============================================================
 # 读取项目
 # ============================================================
+
+def _resolve_project_media(project_name, relative_path, want_suffix=None):
+    """把项目内的相对路径解析成真实文件，并**确保它确实在项目文件夹里**。
+
+    为什么单独抽出来：360 相关的几个接口（转码 / 流式播放 / 预转）
+    都要做同一件事 —— 解析 + 越界检查。重复写三遍迟早有一处漏掉检查
+    （那就会变成"能用 `..` 读任意文件"的问题）。
+
+    `want_suffix`：想要的后缀（如 `.osv`），大小写不敏感；给了就校验。
+    """
+    project = load_project(project_name)
+    folders = [Path(item.get("path")).expanduser()
+               for item in (project.get("folders") or []) if item.get("path")]
+    for f in folders:
+        try:
+            cand = (f / relative_path).resolve()
+        except (OSError, ValueError):
+            continue
+        if cand.is_file() and f.resolve() in cand.parents:
+            if want_suffix and cand.suffix.lower() != want_suffix.lower():
+                raise ValueError("Expected %s but got: %s" % (want_suffix, cand.name))
+            return cand
+    raise ValueError("Not found inside this project's folders: %s" % relative_path)
+
 
 def load_project(project_name):
 
@@ -1886,8 +1933,8 @@ def extract_srt_for_video(
     if not video_path.exists():
         raise FileNotFoundError("视频文件不存在。")
 
-    if video_path.suffix.lower() not in (".mp4", ".mov"):
-        raise ValueError("指定文件不是 MP4/MOV 视频。")
+    if video_path.suffix.lower() not in (".mp4", ".mov", ".osv"):
+        raise ValueError("指定文件不是 MP4/MOV/OSV 视频。")
 
     ffmpeg = shutil.which("ffmpeg")
 
@@ -2178,6 +2225,12 @@ def parse_dji_srt_3d(srt_path):
         if height is None:
             continue
 
+        # FrameCnt = 这一路视频里该帧的帧号。
+        # 要它是因为**三路画面的帧号各不相同、而且推不出来**（帧率不同会累积漂移，
+        # 还各有丢帧）—— 所以逐点原样记下来，跳视频时才定位得准。
+        frame_match = re.search(r"FrameCnt:\s*(\d+)", subtitle_text)
+        frame_cnt = int(frame_match.group(1)) if frame_match else None
+
         records.append({
             "subtitle_id":
                 lines[0]
@@ -2203,7 +2256,10 @@ def parse_dji_srt_3d(srt_path):
                 abs_alt,
 
             "height":
-                height
+                height,
+
+            "frame_cnt":
+                frame_cnt
         })
 
     return records
@@ -2283,6 +2339,244 @@ def delete_geojson_for_video(
     return {
         "deleted": deleted,
         "deleted_count": len(deleted)
+    }
+
+
+def flight_stem_of(name):
+    """从文件名里取出"一次拍摄"的公共名（去掉 V/S/T 与扩展名）。
+
+    `DJI_20260924095258_0001_V.MP4` -> `DJI_20260924095258_0001`
+
+    **保留原始大小写**。踩过：一开始在这里做了 `.lower()`，结果生成的航迹叫
+    `dji_...geojson`，而磁盘上是 `DJI_...` —— 在 Windows 上大小写不敏感，
+    于是**又多出一个副本**而不是替换掉旧的。
+
+    要比较两个名字是不是同一次拍摄，用 `flight_key()`（它才小写化）。
+    """
+    s = str(name or "").strip()
+    if not s:
+        return None
+    s = re.sub(r"\.(mp4|mov|srt|geojson|osv)$", "", s, flags=re.I)
+    s = re.sub(r"\.3d$", "", s, flags=re.I)
+    m = re.match(r"^(.*)_([VST])$", s, flags=re.I)
+    if not m:
+        return None
+    return m.group(1)
+
+
+def flight_key(name):
+    """用于**比较**的键：`flight_stem_of` 的小写形式（大小写不敏感）。"""
+    stem = flight_stem_of(name)
+    return stem.lower() if stem else None
+
+
+def merge_flight_streams(srt_paths, ref_suffix="V", tol=0.2):
+    """把同一拍摄的多路 SRT 合并成**一份**航迹数据。
+
+    ## 为什么这么做（用户 2026-10-15 的要求）
+
+    一次拍摄有三路视频（V 可见光 4K / S 1080p / T 热成像），定位数据几乎相同
+    （实测按时刻对齐差 0~6 m），所以**地图上只该画一条**。但**帧号三路各不相同**、
+    而且推不出来（帧率不同会累积漂移、还各有丢帧），所以把三路帧号
+    **逐点存成数组**，这样跳到任一路视频时都能精确定位。
+
+    参考路（默认 V，分辨率最高）提供坐标与时刻，其他路按**时刻就近配对**取帧号。
+
+    返回 dict：
+      ok / stream_names / reference / point_times / coords / frames /
+      dropped / why
+    """
+    streams = {}
+    for p in srt_paths:
+        suf = None
+        m = re.search(r"_([VST])$", Path(p).stem, flags=re.I)
+        if m:
+            suf = m.group(1).upper()
+        elif re.search(r"_([VST])\.", str(p), flags=re.I):
+            suf = re.search(r"_([VST])\.", str(p), flags=re.I).group(1).upper()
+        if suf:
+            streams[suf] = Path(p)
+
+    if not streams:
+        return {"ok": False, "why": "没有识别出任何一路（V/S/T）"}
+
+    ref = ref_suffix if ref_suffix in streams else sorted(streams)[0]
+    parsed = {}
+    for suf, p in streams.items():
+        rows = parse_dji_srt_3d(p)
+        if rows:
+            parsed[suf] = rows
+    if ref not in parsed:
+        return {"ok": False, "why": "参考路 %s 解析不出记录" % ref, "stream_names": sorted(streams)}
+
+    ref_rows = parsed[ref]
+    point_times = [float(r["video_start"]) for r in ref_rows]
+    coords = [[round(float(r["longitude"]), 9), round(float(r["latitude"]), 9),
+               round(float(r["height"]), 3)] for r in ref_rows]
+
+    frames = {}
+    dropped = {}
+    for suf, rows in parsed.items():
+        ts = [float(r["video_start"]) for r in rows]
+        fs = [int(r.get("frame_cnt")) if r.get("frame_cnt") is not None else None
+              for r in rows]
+        f_list = []
+        j = 0
+        miss = 0
+        for t in point_times:
+            # 两指针：ts 与 point_times 都是升序
+            while j + 1 < len(ts) and abs(ts[j + 1] - t) <= abs(ts[j] - t):
+                j += 1
+            if ts and abs(ts[j] - t) <= tol:
+                f_list.append(fs[j])
+            else:
+                f_list.append(None)
+                miss += 1
+        frames[suf] = f_list
+        if miss:
+            dropped[suf] = miss
+
+    return {
+        "ok": True,
+        "stream_names": sorted(parsed),
+        "reference": ref,
+        "point_times": [round(t, 3) for t in point_times],
+        "coords": coords,
+        "frames": frames,
+        "dropped": dropped,
+    }
+
+
+def write_merged_track(folder, stem, merged, height_type="relative"):
+    """把 `merge_flight_streams` 的结果写成**一份** geojson。
+
+    文件名用公共名（`DJI_..._0001.geojson`），不带 _V/_S/_T —— 因为它代表
+    **整次拍摄**，不是某一路。
+
+    结构：
+      properties.video       参考路（V）的视频文件名 —— 保持旧字段，兼容现有点图跳视频
+      properties.videos      {路 -> 视频文件名}，三路都在
+      properties.point_frames{路 -> [逐点帧号]}，三路都在
+      properties.streams     路列表（用于界面显示"这一趟有几个镜头"）
+    """
+    import json as _json
+    out_path = Path(folder) / ("%s.geojson" % stem)
+    props = {
+        "video": None,          # 下面按参考路填
+        "videos": {},
+        "srt": None,
+        "record_count": len(merged["point_times"]),
+        "segment_count": 1,
+        "height_type": height_type,
+        "video_start": merged["point_times"][0] if merged["point_times"] else 0,
+        "video_end": merged["point_times"][-1] if merged["point_times"] else 0,
+        "duration": (merged["point_times"][-1] - merged["point_times"][0]
+                     if merged["point_times"] else 0),
+        "point_times": merged["point_times"],
+        "point_frames": merged["frames"],
+        "streams": merged["stream_names"],
+        "reference_stream": merged["reference"],
+        "merged_from_streams": True,
+    }
+    base = Path(folder)
+    for suf in merged["stream_names"]:
+        for ext, key in ((".MP4", "videos"), (".mp4", "videos")):
+            cand = base / ("%s_%s%s" % (stem, suf, ext))
+            if cand.is_file():
+                props[key][suf] = cand.name
+                break
+        for ext in (".srt", ".SRT"):
+            cand = base / ("%s_%s%s" % (stem, suf, ext))
+            if cand.is_file():
+                if suf == merged["reference"]:
+                    props["srt"] = cand.name
+                break
+    props["video"] = props["videos"].get(merged["reference"]) or next(
+        iter(props["videos"].values()), None)
+
+    feature = {
+        "type": "Feature",
+        "properties": props,
+        "geometry": {"type": "LineString", "coordinates": merged["coords"]},
+    }
+    doc = {
+        "type": "FeatureCollection",
+        "name": stem,
+        "properties": {
+            "source_video": props["video"],
+            "source_srt": props["srt"],
+            "record_count": props["record_count"],
+            "segment_count": 1,
+            "height_type": height_type,
+            "streams": merged["stream_names"],
+            "merged_from_streams": True,
+        },
+        "features": [feature],
+    }
+    tmp = out_path.with_suffix(".geojson.tmp")
+    tmp.write_text(_json.dumps(doc, ensure_ascii=False, separators=(",", ":")),
+                   encoding="utf-8")
+    tmp.replace(out_path)
+    return out_path
+
+
+def generate_merged_track(project_name, folder_path, relative_path):
+    """建航迹的**主入口**：把一次拍摄的多路（V/S/T）合成一份 geojson。
+
+    单路素材（没有兄弟 SRT）也走这里 —— 它就退化成"一路的合并"。
+    """
+    folder = resolve_project_folder(project_name, folder_path)
+    video_path = (folder / Path(relative_path)).resolve()
+    try:
+        video_path.relative_to(folder)
+    except ValueError:
+        raise ValueError(i18n.t("video.path_outside_folder"))
+    if not video_path.exists():
+        raise FileNotFoundError(i18n.t("video.no_video_file"))
+
+    stem = flight_stem_of(video_path.name)
+    if stem is None:
+        # 认不出 V/S/T（比如 360 的 _D），退回原来的单路生成
+        return generate_geojson_for_video(project_name, folder_path, relative_path)
+
+    # 找出同一个拍摄的所有 SRT（比较用小写键，生成文件名用原始大小写）
+    want = flight_key(video_path.name)
+    srt_paths = []
+    for p in folder.iterdir():
+        if not p.is_file():
+            continue
+        if p.suffix.lower() == ".srt" and flight_key(p.name) == want:
+            srt_paths.append(p)
+    if not srt_paths:
+        raise FileNotFoundError(i18n.t("video.srt_missing_for_geojson"))
+
+    merged = merge_flight_streams(srt_paths)
+    if not merged.get("ok"):
+        return generate_geojson_for_video(project_name, folder_path, relative_path)
+
+    # 清掉旧的分路 geojson（V/S/T 各一份的那些），避免列表里又冒出三条重复线
+    removed = []
+    for suf in ("V", "S", "T"):
+        for ext in (".geojson", ".3d.geojson"):
+            old = folder / ("%s_%s%s" % (stem, suf, ext))
+            if old.is_file():
+                try:
+                    old.unlink()
+                    removed.append(old.name)
+                except OSError:
+                    pass
+
+    out = write_merged_track(folder, stem, merged)
+    return {
+        "geojson_name": out.name,
+        "geojson_relative_path": out.name,
+        "record_count": len(merged["point_times"]),
+        "segment_count": 1,
+        "size": out.stat().st_size,
+        "streams": merged["stream_names"],
+        "reference_stream": merged["reference"],
+        "merged": True,
+        "removed_old": removed,
     }
 
 
@@ -2572,6 +2866,10 @@ def generate_geojson_for_video(
     folder_path,
     relative_path
 ):
+    """兼容入口：按"一路视频"生成航迹（旧接口，保留给单路素材与外部调用）。
+
+    多路（V/S/T）的合并走 `generate_merged_track`，它在建航迹那一步被调用。
+    """
     folder = resolve_project_folder(
         project_name,
         folder_path
@@ -2795,6 +3093,38 @@ def generate_geojson_for_video(
 # GeoJSON 预览：扫描当前项目中的 GeoJSON
 # ============================================================
 
+def is_coverage_export(data):
+    """这份 GeoJSON 是不是「覆盖图层导出的产物」？
+
+    为什么要认得它（用户 2026-10-13）：
+        「这几个 coverage 的矢量图层没有存在的必要了，至少图上不要加载出来，
+        也不要在搜索结果里面显示出来。我查看信息直接看热力图了，看它干嘛」
+        —— 这些文件是 `Coverage -> Export` 写出来的，落在数据文件夹里，
+        于是被当成"航迹"出现在左栏列表、还能被加载到地图上、被检索扫到。
+        它们是**导出产物**，不是飞行数据，不该混进航迹列表。
+
+    判据（实测两份真实文件确认）：
+        覆盖导出：顶层 properties 有 `stats`（+ `meta`），每个 feature 有 `metric`
+        真航迹  ：顶层 properties 有 `record_count`/`segment_count`，
+                  每个 feature 有 `point_times`，几何是 LineString
+
+    用属性判而不是用文件名：文件名是 `{npz.stem}_{metric}{threshold}.geojson`，
+    而 npz stem 里带一段 sha1，形态不稳定（见过的就有
+    `DJI_coverage_count1` / `DJI_resolvable_20cm`）。属性是稳定的。
+    """
+    if not isinstance(data, dict):
+        return False
+    props = data.get("properties") or {}
+    if isinstance(props, dict) and "stats" in props:
+        return True
+    features = data.get("features") or []
+    for f in features[:3]:
+        fp = (f or {}).get("properties") or {}
+        if isinstance(fp, dict) and "metric" in fp and "point_times" not in fp:
+            return True
+    return False
+
+
 def list_project_geojson(project_name):
 
     project = load_project(project_name)
@@ -2836,6 +3166,15 @@ def list_project_geojson(project_name):
                     )
                 )
 
+                # 覆盖导出产物不算航迹：不进列表，也就不会被加载到地图、
+                # 不会被检索扫到（用户 2026-10-13 的要求）。
+                if is_coverage_export(data):
+                    print(
+                        f"[geojson-list] skip coverage export: {relative_path}",
+                        file=sys.stderr,
+                    )
+                    continue
+
                 properties = data.get("properties", {})
 
                 record_count = properties.get("record_count")
@@ -2866,6 +3205,347 @@ def list_project_geojson(project_name):
         "count": len(result),
         "files": result
     }
+
+
+# ============================================================
+# 视频 / 航迹 同步自检
+# ============================================================
+
+# 时长对不上的容忍度（秒）。
+#
+# 为什么不能是 0：SRT 的最后一个 cue 与视频最后一帧本来就不完全重合，
+# 实测 360 素材两者差 0.03 s / 0.31 s。而"裁掉一段"至少也是零点几秒起步，
+# 所以 2 s 既能滤掉正常抖动，又能抓住任何有实际影响的不同步。
+SYNC_TOLERANCE_SECONDS = 2.0
+
+# 能重新抽取内嵌 SRT 的容器。DJI 把遥测放在字幕流里，所以裁过之后
+# 从**新视频**重新抽一次 SRT，就能得到与它自洽的时间轴。
+SYNC_VIDEO_SUFFIXES = (".mp4", ".mov", ".osv")
+
+
+def _track_duration_of_geojson(path):
+    """从一个航迹 geojson 里读出它覆盖的视频时长与它声称对应的视频名。
+
+    航迹有两种写法（都在这份数据里见过）：
+      · 单 feature + properties.point_times 数组（预览页用的那种）
+      · 多 feature，每个 properties 里带自己的时长
+    两种都要认，否则会漏判。
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, None, None
+    if not isinstance(data, dict):
+        return None, None, None
+
+    props = data.get("properties") or {}
+    video_name = props.get("video") or None
+    feats = data.get("features") or []
+
+    # ① 单 feature 带 point_times / duration
+    raw = props.get("point_times")
+    dur = props.get("duration")
+    if not isinstance(raw, (int, float)) or not raw:
+        # point_times 是权威的：它的跨度就是这条航迹覆盖的视频时间范围
+        pt = None
+        for f in feats:
+            fp = (f or {}).get("properties") or {}
+            cand = fp.get("point_times")
+            if isinstance(cand, list) and cand:
+                pt = cand
+                video_name = video_name or fp.get("video")
+                break
+        if pt:
+            try:
+                lo, hi = float(min(pt)), float(max(pt))
+                dur = hi - lo
+                # video_end 更准（cue 的结束时刻），有就用它
+                for f in feats:
+                    fp = (f or {}).get("properties") or {}
+                    if fp.get("point_times") is pt:
+                        if isinstance(fp.get("video_end"), (int, float)):
+                            dur = float(fp["video_end"]) - lo
+                        if isinstance(fp.get("video_start"), (int, float)):
+                            dur = float(fp["video_end"] or hi) - float(fp["video_start"])
+                        break
+            except (TypeError, ValueError):
+                dur = None
+        elif isinstance(dur, (int, float)):
+            dur = float(dur)
+
+    # ② 多 feature：取所有 feature 时长的和（分段航迹）
+    if not isinstance(dur, (int, float)) or not dur:
+        total = 0.0
+        seen = False
+        for f in feats:
+            fp = (f or {}).get("properties") or {}
+            d = fp.get("duration")
+            if isinstance(d, (int, float)) and d:
+                total += float(d)
+                seen = True
+                video_name = video_name or fp.get("video")
+        dur = total if seen else None
+
+    if not isinstance(dur, (int, float)) or dur <= 0:
+        return None, None, video_name
+
+    return float(dur), path, video_name
+
+
+def _srt_duration(srt_path):
+    """SRT 覆盖的时间跨度（秒）。读不出来返回 None。"""
+    try:
+        recs = parse_dji_srt(srt_path)
+    except Exception:
+        return None
+    if not recs:
+        return None
+    lo = min(r["video_start"] for r in recs if r.get("video_start") is not None)
+    hi = max((r.get("video_end") or r.get("video_start"))
+             for r in recs if r.get("video_start") is not None)
+    if hi is None or lo is None or hi <= lo:
+        return None
+    return float(hi - lo)
+
+
+def check_project_sync(project_name,
+                       tolerance=SYNC_TOLERANCE_SECONDS):
+    """检查项目里每个视频的**实际时长**与航迹/SRT 记录的时长是否对得上。
+
+    ## 为什么需要它
+
+    用户可能在程序之外裁过视频（去头去尾，或者**中间信号卡顿的一段**）。
+    这个程序整条链路都假设 **SRT 时刻 == 视频时刻，1:1** ——
+    `point_times` 直接就是 SRT 的 cue 时刻（见 `parse_dji_srt`）。
+    一旦视频被裁，覆盖检索会**抽错帧**、点图跳转会**跳到错的时刻**、
+    地图上的无人机标记会**沿航迹偏几十秒**（实测偏 116~1336 m）。
+
+    ## 为什么不做"平移时间戳"
+
+    因为破坏**不一定是均匀的**：中间丢一段的话，前面偏 N 秒、后面偏 M 秒，
+    任何单一偏移量都修不好。所以这里只**报告**，让用户重新生成 ——
+    重新从**新视频**里抽 SRT 才能得到自洽的时间轴。
+    （用户 2026-10-14 明确要求：不要平移。）
+
+    返回 {"checked", "problems": [...], "ok": bool}
+    """
+    project = load_project(project_name)
+    folders = project.get("folders") or []
+    problems = []
+    checked = 0
+
+    # 先把每个文件夹里的视频、航迹、SRT 都列出来
+    for folder_index, folder_info in enumerate(folders):
+        folder_path = folder_info.get("path")
+        if not folder_path:
+            continue
+        folder = Path(folder_path).expanduser()
+        if not folder.exists() or not folder.is_dir():
+            continue
+
+        videos = {}
+        for vp in folder.rglob("*"):
+            if not vp.is_file():
+                continue
+            if vp.suffix.lower() not in SYNC_VIDEO_SUFFIXES:
+                continue
+            videos[vp.stem.lower()] = vp
+
+        tracks = {}
+        # 航迹可能有两种命名：**合并后**的公共名（`DJI_..._0001.geojson`，
+        # 一次拍摄一份）与旧的**分路**名（`DJI_..._0001_V.geojson`）。
+        # 两个键都登记，否则按视频名（带 _V）去找会找不到合并文件，
+        # 静默退回用 SRT 当参照 —— 那就查不出航迹本身的问题了。
+        for gp in folder.rglob("*.geojson"):
+            if not gp.is_file():
+                continue
+            try:
+                data = json.loads(gp.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if is_coverage_export(data):
+                continue        # 覆盖导出产物不是航迹
+            tracks[gp.stem.lower()] = gp
+            fk = flight_key(gp.name)
+            if fk:
+                tracks.setdefault(fk, gp)
+
+        srts = {}
+        for sp in folder.rglob("*.srt"):
+            if sp.is_file():
+                srts[sp.stem.lower()] = sp
+        # 360 素材的 SRT 是大写 .SRT
+        for sp in folder.rglob("*.SRT"):
+            if sp.is_file():
+                srts.setdefault(sp.stem.lower(), sp)
+
+        for stem, video in sorted(videos.items()):
+            info = probe_video_stream(video)
+            vdur = (info or {}).get("duration") or 0.0
+            if not vdur:
+                continue        # 探不出时长就不下结论
+            checked += 1
+
+            # 参照物：优先航迹，没有航迹就用 SRT
+            ref_kind = None
+            ref_dur = None
+            ref_path = None
+            gp = tracks.get(stem)
+            if gp is None:
+                # 视频名带 _V/_S/_T，而合并航迹去掉了后缀 —— 用"拍摄键"再找一遍
+                gp = tracks.get(flight_key(video.name) or "")
+            if gp is not None:
+                d, p, _vn = _track_duration_of_geojson(gp)
+                if d:
+                    ref_kind, ref_dur, ref_path = "track", d, gp
+            if ref_dur is None:
+                sp = srts.get(stem)
+                if sp is not None:
+                    d = _srt_duration(sp)
+                    if d:
+                        ref_kind, ref_dur, ref_path = "srt", d, sp
+            if ref_dur is None:
+                problems.append({
+                    "folder_index": folder_index,
+                    "folder_name": folder.name,
+                    "video": video.name,
+                    "relative_path": str(video.relative_to(folder)),
+                    "kind": "no_reference",
+                    "video_duration": round(vdur, 2),
+                    "reference_duration": None,
+                    "delta": None,
+                    "severity": "info",
+                    "message": (
+                        "这条视频既没有航迹也没有可用的 SRT，"
+                        "无法核对时间轴。请先生成 SRT 与航迹。"),
+                })
+                continue
+
+            delta = ref_dur - vdur
+            if abs(delta) > float(tolerance):
+                problems.append({
+                    "folder_index": folder_index,
+                    "folder_name": folder.name,
+                    "video": video.name,
+                    "relative_path": str(video.relative_to(folder)),
+                    "kind": ("track_shorter" if delta < 0 else "track_longer"),
+                    "reference": ref_kind,
+                    "reference_name": (ref_path.name if ref_path else None),
+                    "video_duration": round(vdur, 2),
+                    "reference_duration": round(ref_dur, 2),
+                    "delta": round(delta, 2),
+                    "severity": "error",
+                    "message": (
+                        "视频时长 %.1f s，但 %s 记录的时长是 %.1f s（差 %+.1f s）。"
+                        % (vdur,
+                           "航迹" if ref_kind == "track" else "SRT",
+                           ref_dur, delta)),
+                })
+
+    return {
+        "project": project_name,
+        "tolerance": float(tolerance),
+        "checked": checked,
+        "ok": not any(p.get("severity") == "error" for p in problems),
+        "problems": problems,
+    }
+
+
+def resync_existing_files(project_name, folder_index, relative_path):
+    """对一条视频**就地重新生成** SRT 与航迹（覆盖旧的）。
+
+    这是"校验发现不同步"之后的修复动作。为什么必须重生成而不是平移：
+    裁切可能发生在**中间**（信号卡顿），那样时间轴被非均匀破坏，
+    任何单一偏移都修不好。从**新视频**里重新抽 SRT 才能自洽。
+    """
+    project = load_project(project_name)
+    folders = project.get("folders") or []
+    if not (0 <= folder_index < len(folders)):
+        raise ValueError("文件夹序号超出范围。")
+    folder_path = folders[folder_index].get("path")
+    if not folder_path:
+        raise ValueError("这个文件夹没有路径。")
+
+    result = {}
+    # ① 重新抽 SRT（DJI 把遥测放在视频的**字幕流**里）。
+    #
+    # **抽不出来就不要往下走。** 踩过：第一版在抽取失败时仍然用**旧 SRT**
+    # 重建了航迹 —— 结果 `record_count` 一个都没变、时长还是 1228.66 s、
+    # 自检依然报错。用户看到"track rebuilt"却什么都没修好，比不修更糟。
+    try:
+        srt_info = extract_srt_for_video(project_name, folder_path, relative_path)
+        result["srt"] = srt_info
+    except Exception as e:
+        result["srt_error"] = str(e)
+        result["ok"] = False
+        # 这一步失败时给一句**能照着做**的话。实测最常见的原因是：
+        # 视频被重新编码过，内嵌字幕流丢了（ffmpeg -c copy 裁剪就是这样）。
+        # 这种情况下程序**无法**自动恢复同步 —— 因为"正确的时刻"只存在于
+        # 那个被裁掉的原始视频里，而这个程序看不到它。
+        result["advice"] = (
+            "无法从这条视频里重新提取遥测（DJI 把它放在字幕流里，"
+            "视频被重新编码/裁剪后这一步会失败）。程序没法自动算出正确的时刻 ——"
+            "正确的时刻只存在于被裁之前的原始视频里。请用**导出该视频的原始 App**"
+            "（或重新导出一次，勾选保留字幕）拿到与裁剪后视频匹配的 SRT，"
+            "放进同一个文件夹，再点一次「Build tracks」。")
+        return result
+
+    # ② 用新 SRT 重建航迹
+    try:
+        geo_info = generate_geojson_for_video(project_name, folder_path, relative_path)
+        result["geojson"] = geo_info
+    except Exception as e:
+        result["geojson_error"] = str(e)
+        result["ok"] = False
+        return result
+
+    # ③ 复查：新 SRT 的跨度必须和视频对得上，否则这一步白做了
+    try:
+        folder = Path(folder_path).expanduser()
+        video = (folder / relative_path).resolve()
+        vdur = (probe_video_stream(video) or {}).get("duration") or 0.0
+        sdur = _srt_duration(video.with_suffix(".SRT")) or _srt_duration(video.with_suffix(".srt"))
+        result["new_video_duration"] = round(vdur, 2) if vdur else None
+        result["new_srt_duration"] = round(sdur, 2) if sdur else None
+        if vdur and sdur and abs(sdur - vdur) > SYNC_TOLERANCE_SECONDS:
+            result["ok"] = False
+            result["advice"] = (
+                "重新提取出来的 SRT 与视频**仍然**对不上"
+                "（视频 %.1f s，SRT %.1f s）。说明这条视频里的字幕流本身"
+                "就不是与它匹配的那一份。请从原始素材重新导出。" % (vdur, sdur))
+    except Exception as e:
+        result["verify_error"] = str(e)
+
+    # ④ 清掉按旧时间轴生成的缓存，避免"错的图一直命中"。
+    #    覆盖网格靠 SRT 的 mtime 判过期，SRT 刚重写过所以会自动重建；
+    #    但缩略图的缓存 key 里**没有**文件指纹，必须显式清。
+    cleaned = {"thumbs": 0, "coverage": 0}
+    try:
+        folder = Path(folder_path).expanduser()
+        video = (folder / relative_path).resolve()
+        tdir = video.parent / ".thumbs"
+        if tdir.is_dir():
+            for f in tdir.glob("t_*.jpg"):
+                try:
+                    f.unlink()
+                    cleaned["thumbs"] += 1
+                except OSError:
+                    pass
+        stem = video.stem
+        cdir = Path(__file__).resolve().parent.parent / "Project" / project_name / "coverage"
+        if cdir.is_dir():
+            for f in cdir.glob(stem + ".*"):
+                try:
+                    f.unlink()
+                    cleaned["coverage"] += 1
+                except OSError:
+                    pass
+    except Exception as e:
+        result["cleanup_error"] = str(e)
+    result["cleaned"] = cleaned
+    result.setdefault("ok", True)
+
+    return result
 
 
 # ============================================================
@@ -3024,8 +3704,8 @@ def resolve_project_video(project_name, folder_index, relative_path):
         relative_path
     )
 
-    if video_path.suffix.lower() not in (".mp4", ".mov"):
-        raise ValueError("指定文件不是 MP4/MOV 视频。")
+    if video_path.suffix.lower() not in (".mp4", ".mov", ".osv"):
+        raise ValueError("指定文件不是 MP4/MOV/OSV 视频。")
 
     return video_path
 
@@ -3102,7 +3782,7 @@ def send_file_range(
             chunk = video_file.read(min(1024 * 1024, remaining))
             if not chunk:
                 break
-            handler.wfile.write(chunk)
+            handler._write_body(chunk) if hasattr(handler, "_write_body") else handler.wfile.write(chunk)
             remaining -= len(chunk)
 
 
@@ -3227,7 +3907,22 @@ def load_srt_telemetry(srt_path):
         "pitch": [],
         "focal": [],
         "dzoom": [],
+        # `alt` = **相对起飞点**的高度（SRT 的 `[rel_alt:]`）。
+        # 覆盖几何用它当"离地高度"—— 这在平坦地形上没问题，但在**山顶起飞、
+        # 飞到侧下方**时会偏：rel_alt 为负只说明飞机在起飞点之下，不代表离地高度为负。
+        # 要正确处理得有 DEM（地形高程），见 docs/视场覆盖*.md 的遗留一节。
         "alt": [],
+        # `alt_abs` = **海拔**（SRT 的 `abs_alt`）。
+        # 与 alt 只差一个常数（起飞点海拔，实测偏移标准差 0.000）。
+        # 它的用处：把高度讲清楚（"换算成海拔就没问题了"），
+        # 以及将来接 DEM 时作为基准。
+        "alt_abs": [],
+        # 这一路视频里该帧的帧号。
+        # **必须在这里占位**：`SRT_FIELD_RES` 增加了 "frame_cnt"，
+        # 而解析循环是 `for name, pattern in SRT_FIELD_RES.items():
+        # data[name].append(...)` —— 少一个键就 KeyError。
+        # （踩过：加了正则忘了加字典项，11 套测试连锁失败。）
+        "frame_cnt": [],
     }
 
     cue_time = None
@@ -3279,6 +3974,20 @@ def load_srt_telemetry(srt_path):
         raise ValueError("SRT 里没有解析出可用记录。")
 
     data["count"] = len(data["times"])
+
+    # 起飞点海拔 = abs_alt − rel_alt（常数）。实测 12 段素材的偏移标准差都是
+    # **0.000**，所以取中位数即可，完全稳。
+    #
+    # 有了它，界面上就能把"高度"讲清楚：rel 为负只是**基准**在起飞点，
+    # 换成海拔是正常的（用户 2026-10-15 明确指出的一点）。
+    try:
+        offs = [a - r for a, r in zip(data["alt_abs"], data["alt"])
+                if a is not None and r is not None]
+        if offs:
+            offs.sort()
+            data["takeoff_elev"] = round(offs[len(offs) // 2], 1)
+    except Exception:
+        pass
 
     with TELEMETRY_CACHE_LOCK:
 
@@ -3422,7 +4131,7 @@ def build_proxy_segment(video_path, start_seconds, seconds):
                 errors="replace"
             ).strip()[:300]
 
-            raise ValueError(f"转码失败：{detail or '未知错误'}")
+            raise ValueError(f"Transcode failed: {detail or 'unknown error'}")
 
         temp_path.replace(output_path)
 
@@ -3546,7 +4255,7 @@ def build_clip(video_path, center_seconds):
                 errors="replace"
             ).strip()[:300]
 
-            raise ValueError(f"导出失败：{detail or '未知错误'}")
+            raise ValueError(f"Export failed: {detail or 'unknown error'}")
 
         temp_path.replace(output_path)
 
@@ -3628,7 +4337,7 @@ def send_clip_download(handler, file_path, download_name):
             chunk = clip_file.read(min(1024 * 1024, remaining))
             if not chunk:
                 break
-            handler.wfile.write(chunk)
+            handler._write_body(chunk) if hasattr(handler, "_write_body") else handler.wfile.write(chunk)
             remaining -= len(chunk)
 
 
@@ -3981,9 +4690,9 @@ def geocode_place(keyword):
 
     if not tianditu_key:
         raise ValueError(
-            "尚未配置天地图 key，无法使用地名搜索。"
-            f" 请把天地图控制台的 tk 粘贴到 {TIANDITU_KEY_FILE.name} 里"
-            "（该文件就在 project_manager.py 旁边，存盘后刷新网页即可，不用重启服务）。"
+            "No Tianditu key configured, so place search is unavailable."
+            f" Paste the tk from the Tianditu console into {TIANDITU_KEY_FILE.name}"
+            " (that file sits next to project_manager.py; save it and refresh the page — no restart needed)."
         )
 
     # 一级缓存：内存
@@ -4194,7 +4903,7 @@ def proxy_map_tile(handler, source, z, x, y):
                 handler.send_header("Cache-Control", "public, max-age=604800")
                 handler.send_header("Content-Length", str(len(data)))
                 handler.end_headers()
-                handler.wfile.write(data)
+                handler._write_body(data) if hasattr(handler, "_write_body") else handler.wfile.write(data)
                 return
         except OSError:
             pass
@@ -4259,7 +4968,7 @@ def proxy_map_tile(handler, source, z, x, y):
     handler.send_header("Cache-Control", "public, max-age=604800")
     handler.send_header("Content-Length", str(len(data)))
     handler.end_headers()
-    handler.wfile.write(data)
+    handler._write_body(data) if hasattr(handler, "_write_body") else handler.wfile.write(data)
 
 
 # ============================================================
@@ -4303,7 +5012,7 @@ def report_file(name):
     """把 /report/<名字> 映射成磁盘路径：只允许单层文件名。"""
 
     if not name or "/" in name or "\\" in name or ".." in name:
-        raise ValueError("文件名不合法。")
+        raise ValueError("Invalid file name.")
 
     return REPORT_DIR / name
 
@@ -4323,7 +5032,7 @@ def resolve_report_image(name):
     return path if path.is_file() else None
 
 
-def safe_file_stem(text, fallback="未命名"):
+def safe_file_stem(text, fallback="Untitled"):
     """把项目名之类的东西收拾成能进文件名的样子。"""
 
     cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]+', "_", str(text or "")).strip(" ._")
@@ -4352,17 +5061,17 @@ def reverse_geocode_place(lat, lng):
     tianditu_key = get_tianditu_key()
 
     if not tianditu_key:
-        raise ValueError("尚未配置天地图 key，无法解析所在位置。")
+        raise ValueError("No Tianditu key configured, so the location cannot be resolved.")
 
     try:
         lat_value = float(lat)
         lng_value = float(lng)
 
     except (TypeError, ValueError):
-        raise ValueError("经纬度无效。")
+        raise ValueError("Invalid latitude/longitude.")
 
     if not (-90.0 <= lat_value <= 90.0 and -180.0 <= lng_value <= 180.0):
-        raise ValueError("经纬度超出范围。")
+        raise ValueError("Latitude/longitude out of range.")
 
     cache_key = f"{lat_value:.6f},{lng_value:.6f}"
 
@@ -4410,12 +5119,12 @@ def reverse_geocode_place(lat, lng):
         raise ValueError(f"天地图逆地理编码失败：{e.reason}")
 
     except json.JSONDecodeError:
-        raise ValueError("天地图逆地理编码返回的不是 JSON。")
+        raise ValueError("Tianditu reverse geocoding did not return JSON.")
 
     if str(payload.get("status")) != "0":
         raise ValueError(
-            "天地图逆地理编码失败："
-            + str(payload.get("msg") or payload.get("status") or "未知原因")
+            "Tianditu reverse geocoding failed: "
+            + str(payload.get("msg") or payload.get("status") or "unknown reason")
         )
 
     result = payload.get("result") or {}
@@ -4774,16 +5483,16 @@ def make_video_snapshot(payload):
     relative_path = str(payload.get("path") or "")
 
     if not project_name:
-        raise ValueError("缺少项目名称。")
+        raise ValueError("Missing project name.")
 
     if not relative_path:
-        raise ValueError("缺少视频相对路径。")
+        raise ValueError("Missing video relative path.")
 
     try:
         time_seconds = max(0.0, float(payload.get("time") or 0))
 
     except (TypeError, ValueError):
-        raise ValueError("时间无效。")
+        raise ValueError("Invalid time.")
 
     mode = str(payload.get("mode") or "full")
 
@@ -4799,7 +5508,7 @@ def make_video_snapshot(payload):
     ffmpeg = find_ffmpeg()
 
     if not ffmpeg:
-        raise ValueError("未找到 ffmpeg，无法抽帧。请安装 ffmpeg 后重启服务。")
+        raise ValueError("ffmpeg not found, so no video frame can be extracted. Install ffmpeg and restart the service.")
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -4828,7 +5537,7 @@ def make_video_snapshot(payload):
         )
 
     except subprocess.TimeoutExpired:
-        raise ValueError("抽帧超时。")
+        raise ValueError("Timed out extracting the video frame.")
 
     except OSError as e:
         raise ValueError(f"无法启动 ffmpeg：{e}")
@@ -4849,7 +5558,7 @@ def make_video_snapshot(payload):
         ).strip().splitlines()
 
         raise ValueError(
-            "抽帧失败："
+            "Frame extraction failed: "
             + (lines[-1] if lines else f"ffmpeg 退出码 {completed.returncode}")
         )
 
@@ -4860,7 +5569,11 @@ def make_video_snapshot(payload):
 
             image = frame.convert("RGB")
 
-            if mode == "a4" and image.width > REPORT_IMAGE_WIDTH_A4:
+            # A4 档要的是「固定铺满正文宽」的那一版：不论原片是 4K 还是 1080p，
+            # 都缩放到 REPORT_IMAGE_WIDTH_A4。原来只写了「大于才缩」，
+            # 于是 1080p 素材抽出来的帧（1920 宽）永远到不了 2480 ——
+            # 实测 1920x1080，报告里那张图比 A4 正文窄一截。
+            if mode == "a4" and image.width != REPORT_IMAGE_WIDTH_A4:
                 ratio = REPORT_IMAGE_WIDTH_A4 / image.width
                 image = image.resize(
                     (
@@ -4896,7 +5609,7 @@ def make_video_snapshot(payload):
 
     except Exception as e:
         raise ValueError(
-            "抽帧后的图片转换失败（需要 Pillow）："
+            "Converting the extracted frame failed (Pillow is required): "
             + (str(e) or type(e).__name__)
         )
 
@@ -4926,10 +5639,10 @@ def make_map_snapshot(payload):
         lng = float(payload.get("lng"))
 
     except (TypeError, ValueError):
-        raise ValueError("经纬度无效。")
+        raise ValueError("Invalid latitude/longitude.")
 
     if not (-90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
-        raise ValueError("经纬度超出范围。")
+        raise ValueError("Latitude/longitude out of range.")
 
     try:
         zoom = int(payload.get("zoom") or 16)
@@ -4938,7 +5651,7 @@ def make_map_snapshot(payload):
         zoom = 16
 
     if not (1 <= zoom <= 19):
-        raise ValueError("缩放级别要在 1~19 之间。")
+        raise ValueError("Zoom level must be between 1 and 19.")
 
     kind = str(payload.get("basemap") or "street")
 
@@ -5227,13 +5940,13 @@ def docx_point_field_table(document, point):
     from docx.shared import Cm
 
     rows = [
-        ("名称", point.get("name") or "标记点"),
+        (i18n.t("report.col_name"), point.get("name") or i18n.t("report.marker_fallback")),
         # 半球写在表头里；数字用正负号区分南北/东西，方便直接复制
-        ("纬度（°N）", point.get("lat_text") or ""),
-        ("经度（°E）", point.get("lng_text") or ""),
-        ("所在位置", point.get("place") or "未解析"),
-        ("视频文件", point.get("video") or "-"),
-        ("视频时间", point.get("time_text") or "-"),
+        (i18n.t("report.field_lat"), point.get("lat_text") or ""),
+        (i18n.t("report.field_lng"), point.get("lng_text") or ""),
+        (i18n.t("report.col_location"), point.get("place") or i18n.t("report.unresolved")),
+        (i18n.t("report.col_video"), point.get("video") or "-"),
+        (i18n.t("report.col_time"), point.get("time_text") or "-"),
     ]
 
     table = document.add_table(rows=0, cols=2)
@@ -5397,7 +6110,7 @@ def normalize_report_points(points):
             # 经纬度带上半球：N/S、E/W（南纬西经不写负号，直接给 S/W）
             "lat_text": format_latitude(lat),
             "lng_text": format_longitude(lng),
-            "place": str(raw.get("place") or "未解析"),
+            "place": str(raw.get("place") or "unresolved"),
             "video": str(raw.get("video") or ""),
             "time": raw.get("time") or 0,
             "time_text": format_seconds_text(raw.get("time")),
@@ -5420,18 +6133,22 @@ def build_docx_report(payload):
     from docx.oxml.ns import qn
     from docx.shared import Cm, Pt
 
+    # 报告语言：这个请求可能不带语言上下文（比如从后台任务发起），
+    # 所以 payload 里可以显式指定；不指定就用请求/服务端设置定下的那个。
+    if payload.get("lang"):
+        i18n.set_lang(payload.get("lang"))
+
     project_name = str(payload.get("project_name") or "")
 
     points = normalize_report_points(payload.get("points") or [])
 
     if not points:
-        raise ValueError("没有有效的标记点可写进报告。")
+        raise ValueError(i18n.t("report.no_markers"))
 
     image_mode = str(payload.get("image_mode") or "full")
 
-    mode_text = (
-        "压缩至 320ppi（约 2480px 宽）" if image_mode == "a4" else "原分辨率"
-    )
+    mode_text = i18n.t(
+        "report.image_compressed" if image_mode == "a4" else "report.image_original")
 
     document = Document()
 
@@ -5461,33 +6178,41 @@ def build_docx_report(payload):
             pass
 
     document.add_heading(
-        f"标记点报告 —— 项目「{project_name or '未命名'}」",
+        i18n.t("report.title", project=project_name or i18n.t("report.untitled")),
         level=0
     )
 
     meta = document.add_paragraph(
-        f"生成时间：{time.strftime('%Y-%m-%d %H:%M')}　　"
-        f"标记点：{len(points)} 个　　视频截图：{mode_text}"
+        i18n.t("report.generated",
+               time=time.strftime('%Y-%m-%d %H:%M'),
+               count=len(points), mode=mode_text)
     )
     meta.runs[0].font.size = Pt(9)
     set_report_font(meta.runs[0], 9)
 
-    document.add_heading("目录", level=1)
-    hint = document.add_paragraph("点击下面任意一项，可直接跳到对应章节。")
+    document.add_heading(i18n.t("report.contents"), level=1)
+    hint = document.add_paragraph(i18n.t("report.contents_hint"))
     set_report_font(hint.runs[0], 9)
 
     for index, point in enumerate(points, start=1):
         paragraph = document.add_paragraph(style="List Number")
         add_docx_internal_link(paragraph, f"mark{index}", point["name"])
 
-    document.add_heading("汇总表", level=1)
+    document.add_heading(i18n.t("report.summary"), level=1)
 
-    columns = ["序号", "名称", "纬度（°N）", "经度（°E）", "所在位置", "视频文件", "视频时间"]
+    columns = [
+        i18n.t("report.col_index"), i18n.t("report.col_name"),
+        i18n.t("report.col_lat"), i18n.t("report.col_lng"),
+        i18n.t("report.col_location"), i18n.t("report.col_video"),
+        i18n.t("report.col_time"),
+    ]
 
     # 列宽写死 + 关掉自动伸缩：长文件名（下划线处 Word 不断行）容易把表撑出正文区。
     # 合计 15.9cm —— 与插图同一个宽度，左边缘、右边缘才对得齐。
+    # 英文表头比中文长（"Video time" 要 1.56cm），所以第 6 列从 1.4 加宽到 2.4，
+    # 余下的宽度从 #/Name/Lat/Lng/Location/Video file 各匀一点，总和不变。
     column_widths = (
-        Cm(1.1), Cm(2.6), Cm(2.0), Cm(2.3), Cm(3.4), Cm(3.1), Cm(1.4)
+        Cm(0.9), Cm(2.4), Cm(1.9), Cm(2.0), Cm(3.3), Cm(3.0), Cm(2.4)
     )
 
     summary = document.add_table(rows=1, cols=len(columns))
@@ -5542,17 +6267,17 @@ def build_docx_report(payload):
             add_report_picture(document, video_image)
             add_report_caption(
                 document,
-                f"图 1　目标点视频截图（{point['video'] or '-'}　"
-                f"{point['time_text']}）"
+                i18n.t("report.fig_video",
+                       video=point['video'] or '-', time=point['time_text'])
             ).paragraph_format.keep_with_next = True      # 图 2 跟着它一起走
 
         if map_image:
             add_report_picture(document, map_image, REPORT_MAP_IMAGE_MAX_HEIGHT_CM)
             add_report_caption(
                 document,
-                f"图 2　目标点地图截图（底图："
-                f"{point['basemap_name'] or '当前底图'}　"
-                f"缩放 {point['zoom']} 级）"
+                i18n.t("report.fig_map",
+                       basemap=point['basemap_name'] or i18n.t("report.basemap_current"),
+                       zoom=point['zoom'])
             )
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -5565,8 +6290,9 @@ def build_docx_report(payload):
         "file": name,
         "url": "/report/" + name,
         "download_name":
-            f"标记点报告_{safe_file_stem(project_name)}_"
-            f"{time.strftime('%Y-%m-%d')}.docx",
+            i18n.t("report.filename",
+                   project=safe_file_stem(project_name),
+                   date=time.strftime('%Y-%m-%d')),
         "points": len(points),
         "image_mode": image_mode,
     }
@@ -5581,6 +6307,86 @@ class ProjectManagerHandler(
 ):
 
     # ========================================================
+    # 语言
+    # ========================================================
+
+    def _apply_request_lang(self, parsed):
+        """每个请求先把**本线程**的语言定下来，后面的 t() 就用它。
+
+        优先级（从高到低）：
+          1. 查询串 `?lang=en|zh`      —— 显式指定，测试和深链用
+          2. `Accept-Language` 请求头   —— 浏览器自己带的
+          3. 服务端保存的设置            —— 前端切换语言时写进去的
+          4. 默认（英文）
+
+        为什么要有第 3 层：有些调用**没有请求上下文**（Windows 文件选择对话框
+        在独立线程里弹），它们只能读服务端设置。所以前端切换时要通知后端一次。
+
+        为什么用 thread-local：`ThreadingHTTPServer` 每请求一个线程，
+        这样并发请求之间不会互相踩语言。
+        """
+        lang = None
+        try:
+            q = parse_qs(parsed.query).get("lang") or []
+            if q and q[0]:
+                lang = q[0]
+        except Exception:
+            lang = None
+        if lang is None:
+            try:
+                accept = self.headers.get("Accept-Language") or ""
+                if accept:
+                    # 只认第一个语言标签的主部（"zh-CN,zh;q=0.9" -> "zh"）
+                    first = accept.split(",")[0].split(";")[0].strip()
+                    if first:
+                        cand = i18n.norm_lang(first)
+                        # norm_lang 认不出来会给默认值；只有真的认出来了才采纳
+                        if first.lower().replace("_", "-").startswith(("zh", "en")) \
+                                or cand != i18n.DEFAULT_LANG:
+                            lang = cand
+            except Exception:
+                lang = None
+        if lang is None:
+            lang = settings_store.get("lang")
+        i18n.set_lang(lang)
+        return i18n.get_lang()
+
+    # ========================================================
+    # HEAD
+    # ========================================================
+
+    def do_HEAD(self):
+        """把 HEAD 当作 GET 处理，但只发响应头、不发正文。
+
+        为什么必须实现：浏览器（以及某些播放器）在决定要不要请求一个视频/图片时，
+        会先发一个 HEAD 探一下。不实现会返回 `501 Unsupported method ('HEAD')` ——
+        功能不受影响，但控制台一片红字，而且探测失败后有些客户端会改用更笨的
+        方式（整段下载）。
+
+        实现方式：**不动 wfile**，只置一个"这次是 HEAD"的标志，
+        由各正文出口自己跳过。
+        试过"把 wfile 换成丢弃写入的壳"，结果是整个响应 0 字节 ——
+        HTTP/1.0 单请求模式下 wfile 与连接生命周期绑得很紧，
+        替换它会连带把 flush/close 语义弄坏。改成不碰连接的做法。
+        """
+        self._head_only = True
+        try:
+            self.do_GET()
+        finally:
+            self._head_only = False
+
+    def _write_body(self, data):
+        """正文出口统一走这里：HEAD 请求直接丢弃。
+
+        新增的正文出口请一律用它，不要直接 self.wfile.write(...) ——
+        漏掉一处就会往 HEAD 响应里塞数据，让客户端解析错乱（比 501 更难查）。
+        """
+        if getattr(self, "_head_only", False):
+            return 0
+        self.wfile.write(data)
+        return len(data)
+
+    # ========================================================
     # GET
     # ========================================================
 
@@ -5591,6 +6397,22 @@ class ProjectManagerHandler(
         )
 
         path = parsed.path
+
+        # 语言：每个请求先定下来（见 `_apply_request_lang`）。
+        # 优先级：?lang= > Accept-Language > 服务端保存的设置 > 默认英文。
+        self._apply_request_lang(parsed)
+
+        if path == "/api/i18n":
+            # 前端启动时拉一次：拿到整张文案表 + 当前语言 + 可选语言。
+            # 这样前端**不需要**再维护一份重复的翻译表。
+            want = (parse_qs(parsed.query).get("lang") or [""])[0]
+            lang = i18n.norm_lang(want) if want else i18n.get_lang()
+            json_response(self, {
+                "lang": lang,
+                "langs": list(i18n.LANGS),
+                "messages": i18n.all_messages(lang),
+            })
+            return
 
         if path == "/":
             self.send_html(
@@ -5635,6 +6457,22 @@ class ProjectManagerHandler(
         if path == "/project_geo3d_preview.html":
             self.send_html(
                 PROJECT_GEO3D_PREVIEW_HTML
+            )
+            return
+
+        if path == "/pano360.html":
+            self.send_html(
+                PANO360_VIEWER_HTML
+            )
+            return
+
+        if path == "/pano360_player.html":
+            # 转码后的等距柱状视频播放器（播放 + 拖拽转向）。
+            # 与 pano360.html 的分工：
+            #   · pano360.html        逐帧向服务端要透视小图（无需转码，但只能一格一格看）
+            #   · pano360_player.html 播转码产物（要转一次，之后随点随放、可连续拖拽）
+            self.send_html(
+                PANO360_PLAYER_HTML
             )
             return
 
@@ -5745,7 +6583,7 @@ class ProjectManagerHandler(
                 self.send_header("Content-Length", str(len(payload)))
                 self.send_header("Cache-Control", "private, max-age=3600")
                 self.end_headers()
-                self.wfile.write(payload)
+                self._write_body(payload)
 
             except Exception as e:
                 # 状态行与 header 只能是 ASCII（放中文会让客户端收到畸形响应、直接断开），
@@ -5756,7 +6594,7 @@ class ProjectManagerHandler(
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Content-Length", str(len(message)))
                 self.end_headers()
-                self.wfile.write(message)
+                self._write_body(message)
 
             return
 
@@ -5832,7 +6670,7 @@ class ProjectManagerHandler(
             self.send_header("Cache-Control", "public, max-age=604800")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            self._write_body(data)
             return
 
         # ----------------------------------------------------
@@ -5873,7 +6711,7 @@ class ProjectManagerHandler(
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            self._write_body(data)
             return
 
         # ----------------------------------------------------
@@ -5893,6 +6731,556 @@ class ProjectManagerHandler(
             return
 
         # ----------------------------------------------------
+        # 视场覆盖：清单 / 点查询 / 热力图 / 矢量导出
+        # ----------------------------------------------------
+        # 这几个接口都把重活塞进 coverage_api，project_manager 只做参数校验与转发。
+
+        # ----------------------------------------------------
+        # 360 全景：清单 / 元信息 / 渲染等距柱状（预览器用）
+        # ----------------------------------------------------
+        # Avata 360 的 .OSV 是两路半球鱼眼、十几 GB，浏览器没法直接放。
+        # 这里按需转成等距柱状全景图，前端拖拽看任意方向。见 pano360_service.py。
+
+        if path == "/api/pano360/list":
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                if not name:
+                    raise ValueError("Missing project name.")
+                import pano360_service
+
+                project = load_project(name)
+                folders = [item.get("path") for item in (project.get("folders") or [])
+                           if item.get("path")]
+                items = pano360_service.find_360_videos(folders)
+                for it in items:
+                    srt = Path(it["srt"]) if it["srt"] else None
+                    it["info"] = pano360_service.video_info(Path(folders[it["folder_index"]]).expanduser()
+                                                            / it["relative_path"], srt)
+                json_response(self, {"project": name, "count": len(items), "items": items})
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/pano360/frame":
+            # 渲染一张等距柱状全景（JPEG）。参数：name / rel / t / ew
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                rel = (params.get("rel") or [""])[0]
+                t = float((params.get("t") or ["0"])[0])
+                ew = int((params.get("ew") or ["2048"])[0])
+                if not name or not rel:
+                    raise ValueError("Missing name/rel.")
+                if not (512 <= ew <= 4096):
+                    raise ValueError("ew out of range (512..4096).")
+                import pano360_service
+
+                project = load_project(name)
+                folders = [Path(item.get("path")).expanduser()
+                           for item in (project.get("folders") or []) if item.get("path")]
+                target = None
+                for f in folders:
+                    cand = (f / rel).resolve()
+                    if cand.is_file() and f.resolve() in cand.parents:
+                        target = cand
+                        break
+                if target is None or target.suffix.lower() != ".osv":
+                    raise ValueError("That .OSV is not inside this project's folders.")
+
+                data, hit = pano360_service.render_cached(
+                    target, pano360_service.cache_dir(target.parent), t, ew=ew)
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("X-Pano-Cache", "hit" if hit else "miss")
+                self.end_headers()
+                self._write_body(data)
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/pano360/frames":
+            # 360 专用检索：哪些时刻拍到了这一点（圆环判据，不需要云台姿态）
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                lat = (params.get("lat") or [""])[0]
+                lng = (params.get("lng") or [""])[0]
+                limit = int((params.get("limit") or ["60"])[0])
+                mode = (params.get("mode") or ["passes"])[0].strip().lower()
+                if not name or lat == "" or lng == "":
+                    raise ValueError("Missing name/lat/lng.")
+                import pano360_service
+                import pano360_coverage
+
+                if mode not in pano360_coverage.FIND_MODES:
+                    mode = "passes"
+                json_response(self, pano360_service.find_360_frames(
+                    name, float(lat), float(lng), limit=limit, mode=mode))
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/pano360/look":
+            # 从 360 全景裁一张**透视小图**（检索卡片缩略图 / 预览器取景用）
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                rel = (params.get("rel") or [""])[0]
+                t = float((params.get("t") or ["0"])[0])
+                yaw = float((params.get("yaw") or ["0"])[0])
+                pitch = float((params.get("pitch") or ["0"])[0])
+                fov = float((params.get("fov") or ["75"])[0])
+                w = int((params.get("w") or ["480"])[0])
+                if not name or not rel:
+                    raise ValueError("Missing name/rel.")
+                if not (160 <= w <= 1600):
+                    raise ValueError("w out of range (160..1600).")
+                if not (20.0 <= fov <= 150.0):
+                    raise ValueError("fov out of range (20..150).")
+                import pano360_service
+
+                project = load_project(name)
+                folders = [Path(item.get("path")).expanduser()
+                           for item in (project.get("folders") or []) if item.get("path")]
+                target = None
+                for f in folders:
+                    cand = (f / rel).resolve()
+                    if cand.is_file() and f.resolve() in cand.parents:
+                        target = cand
+                        break
+                if target is None or target.suffix.lower() != ".osv":
+                    raise ValueError("That .OSV is not inside this project's folders.")
+
+                data, hit = pano360_service.render_perspective(
+                    target, pano360_service.cache_dir(target.parent), t,
+                    yaw, pitch, fov_deg=fov, out_w=w)
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("X-Pano-Cache", "hit" if hit else "miss")
+                self.end_headers()
+                self._write_body(data)
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/pano":
+            # 流式送出**转码后的等距柱状 mp4**（支持 Range，浏览器 <video> 才能拖进度）。
+            # 用法：/pano?name=<项目>&rel=<素材相对路径>&tier=full
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                rel = (params.get("rel") or [""])[0]
+                tier = (params.get("tier") or ["full"])[0]
+                if not name or not rel:
+                    raise ValueError("Missing name/rel.")
+                import pano360_transcode
+                if tier not in pano360_transcode.QUALITY_TIERS:
+                    raise ValueError("Unknown tier: %s" % tier)
+                target = _resolve_project_media(name, rel, ".osv")
+                out = target.parent / "pano_cache" / ("%s_%s.mp4" % (target.stem, tier))
+                if not pano360_transcode.is_valid_output(out):
+                    raise ValueError("Not transcoded yet — call /api/pano360/transcode first.")
+                send_file_range(self, out, content_type="video/mp4",
+                                cache_control="public, max-age=86400")
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/pano360/transcode":
+            #
+            # 为什么要转：`.OSV` 是两路 4K HEVC Main10 鱼眼，浏览器解不了，
+            # 而且就算能解也拿到的是两张圆图 —— 重投影必须有人做。
+            # 转一次之后前端就是普通 <video> 播放 + canvas 拖拽转向。
+            #
+            # **异步**：转码是分钟级（79 秒素材约 7 分钟），同步会让前端干等、
+            # 还可能被浏览器/代理超时掐掉。所以立刻返回 job_id，
+            # 进度用 `/api/pano360/job?id=` 轮询。
+            # 已转过就直接返回 cached（除非 force=1）。
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                rel = (params.get("rel") or [""])[0]
+                tier = (params.get("tier") or ["full"])[0]
+                force = (params.get("force") or ["0"])[0] in ("1", "true", "yes")
+                if not name or not rel:
+                    raise ValueError("Missing name/rel.")
+                # 在**用到处**导入：pano360_transcode 会 import project_manager，
+                # 顶层导入会绕成环。这与本文件里 pano360_service 的写法一致。
+                import pano360_transcode
+                if tier not in pano360_transcode.QUALITY_TIERS:
+                    raise ValueError("Unknown tier: %s" % tier)
+
+                target = _resolve_project_media(name, rel, ".osv")
+                out_dir = target.parent / "pano_cache"
+                out = out_dir / ("%s_%s.mp4" % (target.stem, tier))
+                rel_out = str(out.relative_to(target.parent)).replace("\\", "/")
+
+                if pano360_transcode.is_valid_output(out) and not force:
+                    json_response(self, {
+                        "success": True, "cached": True, "job": None,
+                        "path": rel_out, "size": out.stat().st_size, "tier": tier,
+                    })
+                    return
+
+                jid = pano360_transcode.submit(target, out, tier=tier, force=force)
+                json_response(self, {
+                    "success": True, "cached": False, "job": jid,
+                    "path": rel_out, "tier": tier,
+                })
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/pano360/job":
+            # 查转码任务进度。省略 id 时返回全部任务（前端用来显示"后台在转几个"）。
+            try:
+                params = parse_qs(parsed.query)
+                jid = (params.get("id") or [""])[0]
+                import pano360_transcode
+                if jid:
+                    j = pano360_transcode.job(jid)
+                    if not j:
+                        raise ValueError("Unknown job: %s" % jid)
+                    json_response(self, {"success": True, "job": j})
+                else:
+                    json_response(self, {
+                        "success": True,
+                        "jobs": pano360_transcode.all_jobs(),
+                        "active": len(pano360_transcode.active_jobs()),
+                    })
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/pano360/precache":
+            # **批量预转**：把一个项目里所有 `.OSV` 排进队列。
+            # 用户说过「不怕预加载和导入的过程中生成文件」——
+            # 导入后跑一次，之后点开任何 360 素材都是秒开。
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                tier = (params.get("tier") or ["full"])[0]
+                force = (params.get("force") or ["0"])[0] in ("1", "true", "yes")
+                if not name:
+                    raise ValueError("Missing name.")
+                import pano360_transcode
+                if tier not in pano360_transcode.QUALITY_TIERS:
+                    raise ValueError("Unknown tier: %s" % tier)
+
+                project = load_project(name)
+                folders = [Path(item.get("path")).expanduser()
+                           for item in (project.get("folders") or []) if item.get("path")]
+                queued, already = [], 0
+                seen = set()
+                for f in folders:
+                    if not f.is_dir():
+                        continue
+                    for src in sorted(list(f.rglob("*.OSV")) + list(f.rglob("*.osv"))):
+                        key = str(src.resolve()).lower()
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        out = src.parent / "pano_cache" / ("%s_%s.mp4" % (src.stem, tier))
+                        if pano360_transcode.is_valid_output(out) and not force:
+                            already += 1
+                            continue
+                        queued.append({
+                            "job": pano360_transcode.submit(
+                                src, out, tier=tier, force=force, label=src.name),
+                            "video": src.name,
+                        })
+                json_response(self, {
+                    "success": True, "queued": len(queued), "already_done": already,
+                    "jobs": queued, "tier": tier,
+                })
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/project/sync-check":
+            # 视频时长 vs 航迹/SRT 时长：发现不同步就报出来，让用户重生成
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                if not name:
+                    raise ValueError("Missing name.")
+                tol = float((params.get("tolerance") or [""])[0] or
+                            SYNC_TOLERANCE_SECONDS)
+                json_response(self, check_project_sync(name, tolerance=tol))
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/project/sync-fix":
+            # 就地重生成 SRT + 航迹，并清掉按旧时间轴生成的缓存
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                fi = int((params.get("folder_index") or ["-1"])[0])
+                rel = (params.get("relative_path") or [""])[0]
+                if not name or fi < 0 or not rel:
+                    raise ValueError("Missing name/folder_index/relative_path.")
+                json_response(self, resync_existing_files(name, fi, rel))
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
+
+        if path == "/api/project/coverage/list":
+
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+
+                if not name:
+                    raise ValueError("Missing project name.")
+
+                import coverage_api
+
+                project = load_project(name)
+                folders = [
+                    item.get("path")
+                    for item in (project.get("folders") or [])
+                    if item.get("path")
+                ]
+
+                json_response(self, coverage_api.list_coverage(name, folders))
+
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+
+            return
+
+        if path == "/api/project/coverage/query":
+
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                lat = (params.get("lat") or [""])[0]
+                lng = (params.get("lng") or [""])[0]
+                npz = (params.get("npz") or [""])[0]
+
+                if not name:
+                    raise ValueError("Missing project name.")
+
+                if lat == "" or lng == "":
+                    raise ValueError("Missing lat/lng.")
+
+                import coverage_api
+
+                target = self.resolve_coverage_npz(name, npz)
+
+                json_response(self, coverage_api.query_point(
+                    name, target, float(lat), float(lng)))
+
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+
+            return
+
+        # 「这个位置被哪些画面拍到过」—— 跨架次检索
+        if path == "/api/project/coverage/frames":
+
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                lat = (params.get("lat") or [""])[0]
+                lng = (params.get("lng") or [""])[0]
+                limit = (params.get("limit") or ["60"])[0]
+                max_gsd = (params.get("max_gsd") or [""])[0]
+                only = (params.get("srt") or [""])[0]
+                import coverage_api
+
+                # 检索档位：best=只要最清晰的 1 张；passes=每个独立趟次 1 张（默认）；
+                # angles=每种视角 1 张（方位/俯角接近的合并）—— 后者是为**遮挡**准备的：
+                # 最清晰的那张可能正好被树挡住，换个方向才看得见。
+                mode = (params.get("mode") or ["passes"])[0].strip().lower()
+                if mode not in coverage_api.FIND_MODES:
+                    mode = "passes"
+
+                # 边距内缩：目标必须落在画面内缩这个比例的范围内（可调选项）。
+                # 缺省用后端的常量；传了就用传的（find_frames 内部会夹到合法范围）。
+                # 注意：**不能**用 `if inset:` 判空 —— "0" 是合法值（= 不限制）。
+                inset_raw = (params.get("inset") or [""])[0].strip()
+                frame_inset = None
+                if inset_raw != "":
+                    try:
+                        frame_inset = float(inset_raw)
+                    except ValueError:
+                        raise ValueError("inset must be a number (fraction, e.g. 0.25).")
+
+                if not name:
+                    raise ValueError("Missing project name.")
+
+                if lat == "" or lng == "":
+                    raise ValueError("Missing lat/lng.")
+
+                import coverage_api
+
+                srt_path = None
+                if only:
+                    # 限定单个架次时也要过一遍归属校验，别让这个参数变成任意文件读
+                    project = load_project(name)
+                    folders = [
+                        Path(item.get("path")).resolve()
+                        for item in (project.get("folders") or [])
+                        if item.get("path")
+                    ]
+                    cand = Path(only).resolve()
+                    if not any(f == cand.parent or f in cand.parents for f in folders):
+                        raise ValueError("That SRT is not inside this project's folders.")
+                    srt_path = cand
+
+                json_response(self, coverage_api.find_frames(
+                    name, float(lat), float(lng),
+                    limit=int(limit),
+                    max_gsd=float(max_gsd) if max_gsd else None,
+                    srt_path=srt_path,
+                    mode=mode,
+                    frame_inset=frame_inset,
+                ))
+
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+
+            return
+
+        # 检索结果的缩略图（抽帧带磁盘缓存）
+        if path == "/api/project/coverage/thumb":
+
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                folder_index = (params.get("folder_index") or [""])[0]
+                rel = (params.get("path") or [""])[0]
+                t = (params.get("t") or [""])[0]
+                width = (params.get("w") or ["480"])[0]
+
+                if not name:
+                    raise ValueError("Missing project name.")
+
+                if not rel or t == "":
+                    raise ValueError("Missing path/time.")
+
+                import coverage_api
+
+                video = resolve_project_video(name, folder_index, rel)
+                thumb = coverage_api.make_thumbnail(
+                    video, float(t), width=int(width))
+                data = thumb.read_bytes()
+
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                # 缩略图内容只取决于 (视频, 时间)，可以放心缓存
+                self.send_header("Cache-Control", "private, max-age=86400")
+                self.end_headers()
+                self._write_body(data)
+
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+
+            return
+
+        # 取回导出的 GeoJSON 文件（用户可能想直接从浏览器下载或另存）
+        if path == "/api/project/coverage/file":
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                fn = (params.get("file") or [""])[0]
+
+                if not name:
+                    raise ValueError("Missing project name.")
+
+                if not fn:
+                    raise ValueError("Missing file name.")
+
+                import coverage_api
+
+                cdir = coverage_api.coverage_dir(name).resolve()
+                target = (cdir / Path(fn).name).resolve()
+
+                if cdir not in target.parents:
+                    raise ValueError("File must live under the project coverage folder.")
+
+                if target.suffix.lower() not in (".geojson", ".json", ".png"):
+                    raise ValueError("Only .geojson / .json / .png can be served.")
+
+                if not target.is_file():
+                    raise FileNotFoundError("File not found.")
+
+                ctype = {
+                    ".geojson": "application/geo+json; charset=utf-8",
+                    ".json": "application/json; charset=utf-8",
+                    ".png": "image/png",
+                }[target.suffix.lower()]
+
+                data = target.read_bytes()
+
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header(
+                    "Content-Disposition",
+                    f'inline; filename="{target.name}"'
+                )
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self._write_body(data)
+
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+
+            return
+
+        if path == "/api/project/coverage/heatmap":
+            try:
+                params = parse_qs(parsed.query)
+                name = (params.get("name") or [""])[0]
+                npz = (params.get("npz") or [""])[0]
+                metric = (params.get("metric") or ["count"])[0]
+                gsd_max = (params.get("gsd_max") or [""])[0]
+                overlay = (params.get("overlay") or [""])[0] in ("1", "true", "yes")
+                threshold = (params.get("threshold") or [""])[0]
+
+                if not name:
+                    raise ValueError("Missing project name.")
+
+                import coverage_api
+
+                target = self.resolve_coverage_npz(name, npz)
+                kw = {"metric": metric}
+                if gsd_max:
+                    kw["gsd_max"] = float(gsd_max)
+
+                if overlay:
+                    th = int(threshold) if threshold else int(
+                        (params.get("overlay_threshold") or ["1"])[0])
+                    geo = coverage_api.export_geojson(
+                        name, target, metric=metric, threshold=th)
+                    data = coverage_api.render_overlay_png(target, geo, **kw)
+                else:
+                    data = coverage_api.render_heatmap_png(target, **kw)
+
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                # 本机工具，允许缓存但每次校验；重建后 npz 的 mtime 会变，
+                # 所以再加一层 no-store 免得看到旧图。
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self._write_body(data)
+
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+
+            return
+
+        # ----------------------------------------------------
         # 视频文件流（支持 HTTP Range）
         # ----------------------------------------------------
 
@@ -5907,10 +7295,10 @@ class ProjectManagerHandler(
                 relative_path = params.get("path", [""])[0]
 
                 if not project_name:
-                    raise ValueError("缺少项目名称。")
+                    raise ValueError("Missing project name.")
 
                 if not relative_path:
-                    raise ValueError("缺少视频相对路径。")
+                    raise ValueError("Missing video relative path.")
 
                 stream_project_video(
                     self,
@@ -5999,10 +7387,10 @@ class ProjectManagerHandler(
                 relative_path = params.get("path", [""])[0]
 
                 if not project_name:
-                    raise ValueError("缺少项目名称。")
+                    raise ValueError("Missing project name.")
 
                 if not relative_path:
-                    raise ValueError("缺少视频相对路径。")
+                    raise ValueError("Missing video relative path.")
 
                 try:
                     center = float(params.get("center", ["0"])[0] or 0)
@@ -6055,10 +7443,10 @@ class ProjectManagerHandler(
                 relative_path = params.get("path", [""])[0]
 
                 if not project_name:
-                    raise ValueError("缺少项目名称。")
+                    raise ValueError("Missing project name.")
 
                 if not relative_path:
-                    raise ValueError("缺少视频相对路径。")
+                    raise ValueError("Missing video relative path.")
 
                 try:
                     start_seconds = float(
@@ -6129,10 +7517,10 @@ class ProjectManagerHandler(
                 relative_path = params.get("path", [""])[0]
 
                 if not project_name:
-                    raise ValueError("缺少项目名称。")
+                    raise ValueError("Missing project name.")
 
                 if not relative_path:
-                    raise ValueError("缺少视频相对路径。")
+                    raise ValueError("Missing video relative path.")
 
                 video_path = resolve_project_video(
                     project_name,
@@ -6226,7 +7614,7 @@ class ProjectManagerHandler(
 
                 if not project_name:
                     raise ValueError(
-                        "缺少项目名称。"
+                        "Missing project name."
                     )
 
                 project = load_project(
@@ -6426,7 +7814,7 @@ class ProjectManagerHandler(
 
                 if not project_name:
                     raise ValueError(
-                        "缺少项目名称。"
+                        "Missing project name."
                     )
 
                 result = (
@@ -6474,7 +7862,7 @@ class ProjectManagerHandler(
 
                 if not project_name:
                     raise ValueError(
-                        "缺少项目名称。"
+                        "Missing project name."
                     )
 
                 result = (
@@ -6513,7 +7901,7 @@ class ProjectManagerHandler(
                 )[0]
 
                 if not project_name:
-                    raise ValueError("缺少项目名称。")
+                    raise ValueError("Missing project name.")
 
                 result = list_project_geojson(
                     project_name
@@ -6560,7 +7948,7 @@ class ProjectManagerHandler(
                 )[0]
 
                 if not project_name:
-                    raise ValueError("缺少项目名称。")
+                    raise ValueError("Missing project name.")
 
                 if not relative_path:
                     raise ValueError("缺少 3D GeoJSON 文件路径。")
@@ -6631,7 +8019,7 @@ class ProjectManagerHandler(
                 )[0]
 
                 if not project_name:
-                    raise ValueError("缺少项目名称。")
+                    raise ValueError("Missing project name.")
 
                 if not relative_path:
                     raise ValueError("缺少 GeoJSON 文件路径。")
@@ -6676,6 +8064,22 @@ class ProjectManagerHandler(
         path = urlparse(
             self.path
         ).path
+
+        # 切换语言：前端切一次就通知后端，之后**没有请求上下文**的调用
+        # （Windows 文件选择对话框）也会跟着用这个语言。
+        if path == "/api/lang":
+            try:
+                data = self.read_json()
+                lang = i18n.norm_lang(data.get("lang"))
+                settings_store.set_value("lang", lang)
+                i18n.set_lang(lang)
+                json_response(self, {
+                    "ok": True, "lang": lang,
+                    "messages": i18n.all_messages(lang),
+                })
+            except Exception as e:
+                json_response(self, {"error": str(e)}, 400)
+            return
 
         # 网页上补填 / 更换天地图 key：客户先开始用、key 后批下来的场景。
         # 只认本机（服务本来就只绑 127.0.0.1）。
@@ -6733,6 +8137,24 @@ class ProjectManagerHandler(
         ):
 
             self.extract_srt()
+            return
+
+        if (
+            path
+            ==
+            "/api/project/coverage/build"
+        ):
+
+            self.build_coverage()
+            return
+
+        if (
+            path
+            ==
+            "/api/project/coverage/export"
+        ):
+
+            self.export_coverage_geojson()
             return
 
         if (
@@ -7044,7 +8466,7 @@ class ProjectManagerHandler(
 
             if not project_name:
                 raise ValueError(
-                    "缺少项目名称。"
+                    "Missing project name."
                 )
 
             if not folder_data:
@@ -7205,6 +8627,149 @@ class ProjectManagerHandler(
             )
 
     # ========================================================
+    # 视场覆盖
+    # ========================================================
+
+    def resolve_coverage_npz(self, project_name, npz_param):
+        """把前端给的 npz 参数解析成**项目覆盖目录里**的真实文件。
+
+        安全检查：只允许项目 coverage/ 下的文件，并且必须是 .npz ——
+        不然这个参数就成了任意文件读取的口子。
+        """
+
+        import coverage_api
+
+        cdir = coverage_api.coverage_dir(project_name).resolve()
+
+        if npz_param:
+
+            candidate = Path(npz_param)
+
+            if not candidate.is_absolute():
+                candidate = cdir / candidate
+
+            candidate = candidate.resolve()
+
+            if candidate.suffix.lower() != ".npz":
+                raise ValueError("Only .npz coverage grids are allowed.")
+
+            if cdir not in candidate.parents:
+                raise ValueError("Coverage grid must live under the project coverage folder.")
+
+            if not candidate.is_file():
+                raise FileNotFoundError("Coverage grid not found.")
+
+            return candidate
+
+        # 没给就挑最新的一个（前端「刚建完」的场景最常用）
+        if not cdir.is_dir():
+            raise FileNotFoundError("This project has no coverage grids yet.")
+
+        grids = sorted(
+            cdir.glob("*.npz"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+
+        if not grids:
+            raise FileNotFoundError("This project has no coverage grids yet.")
+
+        return grids[0]
+
+    def build_coverage(self):
+
+        try:
+
+            data = self.read_json()
+
+            project_name = data.get("project_name")
+            srt_path = data.get("srt")
+            cell = data.get("cell") or 1.0
+            force = bool(data.get("force"))
+
+            if not project_name:
+                raise ValueError("Missing project name.")
+
+            if not srt_path:
+                raise ValueError("Missing SRT path.")
+
+            # 只允许建在项目自己登记的文件夹里
+            project = load_project(project_name)
+            folders = [
+                Path(item.get("path")).resolve()
+                for item in (project.get("folders") or [])
+                if item.get("path")
+            ]
+
+            target = Path(srt_path).resolve()
+
+            if target.suffix.lower() != ".srt":
+                raise ValueError("Only .srt files can be used to build coverage.")
+
+            if not any(f == target.parent or f in target.parents for f in folders):
+                raise ValueError("That SRT is not inside this project's folders.")
+
+            import coverage_api
+
+            result = coverage_api.build_coverage(
+                project_name, target, cell=cell, force=force)
+
+            json_response(self, {"success": True, "result": result})
+
+        except Exception as e:
+
+            json_response(self, {"error": str(e)}, 400)
+
+    def export_coverage_geojson(self):
+
+        try:
+
+            data = self.read_json()
+
+            project_name = data.get("project_name")
+            metric = data.get("metric") or "count"
+            threshold = data.get("threshold")
+            gsd_max = data.get("gsd_max")
+            tol_m = float(data.get("tol_m") or 0.0)
+            min_area = int(data.get("min_area_cells") or 4)
+            # 是否把多边形也交给前端（贴图用）；文件一律落盘，方便直接拿走
+            inline = bool(data.get("inline", True))
+
+            if not project_name:
+                raise ValueError("Missing project name.")
+
+            import coverage_api
+
+            target = self.resolve_coverage_npz(project_name, data.get("npz"))
+
+            out = coverage_api.write_geojson(
+                project_name,
+                target,
+                metric=metric,
+                threshold=int(threshold) if threshold not in (None, "") else None,
+                gsd_max=float(gsd_max) if gsd_max not in (None, "") else None,
+                tol_m=tol_m,
+                min_area_cells=min_area
+            )
+
+            payload = {
+                "success": True,
+                "file": str(out),
+                "file_name": out.name,
+                "size_kb": round(out.stat().st_size / 1024),
+            }
+
+            if inline:
+                with open(out, "r", encoding="utf-8") as f:
+                    payload["geojson"] = json.load(f)
+
+            json_response(self, payload)
+
+        except Exception as e:
+
+            json_response(self, {"error": str(e)}, 400)
+
+    # ========================================================
     # 生成 GeoJSON
     # ========================================================
 
@@ -7214,7 +8779,9 @@ class ProjectManagerHandler(
 
             data = self.read_json()
 
-            result = generate_geojson_for_video(
+            # 用**合并入口**：一次拍摄的多路（V/S/T）合成一份航迹。
+            # 单路素材会自己退回原来的单路生成（见 generate_merged_track）。
+            result = generate_merged_track(
                 data.get("project_name"),
                 data.get("folder_path"),
                 data.get("relative_path")
@@ -7303,7 +8870,7 @@ class ProjectManagerHandler(
             markers = data.get("markers")
 
             if not project_name:
-                raise ValueError("缺少项目名称。")
+                raise ValueError("Missing project name.")
 
             if markers is None or not isinstance(markers, list):
                 raise ValueError("markers 必须是数组。")
@@ -7516,7 +9083,7 @@ class ProjectManagerHandler(
 
         self.end_headers()
 
-        self.wfile.write(
+        self._write_body(
             content
         )
 

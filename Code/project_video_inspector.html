@@ -10,7 +10,7 @@
     content="width=device-width, initial-scale=1.0"
 >
 
-<title>无人机巡查视频结构检测</title>
+<title>Video Inspector</title>
 
 <style>
 
@@ -621,7 +621,7 @@ select {
 <header class="header">
 
     <div class="header-title">
-        无人机巡查数据管理
+        Drone Survey Data
     </div>
 
 </header>
@@ -633,23 +633,23 @@ select {
 <section class="card">
 
     <h1>
-        视频结构检测
+        Video structure
     </h1>
 
     <div class="description">
-        检查项目中的无人机视频内部结构，
-        识别视频、音频、字幕、数据流以及可能的 DJI 时间-位置信息。
-        本步骤只检测，不修改原始视频。
+        Inspect the internal structure of the project drone videos:
+        video, audio, subtitle and data streams, plus any DJI time-position data.
+        This step only inspects; the original videos are never modified.
     </div>
 
     <label for="projectSelect">
-        选择项目
+        Select project
     </label>
 
     <select id="projectSelect">
 
         <option value="">
-            正在读取项目……
+            Reading projects…
         </option>
 
     </select>
@@ -658,7 +658,7 @@ select {
         id="currentProject"
         class="current-project"
     >
-        当前项目：未选择
+        Project: none selected
     </div>
 
     <div
@@ -674,14 +674,14 @@ select {
     <div class="toolbar">
 
         <h2>
-            检测统计
+            Inspection summary
         </h2>
 
         <button
             id="inspectButton"
             class="button"
         >
-            开始检测
+            Start inspection
         </button>
 
     </div>
@@ -692,7 +692,7 @@ select {
         <div class="summary-item">
 
             <div class="summary-label">
-                视频
+                Videos
             </div>
 
             <div
@@ -708,7 +708,7 @@ select {
         <div class="summary-item">
 
             <div class="summary-label">
-                已检测
+                Inspected
             </div>
 
             <div
@@ -724,7 +724,7 @@ select {
         <div class="summary-item">
 
             <div class="summary-label">
-                发现 DJI 时间-位置信息
+                DJI time-position data found
             </div>
 
             <div
@@ -740,7 +740,7 @@ select {
         <div class="summary-item">
 
             <div class="summary-label">
-                存在字幕流
+                Subtitle stream present
             </div>
 
             <div
@@ -756,7 +756,7 @@ select {
         <div class="summary-item">
 
             <div class="summary-label">
-                检测失败
+                Inspection failed
             </div>
 
             <div
@@ -776,7 +776,7 @@ select {
 <section class="card">
 
     <h2>
-        视频结构
+        Video structure
     </h2>
 
     <div
@@ -785,7 +785,7 @@ select {
     >
 
         <div class="empty">
-            请选择项目后点击“开始检测”。
+            Select a project, then click “Start inspection”.
         </div>
 
     </div>
@@ -861,8 +861,8 @@ projectSelect.addEventListener(
 
         currentProject.textContent =
             name
-                ? "当前项目：" + name
-                : "当前项目：未选择";
+                ? "Project: " + name
+                : "Project: none selected";
 
         resetResults();
     }
@@ -891,7 +891,7 @@ async function loadProjects() {
 
             throw new Error(
                 data.error ||
-                "无法读取项目列表。"
+                "Could not read the project list."
             );
         }
 
@@ -904,7 +904,7 @@ async function loadProjects() {
         ) {
 
             projectSelect.innerHTML =
-                '<option value="">暂无项目</option>';
+                '<option value="">No projects</option>';
 
             return;
         }
@@ -930,7 +930,7 @@ async function loadProjects() {
         );
 
         currentProject.textContent =
-            "当前项目：" +
+            "Project: " +
             projectSelect.value;
 
     } catch (error) {
@@ -951,7 +951,7 @@ async function inspectProject() {
     if (!projectName) {
 
         showMessage(
-            "请先选择项目。",
+            "Select a project first.",
             "error"
         );
 
@@ -962,10 +962,10 @@ async function inspectProject() {
         true;
 
     inspectButton.textContent =
-        "正在检测……";
+        "Inspecting…";
 
     showMessage(
-        "正在调用 ffprobe 检测视频结构。大型视频只读取容器信息，不会重新编码。",
+        "Running ffprobe. Large videos are only probed at container level; nothing is re-encoded.",
         "loading"
     );
 
@@ -987,14 +987,14 @@ async function inspectProject() {
 
             throw new Error(
                 data.error ||
-                "视频结构检测失败。"
+                "Video inspection failed."
             );
         }
 
         if (!data.ffprobe) {
 
             throw new Error(
-                "服务器未找到 ffprobe。请检查 FFmpeg PATH。"
+                "ffprobe was not found. Check the FFmpeg PATH."
             );
         }
 
@@ -1003,7 +1003,7 @@ async function inspectProject() {
         );
 
         showMessage(
-            "视频结构检测完成。",
+            "Video inspection finished.",
             "success"
         );
 
@@ -1020,7 +1020,7 @@ async function inspectProject() {
             false;
 
         inspectButton.textContent =
-            "重新检测";
+            "Inspect again";
     }
 }
 
@@ -1053,7 +1053,7 @@ function renderResult(
     ) {
 
         results.innerHTML =
-            '<div class="empty">当前项目没有数据文件夹。</div>';
+            '<div class="empty">This project has no data folders.</div>';
 
         return;
     }
@@ -1185,7 +1185,7 @@ function createVideoElement(
         "video-path";
 
     path.textContent =
-        "相对路径：" +
+        "Relative path: " +
         video.relative_path;
 
     element.appendChild(
@@ -1203,8 +1203,8 @@ function createVideoElement(
     addBadge(
         badges,
         video.success
-            ? "结构读取成功"
-            : "检测失败",
+            ? "Structure read"
+            : "Inspection failed",
         video.success
             ? "badge-ok"
             : "badge-warn"
@@ -1213,8 +1213,8 @@ function createVideoElement(
     addBadge(
         badges,
         video.dji_telemetry
-            ? "发现 DJI 时间-位置信息"
-            : "未发现明确 DJI 时间-位置信息",
+            ? "DJI time-position data found"
+            : "No clear DJI time-position data",
         video.dji_telemetry
             ? "badge-ok"
             : "badge-neutral"
@@ -1223,8 +1223,8 @@ function createVideoElement(
     addBadge(
         badges,
         video.has_subtitle
-            ? "存在字幕流"
-            : "无字幕流",
+            ? "Subtitle stream present"
+            : "No subtitle stream",
         video.has_subtitle
             ? "badge-ok"
             : "badge-neutral"
@@ -1233,8 +1233,8 @@ function createVideoElement(
     addBadge(
         badges,
         video.has_data_stream
-            ? "存在 data 数据流"
-            : "无 data 数据流",
+            ? "Data stream present"
+            : "No data stream",
         video.has_data_stream
             ? "badge-ok"
             : "badge-neutral"
@@ -1256,7 +1256,7 @@ function createVideoElement(
 
         addDetail(
             details,
-            "封装格式",
+            "Container",
             video.format.format_long_name
                 ||
                 video.format.format_name
@@ -1266,7 +1266,7 @@ function createVideoElement(
 
         addDetail(
             details,
-            "时长",
+            "Duration",
             formatDuration(
                 video.duration
             )
@@ -1274,7 +1274,7 @@ function createVideoElement(
 
         addDetail(
             details,
-            "视频流",
+            "Video streams",
             String(
                 video.video_streams.length
             )
@@ -1282,7 +1282,7 @@ function createVideoElement(
 
         addDetail(
             details,
-            "音频流",
+            "Audio streams",
             String(
                 video.audio_streams.length
             )
@@ -1290,7 +1290,7 @@ function createVideoElement(
 
         addDetail(
             details,
-            "字幕流",
+            "Subtitle streams",
             String(
                 video.subtitle_streams.length
             )
@@ -1298,7 +1298,7 @@ function createVideoElement(
 
         addDetail(
             details,
-            "数据流",
+            "Data streams",
             String(
                 video.data_streams.length
             )
@@ -1325,7 +1325,7 @@ function createVideoElement(
                 "18px";
 
             streamTitle.textContent =
-                "视频流";
+                "Video streams";
 
             element.appendChild(
                 streamTitle
@@ -1343,18 +1343,18 @@ function createVideoElement(
                         "stream-row";
 
                     row.textContent =
-                        "流 #"
+                        "Stream #"
                         +
                         stream.index
                         +
-                        "　"
+                        " "
                         +
                         (
                             stream.codec_name
                             || "-"
                         )
                         +
-                        "　"
+                        " "
                         +
                         (
                             stream.width
@@ -1368,7 +1368,7 @@ function createVideoElement(
                             ""
                         )
                         +
-                        "　"
+                        " "
                         +
                         (
                             stream.codec_tag_string
@@ -1408,7 +1408,7 @@ function createVideoElement(
                 "evidence-title";
 
             title.textContent =
-                "非普通视频流";
+                "Non-standard video stream";
 
             streams.appendChild(
                 title
@@ -1430,25 +1430,25 @@ function createVideoElement(
                         "stream-row";
 
                     row.textContent =
-                        "流 #"
+                        "Stream #"
                         +
                         stream.index
                         +
-                        "　类型："
+                        "  Type: "
                         +
                         (
                             stream.codec_type
                             || "-"
                         )
                         +
-                        "　编码："
+                        "  Codec: "
                         +
                         (
                             stream.codec_name
                             || "-"
                         )
                         +
-                        "　Tag："
+                        "  Tag: "
                         +
                         (
                             stream.codec_tag_string
@@ -1489,7 +1489,7 @@ function createVideoElement(
                 "evidence-title";
 
             title.textContent =
-                "检测到的结构线索";
+                "Structure hints found";
 
             evidence.appendChild(
                 title
@@ -1532,7 +1532,7 @@ function createVideoElement(
 
         error.textContent =
             video.error ||
-            "视频结构检测失败。";
+            "Video inspection failed.";
 
         element.appendChild(
             error
@@ -1560,7 +1560,7 @@ function createVideoElement(
         "action-button";
 
     extractButton.textContent =
-        "提取 SRT";
+        "Extract SRT";
 
     extractButton.disabled =
         !video.has_subtitle || !video.success;
@@ -1578,7 +1578,7 @@ function createVideoElement(
         "action-button";
 
     geoButton.textContent =
-        "生成 GeoJSON";
+        "Make GeoJSON";
 
     geoButton.disabled =
         !video.has_subtitle || !video.success;
@@ -1610,10 +1610,10 @@ function createVideoElement(
                 true;
 
             extractButton.textContent =
-                "正在提取……";
+                "Extracting…";
 
             actionStatus.textContent =
-                "正在从视频字幕流提取 SRT，不会重新编码视频。";
+                "Extracting SRT from the subtitle stream; the video is not re-encoded.";
 
             try {
 
@@ -1643,21 +1643,21 @@ function createVideoElement(
                 if (!response.ok) {
                     throw new Error(
                         data.error ||
-                        "SRT 提取失败。"
+                        "SRT extraction failed."
                     );
                 }
 
                 actionStatus.textContent =
-                    "SRT 已生成：" +
+                    "SRT created: " +
                     data.result.srt_name +
-                    "（" +
+                    " (" +
                     formatFileSize(
                         data.result.size
                     ) +
-                    "）";
+                    ")";
 
                 extractButton.textContent =
-                    "重新提取 SRT";
+                    "Extract SRT again";
 
                 geoButton.disabled =
                     false;
@@ -1668,7 +1668,7 @@ function createVideoElement(
                     error.message;
 
                 extractButton.textContent =
-                    "提取 SRT";
+                    "Extract SRT";
 
                 geoButton.disabled =
                     false;
@@ -1689,10 +1689,10 @@ function createVideoElement(
                 true;
 
             geoButton.textContent =
-                "正在生成……";
+                "Generating…";
 
             actionStatus.textContent =
-                "正在解析 SRT 中的时间-位置信息并生成 GeoJSON。";
+                "Parsing time-position data from the SRT and building GeoJSON.";
 
             try {
 
@@ -1722,21 +1722,21 @@ function createVideoElement(
                 if (!response.ok) {
                     throw new Error(
                         data.error ||
-                        "GeoJSON 生成失败。"
+                        "GeoJSON generation failed."
                     );
                 }
 
                 actionStatus.textContent =
-                    "GeoJSON 已生成：" +
+                    "GeoJSON created: " +
                     data.result.geojson_name +
-                    "；有效记录 " +
+                    "; valid records: " +
                     data.result.record_count +
-                    " 条，轨迹段 " +
+                    ", track segments: " +
                     data.result.segment_count +
-                    " 段。";
+                    ".";
 
                 geoButton.textContent =
-                    "重新生成 GeoJSON";
+                    "Make GeoJSON again";
 
             } catch (error) {
 
@@ -1744,7 +1744,7 @@ function createVideoElement(
                     error.message;
 
                 geoButton.textContent =
-                    "生成 GeoJSON";
+                    "Make GeoJSON";
 
             } finally {
 
@@ -1932,7 +1932,7 @@ function resetResults() {
         "0";
 
     results.innerHTML =
-        '<div class="empty">请选择项目后点击“开始检测”。</div>';
+        '<div class="empty">Select a project, then click “Start inspection”.</div>';
 
     hideMessage();
 }

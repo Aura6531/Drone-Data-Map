@@ -10,7 +10,7 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>无人机巡查数据管理</title>
+    <title>Import Data</title>
 
 
     <style>
@@ -721,7 +721,7 @@
     <header class="header">
 
         <div class="header-title">
-            无人机巡查数据管理
+            Drone Survey Data
         </div>
 
     </header>
@@ -737,12 +737,12 @@
         <section class="card">
 
             <h1 class="card-title">
-                项目数据导入
+                Import data
             </h1>
 
             <p class="card-description">
-                将已有的无人机数据文件夹加入项目。
-                原始数据不会被复制，只记录其所在位置。
+                Add existing drone data folders to the project.
+                The original files are not copied — only their location is recorded.
             </p>
 
 
@@ -750,14 +750,14 @@
                 class="form-label"
                 for="projectSelect"
             >
-                选择项目
+                Select project
             </label>
 
 
             <select id="projectSelect">
 
                 <option value="">
-                    正在读取项目……
+                    Reading projects…
                 </option>
 
             </select>
@@ -767,7 +767,7 @@
                 id="currentProject"
                 class="current-project"
             >
-                当前项目：未选择
+                Project: none selected
             </div>
 
         </section>
@@ -781,18 +781,18 @@
         <section class="card">
 
             <h2 class="card-title">
-                添加数据文件夹
+                Add data folder
             </h2>
 
 
             <p class="card-description">
-                选择包含无人机原始数据的文件夹。
-                选择完成后将自动扫描。
+                Choose a folder that holds the original drone data.
+                It is scanned automatically once selected.
             </p>
 
 
             <label class="form-label">
-                文件夹
+                Folder
             </label>
 
 
@@ -803,7 +803,7 @@
                     id="folderPath"
                     class="folder-path empty"
                 >
-                    未选择文件夹
+                    No folder selected
                 </div>
 
 
@@ -811,7 +811,7 @@
                     id="selectFolderButton"
                     class="button-primary"
                 >
-                    选择文件夹
+                    Choose folder
                 </button>
 
 
@@ -861,7 +861,7 @@
                     id="addFolderButton"
                     class="button-success"
                 >
-                    加入当前项目
+                    Add to current project
                 </button>
 
             </div>
@@ -872,7 +872,7 @@
             <div class="statistics">
 
                 <div class="stat">
-                    文件
+                    Files
                     <strong id="fileCount">
                         0
                     </strong>
@@ -904,7 +904,7 @@
 
 
                 <div class="stat">
-                    其他
+                    Other
                     <strong id="otherCount">
                         0
                     </strong>
@@ -912,7 +912,7 @@
 
 
                 <div class="stat">
-                    总大小
+                    Total size
                     <strong id="totalSize">
                         0 B
                     </strong>
@@ -932,19 +932,19 @@
                         <tr>
 
                             <th style="width: 90px;">
-                                类型
+                                Type
                             </th>
 
                             <th>
-                                文件名
+                                File name
                             </th>
 
                             <th>
-                                相对路径
+                                Relative path
                             </th>
 
                             <th style="width: 140px;">
-                                大小
+                                Size
                             </th>
 
                         </tr>
@@ -970,12 +970,12 @@
         <section class="card">
 
             <h2 class="card-title">
-                项目数据文件夹
+                Project data folders
             </h2>
 
 
             <p class="card-description">
-                当前项目已经加入的数据文件夹。
+                Data folders already added to this project.
             </p>
 
 
@@ -1136,7 +1136,7 @@
 
                     throw new Error(
                         data.error ||
-                        "无法读取项目列表。"
+                        "Could not read the project list."
                     );
                 }
 
@@ -1157,14 +1157,14 @@
                     option.value = "";
 
                     option.textContent =
-                        "暂无项目";
+                        "No projects";
 
                     projectSelect.appendChild(
                         option
                     );
 
                     currentProject.textContent =
-                        "当前项目：未选择";
+                        "Project: none selected";
 
                     return;
                 }
@@ -1210,7 +1210,7 @@
                 option.value = "";
 
                 option.textContent =
-                    "读取项目失败";
+                    "Failed to read projects";
 
                 projectSelect.appendChild(
                     option
@@ -1244,7 +1244,7 @@
             if (!name) {
 
                 currentProject.textContent =
-                    "当前项目：未选择";
+                    "Project: none selected";
 
                 renderProjectFolders(
                     []
@@ -1255,7 +1255,7 @@
 
 
             currentProject.textContent =
-                "当前项目：" + name;
+                "Project: " + name;
 
 
             await loadProject(
@@ -1292,7 +1292,7 @@
 
                     throw new Error(
                         data.error ||
-                        "读取项目失败。"
+                        "Failed to read the project."
                     );
                 }
 
@@ -1335,7 +1335,7 @@
             if (!projectName) {
 
                 showMessage(
-                    "请先选择项目。",
+                    "Select a project first.",
                     "error"
                 );
 
@@ -1347,14 +1347,14 @@
                 true;
 
             selectFolderButton.textContent =
-                "正在打开……";
+                "Opening…";
 
 
             hideScanResult();
 
 
             showMessage(
-                "请选择无人机数据文件夹。",
+                "Choose a drone data folder.",
                 "loading"
             );
 
@@ -1375,7 +1375,7 @@
 
                     throw new Error(
                         data.error ||
-                        "选择文件夹失败。"
+                        "Folder selection failed."
                     );
                 }
 
@@ -1391,7 +1391,7 @@
                 if (!data.path) {
 
                     throw new Error(
-                        "没有获取到文件夹。"
+                        "No folder was returned."
                     );
                 }
 
@@ -1418,7 +1418,7 @@
                     false;
 
                 selectFolderButton.textContent =
-                    "选择文件夹";
+                    "Choose folder";
             }
         }
 
@@ -1449,7 +1449,7 @@
         ) {
 
             showMessage(
-                "正在扫描文件夹，请稍候……",
+                "Scanning the folder, please wait…",
                 "loading"
             );
 
@@ -1477,7 +1477,7 @@
 
                     throw new Error(
                         data.error ||
-                        "扫描文件夹失败。"
+                        "Folder scan failed."
                     );
                 }
 
@@ -1492,11 +1492,11 @@
 
 
                 showMessage(
-                    "扫描完成，共发现 "
+                    "Scan finished, found "
                     +
                     currentFolderData.file_count
                     +
-                    " 个文件。",
+                    " files.",
                     "success"
                 );
 
@@ -1597,7 +1597,7 @@
                 cell.colSpan = 4;
 
                 cell.textContent =
-                    "没有发现文件。";
+                    "No files found.";
 
                 cell.style.textAlign =
                     "center";
@@ -1640,7 +1640,7 @@
 
 
                     typeCell.textContent =
-                        type || "未知";
+                        type || "unknown";
 
 
                     typeCell.className =
@@ -1787,7 +1787,7 @@
             if (!projectName) {
 
                 showMessage(
-                    "请先选择项目。",
+                    "Select a project first.",
                     "error"
                 );
 
@@ -1798,7 +1798,7 @@
             if (!currentFolderData) {
 
                 showMessage(
-                    "请先选择并扫描文件夹。",
+                    "Choose and scan a folder first.",
                     "error"
                 );
 
@@ -1810,7 +1810,7 @@
                 true;
 
             addFolderButton.textContent =
-                "正在加入……";
+                "Adding…";
 
 
             try {
@@ -1846,7 +1846,7 @@
 
                     throw new Error(
                         data.error ||
-                        "加入项目失败。"
+                        "Failed to add to the project."
                     );
                 }
 
@@ -1858,7 +1858,7 @@
 
 
                 showMessage(
-                    "文件夹已加入当前项目。",
+                    "Folder added to the current project.",
                     "success"
                 );
 
@@ -1875,7 +1875,7 @@
                     false;
 
                 addFolderButton.textContent =
-                    "加入当前项目";
+                    "Add to current project";
             }
         }
 
@@ -1908,7 +1908,7 @@
 
 
                 empty.textContent =
-                    "当前项目还没有加入数据文件夹。";
+                    "This project has no data folders yet.";
 
 
                 projectFolders.appendChild(
@@ -1971,7 +1971,7 @@
 
 
                     stats.textContent =
-                        "文件 "
+                        "Files "
                         +
                         folder.file_count
                         +
@@ -1987,7 +1987,7 @@
                         +
                         folder.jpg_count
                         +
-                        " · 其他 "
+                        " · Other "
                         +
                         folder.other_count;
 

@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>360 Panorama Player</title>
+<!--
+  360 全景播放器
+
+  为什么有这么一个页面：
+    `.OSV` 是两路 4K HEVC Main10 鱼眼，浏览器**解不了**；而且就算能解，
+    拿到的也是两张圆图 —— 重投影必须有人做。
+    所以走"**先转码、随点随放**"（用户定的 A 方案）：
+      · 后端 `/api/pano360/transcode` 把 `.OSV` 转成等距柱状 H.264（转一次，缓存）
+      · 后端 `/pano` 用 HTTP Range 流式送出（`<video>` 拖进度要用）
+      · 这个页面负责播放 + **拖拽转向**
+
+  转向怎么做：等距柱状视频是"整张球面摊平"，所以看某个方向 = 从这张图里
+  按 yaw/pitch/fov 裁一块透视投影出来。用 canvas 逐像素做反向映射即可，
+  不需要 WebGL（2048×1024 的源，取景窗口通常 960×540 左右，性能够）。
+
+  用法：
+    /pano360_player.html?name=<项目>&rel=<素材相对路径>&tier=full&t=<秒>
+-->
+<style>
+  :root{--bg:#0b1220;--panel:rgba(255,255,255,.08);--line:rgba(255,255,255,.18);--fg:#e8eefc;--dim:#9db0d0}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font:14px/1.5 "Segoe UI",system-ui,-apple-system,"Microsoft YaHei",sans-serif}
+  #wrap{position:relative;width:100%;height:100%;overflow:hidden}
+  /* 隐藏原生 video：画面从它取帧画到 canvas 上 */
+  #src{position:absolute;left:-10000px;top:0;width:640px;height:320px}
+  #view{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;
+    background:#000}
+  #view.drag{cursor:grabbing}
+  .hud{position:absolute;z-index:5;background:rgba(12,20,36,.72);
+    border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(10px)}
+  #top{left:12px;top:12px;padding:8px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  #top b{font-weight:600}
+  .dim{color:var(--dim)}
+  #bottom{left:50%;transform:translateX(-50%);bottom:14px;padding:10px 14px;
+    display:flex;gap:12px;align-items:center;min-width:min(720px,94vw)}
+  button{background:rgba(255,255,255,.10);color:var(--fg);border:1px solid var(--line);
+    border-radius:8px;padding:6px 12px;cursor:pointer;font:inherit}
+  button:hover{background:rgba(255,255,255,.18)}
+  button:disabled{opacity:.4;cursor:default}
+  #seek{flex:1 1 auto;min-width:120px}
+  #msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;
+    padding:16px 22px;text-align:center;max-width:min(560px,90vw);line-height:1.7}
+  #msg b{display:block;margin-bottom:6px}
+  .err{color:#ffb4b4}
+  label{display:inline-flex;gap:6px;align-items:center}
+  select{background:rgba(255,255,255,.10);color:var(--fg);border:1px solid var(--line);
+    border-radius:8px;padding:5px 8px;font:inherit}
+  #time{font-variant-numeric:tabular-nums;min-width:86px;text-align:center}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <video id="src" playsinline preload="auto"></video>
+  <canvas id="view"></canvas>
+
+  <div class="hud" id="top">
+    <b id="title">360</b>
+    <span class="dim" id="planes">…</span>
+  </div>
+
+  <div class="hud" id="bottom">
+    <button id="play" type="button" title="Play / pause (Space)">▶</button>
+    <span id="time">0:00.0</span>
+    <input id="seek" type="range" min="0" max="1000" value="0" step="1" title="Seek">
+    <label class="dim">FOV
+      <select id="fov">
+        <option value="60">60°</option>
+        <option value="75" selected>75°</option>
+        <option value="90">90°</option>
+        <option value="110">110°</option>
+      </select>
+    </label>
+    <button id="reset" type="button" title="Reset view (R)">Reset</button>
+  </div>
+
+  <div class="hud" id="msg"><b id="msgTitle">Loading…</b><span id="msgBody"></span></div>
+</div>
+
+<script>
+'use strict';
+
+// ---------------- 参数 ----------------
+const Q = new URLSearchParams(location.search);
+const NAME = Q.get('name') || '';
+const REL  = Q.get('rel')  || '';
+const TIER = Q.get('tier') || 'full';
+const T0   = Number(Q.get('t') || 0);
+
+const src    = document.getElementById('src');
+const view   = document.getElementById('view');
+const ctx    = view.getContext('2d');
+const msg    = document.getElementById('msg');
+const msgT   = document.getElementById('msgTitle');
+const msgB   = document.getElementById('msgBody');
+const btnPlay= document.getElementById('play');
+const seek   = document.getElementById('seek');
+const timeEl = document.getElementById('time');
+const fovSel = document.getElementById('fov');
+const planes = document.getElementById('planes');
+
+let yaw = Number(Q.get('yaw') || 0);      // 度；0 = 画面中心
+let pitch = Number(Q.get('pitch') || 0);  // 度；正=抬头
+let fov = Number(fovSel.value);
+let dragging = false, lastX = 0, lastY = 0;
+let ready = false;
+let rafId = 0;
+
+document.getElementById('title').textContent =
+  (REL.split(/[\\/]/).pop() || '360').replace(/\.osv$/i, '');
+
+function say(title, body, isErr){
+  msg.style.display = 'block';
+  msgT.textContent = title;
+  msgT.className = isErr ? 'err' : '';
+  msgB.textContent = body || '';
+}
+function hideMsg(){ msg.style.display = 'none'; }
+
+// ---------------- 画布尺寸（按设备像素比，避免糊） ----------------
+function fit(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  view.width  = Math.max(1, Math.round(view.clientWidth  * dpr));
+  view.height = Math.max(1, Math.round(view.clientHeight * dpr));
+}
+window.addEventListener('resize', fit);
+fit();
+
+// ---------------- 透视取景 ----------------
+// 等距柱状图上的像素 <-> 方向：
+//   经度 lon = (u / W) * 360 - 180      （u 为列）
+//   纬度 lat = 90 - (v / H) * 180       （v 为行）
+//   u = (lon + 180) / 360 * W ,  v = (90 - lat) / 180 * H
+//
+// 取景：对输出画面的每个像素，先算出它在相机坐标系下的方向，
+// 再用 yaw/pitch 转到世界方向，最后落到等距柱状图的 (u,v) 采样。
+function draw(){
+  rafId = 0;
+  if (!ready || !src.videoWidth) return;
+  const W = src.videoWidth, H = src.videoHeight;
+  const cw = view.width, ch = view.height;
+
+  // 用 drawImage 逐列采样太慢，所以：把源一次性缩放到一个中间 ImageBitmap，
+  // 然后逐像素从它的 ImageData 取 —— 2048 宽的源，ImageData 是 2048*1024*4 = 8 MB，
+  // 每帧取一次可以接受（且只在需要时重取）。
+  const srcCanvas = draw._sc || (draw._sc = document.createElement('canvas'));
+  if (srcCanvas.width !== W || srcCanvas.height !== H){
+    srcCanvas.width = W; srcCanvas.height = H;
+    draw._sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+  }
+  const sctx = draw._sctx;
+  sctx.drawImage(src, 0, 0, W, H);
+  const sd = sctx.getImageData(0, 0, W, H).data;
+
+  const out = ctx.createImageData(cw, ch);
+  const od = out.data;
+
+  const f = fov * Math.PI / 180;
+  const tanHalf = Math.tan(f / 2);
+  const aspect = cw / ch;
+  const yawR = yaw * Math.PI / 180, pitchR = pitch * Math.PI / 180;
+  const sy = Math.sin(pitchR), cy = Math.cos(pitchR);
+  const sz = Math.sin(yawR), cz = Math.cos(yawR);
+
+  for (let j = 0; j < ch; j++){
+    // 相机坐标：中心 -1..1，正=上
+    const ny = (1 - 2 * (j + 0.5) / ch) * tanHalf;
+    for (let i = 0; i < cw; i++){
+      const nx = (2 * (i + 0.5) / cw - 1) * tanHalf * aspect;
+      // 方向（相机系，z 轴向前）
+      let dx = nx, dy = ny, dz = 1;
+      const inv = 1 / Math.hypot(dx, dy, dz);
+      dx *= inv; dy *= inv; dz *= inv;
+      // pitch（绕 x 轴）
+      const dy2 = dy * cy + dz * sy;
+      const dz2 = -dy * sy + dz * cy;
+      // yaw（绕 y 轴）
+      const dx3 = dx * cz + dz2 * sz;
+      const dz3 = -dx * sz + dz2 * cz;
+      const dy3 = dy2;
+      // 世界方向 -> 经纬度 -> 等距柱状像素
+      const lat = Math.asin(Math.max(-1, Math.min(1, dy3)));
+      const lon = Math.atan2(dx3, dz3);
+      let u = (lon / (2 * Math.PI) + 0.5) * W;
+      let v = (0.5 - lat / Math.PI) * H;
+      if (u < 0) u += W; if (u >= W) u -= W;
+      const ui = u | 0, vi = v | 0;
+      const o = (j * cw + i) * 4;
+      if (vi < 0 || vi >= H){ od[o+3] = 255; continue; }
+      const s = (vi * W + ui) * 4;
+      od[o] = sd[s]; od[o+1] = sd[s+1]; od[o+2] = sd[s+2]; od[o+3] = 255;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
+}
+
+function requestDraw(){
+  if (rafId) return;
+  rafId = requestAnimationFrame(draw);
+}
+
+// ---------------- 交互：拖拽转向 ----------------
+view.addEventListener('pointerdown', e => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  view.classList.add('drag');
+  view.setPointerCapture(e.pointerId);
+});
+view.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  // 每像素转多少度：与当前 FOV 成比例 —— 视野越窄，同样的拖动转得越少（手感一致）
+  const perPx = fov / view.clientHeight;
+  yaw   -= (e.clientX - lastX) * perPx;
+  pitch += (e.clientY - lastY) * perPx;
+  pitch = Math.max(-89, Math.min(89, pitch));
+  if (yaw > 180) yaw -= 360; if (yaw < -180) yaw += 360;
+  lastX = e.clientX; lastY = e.clientY;
+  requestDraw();
+});
+function endDrag(e){
+  if (!dragging) return;
+  dragging = false; view.classList.remove('drag');
+  try { view.releasePointerCapture(e.pointerId); } catch (_) {}
+}
+view.addEventListener('pointerup', endDrag);
+view.addEventListener('pointercancel', endDrag);
+
+// 滚轮缩放 FOV
+view.addEventListener('wheel', e => {
+  e.preventDefault();
+  fov = Math.max(25, Math.min(140, fov * (e.deltaY > 0 ? 1.08 : 1/1.08)));
+  const near = [...fovSel.options].map(o => Number(o.value));
+  const best = near.reduce((a, b) => Math.abs(b - fov) < Math.abs(a - fov) ? b : a);
+  fovSel.value = String(best);
+  requestDraw();
+}, { passive: false });
+
+// ------------- 键盘 -------------
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space'){ e.preventDefault(); togglePlay(); }
+  else if (e.key === 'r' || e.key === 'R'){ yaw = 0; pitch = 0; requestDraw(); }
+  else if (e.key === 'ArrowLeft'){ yaw -= 5; requestDraw(); }
+  else if (e.key === 'ArrowRight'){ yaw += 5; requestDraw(); }
+  else if (e.key === 'ArrowUp'){ pitch = Math.min(89, pitch + 5); requestDraw(); }
+  else if (e.key === 'ArrowDown'){ pitch = Math.max(-89, pitch - 5); requestDraw(); }
+});
+
+// ---------------- 播放控制 ----------------
+function togglePlay(){
+  if (!ready) return;
+  if (src.paused) src.play().catch(() => {}); else src.pause();
+}
+btnPlay.addEventListener('click', togglePlay);
+src.addEventListener('play',  () => { btnPlay.textContent = '❚❚'; });
+src.addEventListener('pause', () => { btnPlay.textContent = '▶'; });
+
+src.addEventListener('timeupdate', () => {
+  if (!src.duration) return;
+  seek.value = String(Math.round(src.currentTime / src.duration * 1000));
+  timeEl.textContent = fmt(src.currentTime);
+});
+seek.addEventListener('input', () => {
+  if (!src.duration) return;
+  src.currentTime = Number(seek.value) / 1000 * src.duration;
+});
+
+fovSel.addEventListener('change', () => { fov = Number(fovSel.value); requestDraw(); });
+document.getElementById('reset').addEventListener('click', () => {
+  yaw = 0; pitch = 0; fov = Number(fovSel.value); requestDraw();
+});
+
+function fmt(t){
+  if (!Number.isFinite(t)) return '0:00.0';
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
+}
+
+// 每帧（暂停时也要能转视角，所以拖拽时单独 requestDraw）
+function loop(){
+  if (!src.paused) requestDraw();
+  requestAnimationFrame(loop);
+}
+
+// ---------------- 启动：先确保已转码，再播放 ----------------
+async function boot(){
+  if (!NAME || !REL){
+    say('缺少参数', '需要 ?name=<项目>&rel=<素材路径>', true);
+    return;
+  }
+  // ---- 第一步：确保已转码 ----
+  // 接口是**异步**的（转码分钟级，同步会干等）：先提交拿 job_id，再轮询进度。
+  // 已转过就直接返回 cached:true，不用轮询。
+  let cached = false;
+  try{
+    const r = await fetch('/api/pano360/transcode?name=' + encodeURIComponent(NAME) +
+      '&rel=' + encodeURIComponent(REL) + '&tier=' + encodeURIComponent(TIER));
+    const j = await r.json();
+    if (!r.ok || !j.success) throw new Error(j.error || ('HTTP ' + r.status));
+    cached = !!j.cached;
+    if (!cached){
+      if (!j.job) throw new Error('接口没返回 job id');
+      say('正在转码…', '这个素材还没转过。转码是分钟级的，转完会自动开始播放（转一次以后就是秒开）。');
+      await pollJob(j.job);
+    }
+  }catch(e){
+    say('转码失败', String(e.message || e), true);
+    return;
+  }
+  planes.textContent = EQUI_RES + (cached ? '  ·  已缓存' : '  ·  刚转好');
+
+  const url = '/pano?name=' + encodeURIComponent(NAME) +
+              '&rel=' + encodeURIComponent(REL) + '&tier=' + encodeURIComponent(TIER);
+  src.addEventListener('loadedmetadata', () => {
+    ready = true;
+    if (T0 > 0) src.currentTime = T0;
+    hideMsg();
+    requestDraw();
+    loop();
+  }, { once: true });
+  src.addEventListener('error', () => {
+    say('视频加载失败', '原始错误：' + (src.error && src.error.message || 'unknown'), true);
+  });
+  src.src = url;
+  src.load();
+}
+
+let EQUI_RES = '';
+
+// 轮询转码进度，直到 done / failed。
+// 为什么轮询而不是长连接：同步接口会把请求挂住分钟级，容易被浏览器或代理掐掉；
+// 而且用户看不到任何进度，只能干等。
+async function pollJob(jobId){
+  const t0 = Date.now();
+  let lastPct = -1;
+  for(;;){
+    await new Promise(r => setTimeout(r, 1500));
+    let j;
+    try{
+      const r = await fetch('/api/pano360/job?id=' + encodeURIComponent(jobId));
+      j = (await r.json());
+      if (!r.ok || !j.success) throw new Error(j.error || ('HTTP ' + r.status));
+      j = j.job;
+    }catch(e){
+      // 轮询偶发失败不该中断转码（后台还在跑），继续试
+      continue;
+    }
+    if (j.state === 'done'){
+      EQUI_RES = j.size ? (Math.round(j.size / 1048576) + ' MB') : '';
+      return;
+    }
+    if (j.state === 'failed'){
+      throw new Error((j.error || 'unknown').slice(-300));
+    }
+    const pct = (j.percent == null) ? null : Math.round(j.percent);
+    const el = Math.round((Date.now() - t0) / 1000);
+    if (pct !== lastPct){
+      lastPct = pct;
+      const parts = [];
+      if (pct != null) parts.push(pct + '%');
+      if (j.seconds_done != null) parts.push('已处理 ' + j.seconds_done + ' s');
+      if (j.speed) parts.push('速度 ' + j.speed);
+      parts.push('已等 ' + el + ' s');
+      say('正在转码… ' + (pct != null ? pct + '%' : ''),
+          parts.join('  ·  ') + '\n（转一次以后这个素材就是秒开）');
+    }
+    // 安全阀：超过 2 小时就放弃，避免无限轮询
+    if (Date.now() - t0 > 2 * 3600 * 1000) throw new Error('转码超时（>2 小时）');
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

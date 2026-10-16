@@ -107,7 +107,7 @@ try:
     pm.geocode_place("肇庆市")
     chk(False, "应抛出 ValueError")
 except ValueError as e:
-    chk("尚未配置天地图 key" in str(e) and EMPTY_KEY.name in str(e),
+    chk("No Tianditu key configured" in str(e) and EMPTY_KEY.name in str(e),
         "提示里给出了配置文件名", str(e))
 
 print("\n=== 2b) 真实 tianditu_key.txt 能被正确读取 ===")

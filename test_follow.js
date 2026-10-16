@@ -83,7 +83,7 @@ const build = (map, clip, probe, mode) => {
 };
 
 // 真实航迹
-const g = JSON.parse(fs.readFileSync(path.join(DIR, 'DJI_20260924095258_0001_V.geojson'), 'utf8'));
+const g = JSON.parse(fs.readFileSync(path.join(DIR, 'DJI_20260924095258_0001.geojson'), 'utf8'));
 const feat = g.features[0];
 const coords = feat.geometry.coordinates;
 const times = feat.properties.point_times;

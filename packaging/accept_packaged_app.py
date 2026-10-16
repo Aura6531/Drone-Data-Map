@@ -1,7 +1,7 @@
 """打包后的验收：对着**已打包的程序**跑一遍完整流程（全部走 HTTP，不依赖浏览器）。
 
 用法：
-    python packaging/accept_packaged_app.py --base http://127.0.0.1:8030 --data "D:\\无人机数据\\DJI_202609230835_001"
+    python packaging/accept_packaged_app.py --base http://127.0.0.1:8030 --data "<仓库根>\\Data\\DJI_202609230835_001"
 
 为什么要这个：打包后在干净机器上最容易翻车的不是界面，而是
   * 数据目录落到只读/临时目录 -> 项目与标记点存不住
@@ -167,8 +167,8 @@ def main():
     marker = {
         "id": "m-accept-1",
         "name": f"{project}-1",
-        "lat": 23.06,          # 验收用占位坐标（原值精确到 0.1 m，这里只留到约 1 km）
-        "lng": 114.11,
+        "lat": 23.058078,
+        "lng": 114.108151,
         "video": str(video.get("relative_path")),
         "time": 5.0,
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),

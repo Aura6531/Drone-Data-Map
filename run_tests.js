@@ -17,6 +17,7 @@
 // 所有路径按「脚本所在目录」推导，换机器 / 换盘符都不用改。
 
 const { spawnSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const ROOT = __dirname;
@@ -31,15 +32,35 @@ const NODE_SUITES = [
   'test_filelist.js',   // 文件列表
   'test_drone.js',      // 飞机箭头朝向
   'test_follow.js',     // 地图跟随
+  'test_follow_mode.js',// 跟随模式：记住选择 / 点选点当次不跟随
   'test_nearest.js',    // 按位置检索（用真实 GeoJSON）
   'test_ab.js',         // A+B 检索的数学基础（正/反投影互逆）
   'test_markers.js',    // 标记点列表（排序/勾选/删除/KML/复制/跳转）
   'test_photos.js',     // 照片图层（一组一点 / ⚠ 角标 / 展示区 / 点照片跳视频）
+  'test_coverage_ui.js',// 覆盖面板：热力图定位数学 / 缺字段兜底
+  'test_coverage_bounds.js', // 热力图定位：原点语义 / 摘要新鲜度 / 换算常数
+  'test_frames_ui.js',  // 「这个位置被哪些画面拍到过」图墙：跨架次 / 缩略图 URL / 点图跳播
+  'test_gallery_slot.js', // 图墙挂在右栏（不是中栏地图下面）—— 挂错了会"出来了但看不到"
+  'test_gallery_subtitle.js', // 图墙副标题：跨架次措辞 / 注释不能变成界面文字
+  'test_target_marker.js', // 地图选点标到画面上：投影数学 / y 轴方向 / 画面外隐藏
+  'test_layout_breakpoints.js', // 窄屏自适应：左栏 --left-w / 四档断点顺序 / 折叠轨
+  'test_layout_render.js', // 窄屏自适应（真浏览器实测，需要开发服务，否则 [SKIP]）
 ];
 const PY_SUITES = [
   'check_py.py',        // 后端静态断言
   'test_geocode.py',    // 地理编码 / key 优先级
   'test_report.py',     // 报告后端：逆地理编码 / 地图截图 / 抽帧 / docx
+  'test_coverage.py',   // 视场覆盖栅格：几何 / 收口 / 斜距基准 / 置信度 / 存取往返
+  'test_coverage_vector.py',  // 覆盖栅格矢量化：块追踪 / 环方向 / 洞 / 对角缝 / 简化
+  'test_coverage_api.py',     // 覆盖接口层：清单 / 构建 / 复用 / 过期 / 查询 / 热力图 / 导出
+  'test_pano360.py',          // 360 全景：手性 / 太阳检测的约束 / 地面距离 / 输入校验
+  'test_pano360_coverage.py', // 360 覆盖几何：径向标度 / 圆环内外半径 / 不落地判据
+  'test_pano360_perspective.py', // 360 透视裁剪：方向约定与 stitch 一致（可自证）
+  'test_sync_check.py',       // 视频/航迹时长同步自检：能抓到被裁过的视频
+  'test_i18n.py',             // 双语：键唯一 / zh-en 成对 / 英串当键 / 语言归一 / 线程隔离
+  'test_i18n_report.py',      // 双语报告：真的生成 docx 并核对两种语言的模板文字
+  'test_flight_profile.py',   // 悬停延时 vs 真实航线：用真实素材标定的判据
+  'test_altitude_reference.py', // 相对高度 vs 海拔：山顶起飞飞到侧下方时 rel 为负是正常的
 ];
 const NET_SUITES = [
   'test_tdt_tiles.py',  // 天地图瓦片连通性（需要联网 + 有效 tk）
@@ -50,9 +71,18 @@ const withNet = argv.includes('--with-net');
 const listOnly = argv.includes('--list');
 
 const plan = [];
-for (const f of NODE_SUITES) plan.push({ file: f, cmd: process.execPath, args: [path.join(ROOT, f)] });
-for (const f of PY_SUITES) plan.push({ file: f, cmd: PYTHON, args: ['-B', path.join(ROOT, f)] });
-if (withNet) for (const f of NET_SUITES) plan.push({ file: f, cmd: PYTHON, args: ['-B', path.join(ROOT, f)], net: true });
+// 套件可能放在仓库根，也可能放在 Code/ 下（例如 coverage 相关的新模块）。
+// 按「根 -> Code/」的顺序找，找到哪个用哪个。
+function resolveSuite(f) {
+  const atRoot = path.join(ROOT, f);
+  if (fs.existsSync(atRoot)) return atRoot;
+  const inCode = path.join(ROOT, 'Code', f);
+  if (fs.existsSync(inCode)) return inCode;
+  return atRoot;   // 都不在就交给它自己报「找不到」
+}
+for (const f of NODE_SUITES) plan.push({ file: f, cmd: process.execPath, args: [resolveSuite(f)] });
+for (const f of PY_SUITES) plan.push({ file: f, cmd: PYTHON, args: ['-B', resolveSuite(f)] });
+if (withNet) for (const f of NET_SUITES) plan.push({ file: f, cmd: PYTHON, args: ['-B', resolveSuite(f)], net: true });
 
 console.log(`测试根目录：${ROOT}`);
 console.log(`node：${process.execPath}  (${process.version})`);

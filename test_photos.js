@@ -104,6 +104,12 @@ const src = [
   extractFn('streamLabelOf'),
   extractFn('esc'),
   extractFn('formatTime'),
+  // videoPathFromGeojson 的两个依赖：joinDir 拼目录，VIDEO_REL_BY_GEOJSON 是
+  // addGeo 加载航迹时填的「这份 geojson -> 它的视频路径」映射表。
+  // 后者在页面里是模块级常量，不抠出来就会 ReferenceError（一张一次：
+  // 只要调用点手上没有 track 对象，函数就会走到查表那一级）。
+  extractFn('joinDir'),
+  `const VIDEO_REL_BY_GEOJSON=Object.create(null);`,
   ...PURE.map(extractFn),
   ...GEO.map(extractFn),
   // 测试用的桩：L 只用到 latLng，map 只用到 distance（球面近似足够断言用）
@@ -298,11 +304,11 @@ console.log('\n=== 3b) 航迹点下标 -> 遥测下标（抽稀对齐）===');
 
 console.log('\n=== 4) 相机标签与分组文案 ===');
 {
-  chk(page.photoCameraLabel('ZoomCamera') === '变焦', 'ZoomCamera -> 变焦（大图优先给这张）');
-  chk(page.photoCameraLabel('WideCamera') === '广角', 'WideCamera -> 广角');
-  chk(page.photoCameraLabel('InfraredCamera') === '热成像', 'InfraredCamera -> 热成像');
+  chk(page.photoCameraLabel('ZoomCamera') === 'Zoom', 'ZoomCamera -> 变焦（大图优先给这张）');
+  chk(page.photoCameraLabel('WideCamera') === 'Wide', 'WideCamera -> 广角');
+  chk(page.photoCameraLabel('InfraredCamera') === 'Thermal', 'InfraredCamera -> 热成像');
   chk(page.photoCameraLabel('别的相机') === '别的相机', '认不出的相机原样显示（不猜）');
-  chk(page.photoCameraLabel('') === '照片', '空值 -> 「照片」兜底');
+  chk(page.photoCameraLabel('') === 'Photo', '空值 -> 「Photo」兜底');
   chk(page.photoCameraClass('ZoomCamera').includes('cam-zoom'), '变焦有独立配色类');
   chk(page.photoCameraClass('InfraredCamera').includes('cam-thermal'), '热成像有独立配色类');
 
@@ -314,19 +320,19 @@ console.log('\n=== 4) 相机标签与分组文案 ===');
     stamp: '20260924_095348',
     lat: 23.0415,
     lon: 114.1064,
-    accuracy: '实测',
+    accuracy: 'measured',
     count: 2,
     members: [
-      { name: 'DJI_20260924095348_0002_V.JPG', folder: 'D:\\a b\\架次1', camera: 'WideCamera', accuracy: '实测', distance: 178.6, depression: 29.4 },
-      { name: 'DJI_20260924095348_0002_T.JPG', folder: 'D:\\a b\\架次1', camera: 'InfraredCamera', accuracy: '实测', distance: 178.6, depression: 29.4 }
+      { name: 'DJI_20260924095348_0002_V.JPG', folder: 'D:\\a b\\架次1', camera: 'WideCamera', accuracy: 'measured', distance: 178.6, depression: 29.4 },
+      { name: 'DJI_20260924095348_0002_T.JPG', folder: 'D:\\a b\\架次1', camera: 'InfraredCamera', accuracy: 'measured', distance: 178.6, depression: 29.4 }
     ]
   };
 
-  chk(page.photoShotText(group) === '广角 + 热成像', '组文案按组内顺序拼', page.photoShotText(group));
+  chk(page.photoShotText(group) === 'Wide + Thermal', '组文案按组内顺序拼', page.photoShotText(group));
   chk(page.photoLeadName(group).endsWith('_V.JPG'), 'lead 取组内第一张');
   chk(page.photoGroupTimeText(group) === '2026-09-24 09:53:48', '组时刻取第一张的名字');
-  chk(page.photoGroupLabel([group], 0) === '地图下方的照片展示区', '单点时标题不写序号');
-  chk(page.photoGroupLabel([group, group], 1).includes('2 / 2'), '多点时标题带序号', page.photoGroupLabel([group, group], 1));
+  chk(page.photoGroupLabel([group], 0) === 'Photo panel below the map', '单点时标题不写序号');
+  chk(page.photoGroupLabel([group, group], 1).includes('target 2 of 2'), '多点时标题带序号', page.photoGroupLabel([group, group], 1));
 
   chk(page.hexToRgba('#1d4ed8', 0.35) === 'rgba(29,78,216,0.35)', '光晕色换算正确');
   chk(page.hexToRgba('乱写', 0.5) === 'rgba(37,99,235,0.5)', '坏值退回默认蓝');
@@ -342,7 +348,7 @@ console.log('\n=== 5) 展示区：变焦大图优先、其余小图并排 ===');
 
   // 后端已按 变焦 -> 广角 -> 热成像 排好，前端不再重排
   const group = {
-    lat: 23.1, lon: 114.2, accuracy: '实测', count: 3,
+    lat: 23.1, lon: 114.2, accuracy: 'measured', count: 3,
     members: [
       mk('ZoomCamera', 'DJI_20260924101542_0004_S.JPG'),
       mk('WideCamera', 'DJI_20260924101542_0004_V.JPG'),
@@ -354,7 +360,7 @@ console.log('\n=== 5) 展示区：变焦大图优先、其余小图并排 ===');
 
   chk(g.indexOf('photo-lead') >= 0, '有「大图」那一块');
   chk(/photo-lead[\s\S]*?0004_S\.JPG/.test(g), '大图用的就是变焦那张（_S）');
-  chk(/photo-lead[\s\S]*?>大图</.test(g), '大图上标了「大图」');
+  chk(/photo-lead[\s\S]*?>Large</.test(g), '大图上标了「大图」');
   chk((g.match(/photo-shot photo-thumb/g) || []).length === 2, '其余两张进小图区（并排）',
     String((g.match(/photo-shot photo-thumb/g) || []).length) + ' 张');
   chk(g.indexOf('0004_V.JPG') > g.indexOf('0004_S.JPG'), '小图排在大图之后');
@@ -362,33 +368,33 @@ console.log('\n=== 5) 展示区：变焦大图优先、其余小图并排 ===');
   chk((g.match(/\/photo\?path=/g) || []).length === 3, '三张都走后端 /photo 接口');
   chk(g.includes('%5C'), '绝对路径里的反斜杠被编码（否则后端解析不出 path）');
   chk(g.includes('data-photo-name='), '小图带文件名，点它才知道要按哪张的时刻跳');
-  chk(/alt="[^"]*照片"/.test(g), '每张都有 alt（图片取不到时不至于一片空白）');
+  chk(/alt="[^"]*Photo"/.test(g), '每张都有 alt（图片取不到时不至于一片空白）');
 
   // 只有一张时不该出现空的小图区
-  const single = page.photoGalleryHtml({ lat: 1, lon: 2, accuracy: '实测', count: 1, members: [mk('ZoomCamera', 'a_S.JPG')] });
+  const single = page.photoGalleryHtml({ lat: 1, lon: 2, accuracy: 'measured', count: 1, members: [mk('ZoomCamera', 'a_S.JPG')] });
   chk(single.indexOf('photo-thumbs') < 0, '单张时没有小图区');
-  chk(single.indexOf('大图') >= 0, '单张也走「大图」这套版式');
+  chk(single.indexOf('Large') >= 0, '单张也走「大图」这套版式');
 
   // 「位置不准」的照片要带 ⚠，这是用户明确要的
   const warn = page.photoGalleryHtml({
-    lat: 1, lon: 2, accuracy: '位置不准', count: 1,
+    lat: 1, lon: 2, accuracy: 'inaccurate', count: 1,
     members: [mk('WideCamera', 'w_V.JPG', '位置不准')]
   });
   chk(warn.includes('⚠'), '位置不准的那张带 ⚠ 角标标记');
 
   const chips = page.photoCardChips({
-    lat: 23.041556, lon: 114.106484, accuracy: '位置不准', count: 1,
-    members: [{ name: 'DJI_20260924102746_0034_T.JPG', camera: 'InfraredCamera', accuracy: '位置不准', accuracy_note: '该张没有激光数据，中心点按平地假设估算', distance: 171.5, depression: 19.8 }]
+    lat: 23.041556, lon: 114.106484, accuracy: 'inaccurate', count: 1,
+    members: [{ name: 'DJI_20260924102746_0034_T.JPG', camera: 'InfraredCamera', accuracy: 'inaccurate', accuracy_note: 'no laser data; ground position estimated on a flat-earth assumption', distance: 171.5, depression: 19.8 }]
   });
   chk(chips.includes('23.041556'), '点信息里有目标点坐标');
   chk(chips.includes('2026-09-24 10:27:46'), '点信息里有拍摄时刻');
-  chk(chips.includes('位置不准') && chips.includes('⚠'), '位置不准时如实标出，并带上依据说明');
+  chk(chips.includes('Position quality') && chips.includes('⚠'), '位置不准时如实标出，并带上依据说明');
 }
 
 console.log('\n=== 6) 「跳视频」那块的说法 ===');
 
 {
-  const group = { lat: 23.1, lon: 114.2, accuracy: '实测', count: 1, members: [{ name: 'DJI_20260924095348_0002_V.JPG', camera: 'WideCamera' }] };
+  const group = { lat: 23.1, lon: 114.2, accuracy: 'measured', count: 1, members: [{ name: 'DJI_20260924095348_0002_V.JPG', camera: 'WideCamera' }] };
 
   const hit = page.photoJumpHtml(group, [{
     video: 'DJI_20260924095258_0001_V.MP4', relativePath: 'DJI_20260924095258_0001_V.MP4',
@@ -398,24 +404,24 @@ console.log('\n=== 6) 「跳视频」那块的说法 ===');
 
   chk(hit.includes('DJI_20260924095258_0001_V.MP4'), '按钮上写着视频文件名');
   chk(hit.includes('data-photo-match="0"'), '按钮带下标，点它才知道跳哪一段');
-  chk(hit.includes('画面内'), '时空都对上时，明确说「目标点在画面内」—— 这就是交叉验证');
+  chk(hit.includes('inside this frame'), '时空都对上时，明确说「Target is inside this frame」—— 这就是交叉验证');
   chk(hit.includes('2026-09-24 09:53:48'), '写清是按哪个时刻对齐的');
-  chk(hit.includes('-0.1 秒'), '给出时间差（用户能自己判断可信度）');
+  chk(hit.includes('-0.1s'), '给出时间差（用户能自己判断可信度）');
 
   const far = page.photoJumpHtml(group, [{
     video: 'b.MP4', relativePath: 'b.MP4', folderIndex: 0, stream: 'x', index: 5,
     time: 300, gapSeconds: 250, startSeconds: 300, droneDistance: 900,
     inFrame: false, inFrameKnown: true
   }]);
-  chk(far.includes('参考') || far.includes('核对'), '时间差大时提示只能当参考、要人工核对', far.includes('参考') ? '含「参考」' : '含「核对」');
+  chk(far.includes('rough guide') || far.includes('check against'), '时间差大时提示只能当参考、要人工核对', far.includes('rough guide') ? '含「rough guide」' : '含「check against」');
 
   const none = page.photoJumpHtml(group, []);
-  chk(none.includes('没有找到时间对得上的视频'), '找不到时说明白，而不是留空白');
-  chk(none.includes('加载全部'), '并给出可照做的下一步（先加载全部）');
+  chk(none.includes('No video matches this time'), '找不到时说明白，而不是留空白');
+  chk(none.includes('Load all tracks'), '并给出可照做的下一步（先加载全部）');
 
-  const tip = page.photoTooltip({ lat: 23.041556, lon: 114.106484, accuracy: '位置不准', count: 2, members: [{ name: 'DJI_20260924095348_0002_V.JPG', camera: 'WideCamera' }] });
-  chk(tip.includes('位置不准'), '悬停提示里就写清位置可不可信');
-  chk(tip.includes('共 2 张'), '悬停提示里说明点开会有几张');
+  const tip = page.photoTooltip({ lat: 23.041556, lon: 114.106484, accuracy: 'inaccurate', count: 2, members: [{ name: 'DJI_20260924095348_0002_V.JPG', camera: 'WideCamera' }] });
+  chk(tip.includes('approximate'), '悬停提示里就写清位置可不可信');
+  chk(tip.includes('2 photos'), '悬停提示里说明点开会有几张');
 }
 
 console.log('\n=== 7) 真实数据：照片时刻真的能落到视频的那一帧 ===');
@@ -426,10 +432,17 @@ console.log('\n=== 7) 真实数据：照片时刻真的能落到视频的那一�
     ? fs.readdirSync(DATA).map((n) => path.join(DATA, n)).filter((p) => fs.statSync(p).isDirectory())
     : [];
 
+  // 挑一个**同时具备 _V.geojson 和 _V.JPG** 的目录：
+  // 不能只挑"第一个有 geojson 的" —— Data/ 下可能还有只放了视频+geojson、
+  // 没有照片的目录（例如单独归档的样本素材），那样下面的 JPG 断言会误判为失败。
   const geojsonFile = (() => {
     for (const f of folders) {
-      const hit = fs.readdirSync(f).find((n) => /_V\.geojson$/i.test(n));
-      if (hit) return path.join(f, hit);
+      const names = fs.readdirSync(f);
+      const geo = names.find((n) => /_V\.geojson$/i.test(n));
+      if (!geo) continue;
+      const stem = geo.replace(/_V\.geojson$/i, '');
+      const hasJpg = names.some((n) => new RegExp('^' + stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '_V\\.JPG$', 'i').test(n));
+      if (hasJpg) return path.join(f, geo);
     }
     return null;
   })();
@@ -516,12 +529,12 @@ console.log('\n=== 7) 真实数据：照片时刻真的能落到视频的那一�
       const target = tele ? page.centerGroundPointForTest(track, tele, i) : null;
 
       const group = {
-        lat: null, lon: null, accuracy: '实测', count: 1, stamp: '',
+        lat: null, lon: null, accuracy: 'measured', count: 1, stamp: '',
         members: [{
           name: photoName,
           folder: path.dirname(geojsonFile),
           camera: 'WideCamera',
-          accuracy: '实测',
+          accuracy: 'measured',
           drone_lat: Number(c[1]),
           drone_lon: Number(c[0])
         }]
@@ -643,10 +656,10 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   chk(html.includes("/api/project/photos?name="), '接了后端的照片接口');
   chk(html.includes("/photo?path="), '图片走后端 /photo（不用绝对路径直接喂浏览器）');
   chk(/id="photoLayerBtn"/.test(html), '有照片图层开关');
-  chk(/>加载全部照片</.test(html), '按钮叫「加载全部照片」（用户定的名字）');
-  chk(/<button id="loadAllBtn">加载全部轨迹<\/button>/.test(html),
+  chk(/>Load all photos</.test(html), '按钮叫「加载全部照片」（用户定的名字）');
+  chk(/<button id="loadAllBtn">Load all tracks<\/button>/.test(html),
     '左栏那个改叫「加载全部轨迹」（和「加载全部照片」区分开）');
-  chk(/textContent=filtered\?`加载筛选（\$\{n\}）`:'加载全部轨迹'/.test(html),
+  chk(/textContent=filtered\?`Load filtered \(\$\{n\}\)`:'Load all tracks'/.test(html),
     '筛选后按钮文案也跟着「加载全部轨迹」');
   // 这一行的三段（用户 2026-10-07 定的顺序）：
   //   ① 加载全部照片（贴左，就在「轨迹地图」标题正下方，不留空）
@@ -821,8 +834,8 @@ console.log('\n=== 9) 点某张照片该播哪一路（这条错过一次：点 
   // 「大图带的是它自己那张（也就是 V）的名字」。
   {
     const g = { members: [
-      { name: 'DJI_20260924102325_0026_T.JPG', folder: 'D:\\d', camera: 'InfraredCamera', accuracy: '实测' },
-      { name: 'DJI_20260924102325_0026_V.JPG', folder: 'D:\\d', camera: 'ZoomCamera', accuracy: '实测' },
+      { name: 'DJI_20260924102325_0026_T.JPG', folder: 'D:\\d', camera: 'InfraredCamera', accuracy: 'measured' },
+      { name: 'DJI_20260924102325_0026_V.JPG', folder: 'D:\\d', camera: 'ZoomCamera', accuracy: 'measured' },
     ] };
     const gh = page.photoGalleryHtml(g);
     const figs = gh.match(/<figure[^>]*>/g) || [];
@@ -931,7 +944,7 @@ console.log('\n=== 9c) 导出「前后 10 秒」：中心点必须换算成整�
   chk(/'\/api\/project\/clip\?'/.test(exp), '请求打到 /api/project/clip');
   chk(/const from=Math\.max\(0,center-CLIP_BEFORE_SECONDS\)/.test(exp),
     '文案里的起点 = 当前 - 5 秒（不早于 0）');
-  chk(/还没有在播的视频/.test(exp), '没在播视频时给一句人话提示（不静默失败）');
+  chk(/No video is playing/.test(exp), '没在播视频时给一句人话提示（不静默失败）');
   chk(/a\.download=''/.test(exp) || /a\.download=/.test(exp),
     '用带 download 的 <a> 触发下载（响应头是 attachment）');
 
@@ -940,7 +953,7 @@ console.log('\n=== 9c) 导出「前后 10 秒」：中心点必须换算成整�
     '按钮在 .video-head-tools 里');
   chk(head.indexOf('id="speedToggle"') < head.indexOf('id="clipBtn"'),
     '「导出前后10秒」在「2倍速」右边（用户指定的位置）');
-  chk(/>导出前后10秒</.test(html), '按钮文案是「导出前后10秒」');
+  chk(/>Export ±5s</.test(html), '按钮文案是「Export ±5s」（前后各 5 秒，共 10 秒 —— 写 ±10s 会读成 20 秒）');
 }
 
 console.log('\n=== 10) 点照片跳视频：倒退 3 秒起播 + 3-2-1 倒计时 + 到照片时刻自动暂停 ===');
@@ -991,7 +1004,7 @@ console.log('\n=== 10) 点照片跳视频：倒退 3 秒起播 + 3-2-1 倒计时
     String(cd.player.currentTime));
   chk(cd.getTarget() === null, '暂停后清掉待办（不会反复暂停）');
   chk(cd.countdown.hidden === true, '暂停后倒计时收起来');
-  chk(/自动暂停/.test(cd.status.textContent), '状态栏说明「已到照片拍摄时刻，自动暂停」',
+  chk(/Reached the photo/.test(cd.status.textContent), '状态栏说明「Reached the photo」',
     cd.status.textContent);
 
   // 还没到点时不能动
@@ -1040,9 +1053,11 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
   chk(/if\(ok\)t\.telemetry=ok/.test(fn), '取到后挂回航迹对象（检索是同步函数，只能这样取）');
 
   // trackVideoPath 仍然要给照片跳视频用，且必须也是 .mp4
+  // 注意这里**要把 track 一起传进去**：合并航迹的文件名没有 _V/_S/_T，
+  // 只给它相对路径只能推出不存在的 `DJI_x.mp4`（真实文件是 `DJI_x_V.MP4`）。
   const tv = extractFn('trackVideoPath');
-  chk(/videoPathFromGeojson\(info\.relative_path\)/.test(tv),
-    'trackVideoPath 也把 .geojson 换成 .mp4（/api/project/video 同样只收 MP4）');
+  chk(/videoPathFromGeojson\(info\.relative_path,t\)/.test(tv),
+    'trackVideoPath 把 .geojson 换成 .mp4，并把 track 传进去（合并航迹要读 videos 表）');
 
   // 候选构造必须把 .geojson 换成 .mp4 —— 这条错过一次：按钮能点，
   // 一按就是红字「指定文件不是 MP4/MOV 视频」，播放器全黑。
@@ -1071,6 +1086,31 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
   chk(!/^[A-Za-z]:/.test(q.path), 'path 是相对路径，不是绝对路径');
   chk(String(page.telemetryQuery({ folder_index: 0, relative_path: 'a.3d.geojson' }, 'x').path).toLowerCase() === 'a.mp4',
     '.3d.geojson 也能正确换成 .mp4');
+
+  // 合并航迹（文件名不带 _V/_S/_T）是新增的：靠文件名只会推出**不存在**的
+  // `DJI_..._0001.mp4`（真实文件是 `..._0001_V.MP4`），后端的
+  // /api/project/telemetry 与 /api/project/video 只认真实存在的 MP4。
+  // 所以这条链路必须走「航迹自带的 videos 表」——这里就把表喂进去，验它真读。
+  const mergedGeo = 'DJI_20260924101516_0001.geojson';
+  const mergedTrack = {
+    videos: { V: 'DJI_20260924101516_0001_V.MP4', S: 'DJI_20260924101516_0001_S.MP4', T: 'DJI_20260924101516_0001_T.MP4' },
+    video: 'DJI_20260924101516_0001_V.MP4',
+    referenceStream: 'V',
+    videoRel: 'DJI_20260924101516_0001_V.MP4',
+  };
+
+  chk(page.videoPathFromGeojson(mergedGeo, mergedTrack) === 'DJI_20260924101516_0001_V.MP4',
+    '合并航迹（带 track）取参考路 _V 的视频名，不是推出来的 .mp4',
+    page.videoPathFromGeojson(mergedGeo, mergedTrack));
+  chk(page.videoPathFromGeojson(mergedGeo, { ...mergedTrack, stream: 'T' }) === 'DJI_20260924101516_0001_T.MP4',
+    '指定了哪一路就取那一路（T 热成像）');
+  // 没有 track、映射表也没登记过时，只能退回文件名推断 ——
+  // 这时合并航迹会推出**不存在**的 `DJI_..._0001.mp4`（真实文件带 _V）。
+  // 把这条退化路径写下来，是为了说明「调用点拿不到 track 时必须有别的手段」
+  // （页面里靠 addGeo 填的 VIDEO_REL_BY_GEOJSON 兜住），而不是当成正确结果。
+  chk(page.telemetryQuery({ folder_index: 0, relative_path: mergedGeo }, 'x').path === 'DJI_20260924101516_0001.mp4',
+    '没有 track 也没有映射表时退回文件名推断（推出的 .mp4 并不存在 —— 所以映射表不能缺）',
+    page.telemetryQuery({ folder_index: 0, relative_path: mergedGeo }, 'x').path);
 
   // 真的去问一次运行中的服务：这条断言挡的是「参数对但接口实际会拒」这类问题。
   // 服务没起时明确跳过，不算失败（测试不该依赖开发服务在跑）。

@@ -18,13 +18,24 @@ function extractFn(name) {
   throw new Error('花括号不配对: ' + name);
 }
 function extractBetween(a, b) {
-  const i = html.indexOf(a), j = html.indexOf(b);
+  // a 可以是普通字符串，也可以是 /正则/ —— 用正则是为了不把常量的**数值**写进测试：
+  // 之前这里写的是 'const FOOTPRINT_MAX_DISTANCE=300;'，页面把 300 改成 600 之后
+  // 锚点就找不到了。数值本来就该从页面里读（下面用了 FOOTPRINT_MAX_DISTANCE 变量）。
+  let i;
+  if (a instanceof RegExp) {
+    const m = a.exec(html);
+    if (!m) throw new Error('区间锚点（正则）找不到: ' + a);
+    i = m.index;
+  } else {
+    i = html.indexOf(a);
+  }
+  const j = html.indexOf(b);
   if (i < 0 || j < 0 || j <= i) throw new Error('区间锚点找不到: ' + a);
   return html.slice(i, j);
 }
 
 const consts = extractBetween('const BASE_FOCAL=24;', '// 方位角 ->')
-  + '\n' + extractBetween('const FOOTPRINT_MAX_DISTANCE=300;', 'let footprintLayers=null;');
+  + '\n' + extractBetween(/const FOOTPRINT_MAX_PER_ALT\s*=\s*\d+;/, 'let footprintLayers=null;');
 
 const src = consts + '\n'
   + extractFn('isInfraredPath') + '\n'
@@ -40,9 +51,14 @@ const src = consts + '\n'
 const L = { latLng: (lat, lng) => ({ lat, lng }) };
 const api = new Function('L', src +
   '\nreturn {fovOf,groundPointForImage,edgePointAtDistance,footprintGeometry,'
-  + 'offsetLatLng,centerGroundLatLng,opticalFocalOf,FOOTPRINT_MAX_DISTANCE,FRAME_ASPECT};')(L);
+  + 'offsetLatLng,centerGroundLatLng,opticalFocalOf,'
+  + 'FOOTPRINT_MAX_PER_ALT,FOOTPRINT_MAX_DISTANCE_MIN,FRAME_ASPECT};')(L);
 
-const { fovOf, groundPointForImage, footprintGeometry, FOOTPRINT_MAX_DISTANCE, FRAME_ASPECT } = api;
+const { fovOf, groundPointForImage, footprintGeometry,
+        FOOTPRINT_MAX_PER_ALT, FOOTPRINT_MAX_DISTANCE_MIN, FRAME_ASPECT } = api;
+
+// 与页面 footprintGeometry() 里同一套算法：远边截断距离按高度成比例，低空保底
+const maxDist = (alt) => Math.max(FOOTPRINT_MAX_DISTANCE_MIN, FOOTPRINT_MAX_PER_ALT * alt);
 
 let ok = true;
 const chk = (c, label, extra = '') => { ok &&= !!c; console.log(`  ${c ? '[OK]' : '[FAIL]'} ${label}${extra ? ' -> ' + extra : ''}`); };
@@ -110,22 +126,26 @@ console.log('\n=== 2) 正下视（pitch=-90）：地面应是 157.1 × 88.4 m �
   chk(g.left.lat > drone.lat, '左右端在飞机北侧');
 }
 
-console.log('\n=== 3) 斜视（pitch=-30）：远边必须按距离截断 ===');
+console.log('\n=== 3) 斜视（pitch=-30）：远边落在截断距离之内 ===');
 {
-  const g = footprintGeometry(drone, 100, 0, -30, 0, 24, 1);
+  // 截断距离按高度成比例（12×alt）。24 mm 广角在 -30° 俯角时，
+  // 真实远角约在 11.4×alt 处 —— 正好在 12×alt 之内，所以这一档**不该被截断**，
+  // 画出来的就是真实视场。真正会被截断的是更平的俯角（见下面 -2° 那一例）。
+  const alt = 100;
+  const g = footprintGeometry(drone, alt, 0, -30, 0, 24, 1);
   chk(!!g, '能算出视场');
   const dNear = dist(drone, g.bl);
   const dLeft = dist(drone, g.left);
   const dRight = dist(drone, g.right);
-  console.log(`    下边缘距飞机 ${dNear.toFixed(1)} m   左端 ${dLeft.toFixed(1)} m   右端 ${dRight.toFixed(1)} m`);
-  chk(Math.abs(dLeft - FOOTPRINT_MAX_DISTANCE) < 0.5, `左端被截断在 ${FOOTPRINT_MAX_DISTANCE} m`, dLeft.toFixed(2));
-  chk(Math.abs(dRight - FOOTPRINT_MAX_DISTANCE) < 0.5, `右端被截断在 ${FOOTPRINT_MAX_DISTANCE} m`, dRight.toFixed(2));
+  const cap = maxDist(alt);
+  console.log(`    下边缘距飞机 ${dNear.toFixed(1)} m   左端 ${dLeft.toFixed(1)} m   右端 ${dRight.toFixed(1)} m   上限 ${cap} m`);
+  chk(dLeft < cap && dRight < cap, `左右端都在截断距离（${cap} m）之内 —— 用的是真实远角`, `${dLeft.toFixed(0)} / ${dRight.toFixed(0)}`);
+  chk(dLeft > 10 * alt, '但远边确实很远（广角低俯角，约 11× 高度）', `${(dLeft / alt).toFixed(1)}×`);
   chk(dNear < dLeft && dNear < dRight, '下边缘比左右端更近');
 
-  // 不截断时真实的远角有多远？说明为什么必须截断
-  const far = groundPointForImage(drone, 100, 0, -30, 0, 0, 1, ...fovOf(24));
-  console.log(`    参考：真实远边中点在 ${far.distance.toFixed(0)} m 外（远超截断距离）`);
-  chk(far.distance > 700, '真实远边确实在 700 m 以外，画出来没有意义');
+  // 真实的远角有多远（yImg=+1 那条中心线）
+  const far = groundPointForImage(drone, alt, 0, -30, 0, 0, 1, ...fovOf(24));
+  console.log(`    参考：真实远边中点在 ${far.distance.toFixed(0)} m 外`);
 
   // 左右端应分列航向两侧
   const bL = bearing(drone, g.left), bR = bearing(drone, g.right);
@@ -175,8 +195,8 @@ console.log('\n=== 5) 边界情况：不该画的必须不画 ===');
   const shallow = footprintGeometry(drone, 100, 0, -2, 0, 24, 1);
   chk(!!shallow, '俯角仅 2° 时靠截断仍能画出（真实远角已在地平线以上）');
   if (shallow) {
-    chk(Math.abs(dist(drone, shallow.left) - FOOTPRINT_MAX_DISTANCE) < 0.5,
-      '浅俯角下左端同样被截断在 300 m', dist(drone, shallow.left).toFixed(2));
+    chk(Math.abs(dist(drone, shallow.left) - maxDist(100)) < 0.5,
+      `浅俯角下左端同样被截断在 ${maxDist(100)} m`, dist(drone, shallow.left).toFixed(2));
   }
 }
 
@@ -195,7 +215,7 @@ console.log('\n=== 6) 真实数据抽查（东莞3，实测姿态）===');
     const width = dist(g.bl, g.br);
     console.log(`    t=${String(s.t).padStart(7)}s  俯角 ${Math.abs(s.pitch).toFixed(1)}°  下边缘距 ${near.toFixed(1)} m 宽 ${width.toFixed(0)} m  左右端 ${left.toFixed(0)} m`);
     chk(near < left, `t=${s.t}s 下边缘始终比左右端近`);
-    chk(left <= FOOTPRINT_MAX_DISTANCE + 0.5, `t=${s.t}s 左右端不超过截断距离`);
+    chk(left <= maxDist(s.alt) + 0.5, `t=${s.t}s 左右端不超过截断距离（${maxDist(s.alt).toFixed(0)} m）`);
   }
 }
 

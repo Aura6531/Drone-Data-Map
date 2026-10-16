@@ -37,7 +37,7 @@ const { proxyBucketOf, indexAtTime, bearingAt, PROXY_SECONDS, PROXY_BUCKET_SECON
 
 // 载入真实航迹
 const g = JSON.parse(fs.readFileSync(
-  path.join(DIR, 'DJI_20260924095258_0001_V.geojson'), 'utf8'));
+  path.join(DIR, 'DJI_20260924095258_0001.geojson'), 'utf8'));
 const f = g.features[0];
 const coords = f.geometry.coordinates;
 const times = f.properties.point_times;

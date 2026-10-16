@@ -221,9 +221,9 @@ console.log('\n=== 5) 可见性判定与画面位置描述 ===');
 
   chk(!!center && center.visible === true, '中心点判定可见');
   chk(!!rightEdge && rightEdge.visible === true, 'xImg=0.95 仍在画面内（阈值 1）');
-  chk(api.framePositionText(0, 0) === '中心', '画面位置：中心', api.framePositionText(0, 0));
-  chk(api.framePositionText(-0.8, -0.8) === '下左', '画面位置：下左', api.framePositionText(-0.8, -0.8));
-  chk(api.framePositionText(0.8, 0.8) === '上右', '画面位置：上右', api.framePositionText(0.8, 0.8));
+  chk(api.framePositionText(0, 0) === 'center', '画面位置：center', api.framePositionText(0, 0));
+  chk(api.framePositionText(-0.8, -0.8) === 'bottom left', '画面位置：bottom left', api.framePositionText(-0.8, -0.8));
+  chk(api.framePositionText(0.8, 0.8) === 'top right', '画面位置：top right', api.framePositionText(0.8, 0.8));
   chk(!!outside && typeof outside.visible === 'boolean', '画面外也能算出坐标，并用 visible=false 标出',
     outside && String(outside.visible) + ' (' + outside.xImg.toFixed(2) + ')');
   void leftDown;

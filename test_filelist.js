@@ -36,8 +36,11 @@ return {
   filtered(){return filteredGeoFiles()},
 };`);
 
-// SHOW_3D_FILES 作为参数注入，这样两种取值都能测
+// SHOW_3D_FILES 作为参数注入，这样两种取值都能测。
+// isCoverageExport 也要一起注入 —— pickOneGeoFilePerVideo 会调它滤掉覆盖导出产物
+// （用户 2026-10-13：「这几个 coverage 的矢量图层……图上不要加载出来」）。
 const buildPick = new Function('SHOW_3D_FILES', 'streamKeyOf', 'is3dTrack',
+  'isCoverageExport',
   extractFn('pickOneGeoFilePerVideo') + '\nreturn pickOneGeoFilePerVideo;');
 
 // 服务器返回的顺序（按文件名升序），就是截图里那个顺序
@@ -76,15 +79,24 @@ chk(new Set(order.map((x) => x.index)).size === geoFiles.length, '索引不重�
 chk(order.map((x) => x.index).sort((a, b) => a - b).join(',') === '0,1,2,3,4,5',
   '索引仍是完整集合（点「加载」不会串位）');
 // 同类型内保持原顺序：S.3d 必须排在 S 前面
-const sIdx = order.filter((x) => streamLabelOf(geoFiles[x.index].relative_path) === '可见光 1920×1080')
+const sIdx = order.filter((x) => streamLabelOf(geoFiles[x.index].relative_path) === 'Visible 1920×1080')
   .map((x) => geoFiles[x.index].relative_path);
 chk(sIdx[0].includes('.3d'), '同类型内保持原顺序（_S.3d 仍在 _S 之前）', sIdx.join(' , '));
 
 console.log('\n=== 同一视频的 .geojson / .3d.geojson 去重 ===');
 {
   const wrap = (names) => names.map((relative_path) => ({ relative_path }));
-  const pick = (names, show) => buildPick(show, streamKeyOf, is3dTrack)(wrap(names))
-    .map((f) => f.relative_path);
+  // isCoverageExport 用一个"按文件名判"的最小替身（真身也看 file_name，
+  // 这里只喂 relative_path，所以替身足够）
+  const fakeIsCoverageExport = (f) => {
+    const n = String((f && (f.file_name || f.relative_path)) || '');
+    return /(^|[\\/])coverage[\\/]/i.test(n)
+        || /(^|[_.-])coverage/i.test(n)
+        || /(^|[_.-])resolvable/i.test(n);
+  };
+  const pick = (names, show) =>
+    buildPick(show, streamKeyOf, is3dTrack, fakeIsCoverageExport)(wrap(names))
+      .map((f) => f.relative_path);
 
   const BOTH = [
     'DJI_20260924095258_0001_S.3d.geojson',
@@ -114,6 +126,34 @@ console.log('\n=== 同一视频的 .geojson / .3d.geojson 去重 ===');
     '去重键把 .3d 抹掉后与普通版相同（大小写也不敏感）',
     streamKeyOf('A_V.3D.geojson'));
 
+  // 覆盖图层导出的矢量产物要**从航迹列表里彻底消失**
+  // （用户 2026-10-13：「这几个 coverage 的矢量图层没有存在的必要了，
+  //  至少图上不要加载出来，也不要在搜索结果里面显示出来」）。
+  {
+    const withExports = [
+      'DJI_20260924095258_0001_V.geojson',            // 真航迹
+      'coverage/DJI_coverage_count1.geojson',          // 导出：在 coverage/ 子目录
+      'coverage/DJI_coverage_count300.geojson',
+      'coverage/DJI_resolvable_20cm.geojson',
+      'coverage/DJI_20260924095258_0001_V.geojson',    // 导出：文件名和真航迹一样
+    ];
+    const kept2 = pick(withExports, false);
+    chk(kept2.length === 1, '4 个导出产物被滤掉，只剩真航迹', kept2.join(' , '));
+    chk(kept2[0] === 'DJI_20260924095258_0001_V.geojson',
+      '留下的正是真航迹（不是同名的那份导出）');
+    // SHOW_3D_FILES=true 时也必须滤（它只管 3D，不管导出）
+    chk(pick(withExports, true).length === 1, 'SHOW_3D_FILES=true 时同样滤掉导出');
+    // 逐条确认三种命名形态都认得
+    for (const n of ['coverage/DJI_coverage_count1.geojson',
+                     'DJI_coverage_count300.geojson',
+                     'DJI_resolvable_20cm.geojson',
+                     'x/coverage/DJI_a_V.geojson']) {
+      chk(fakeIsCoverageExport({ relative_path: n }), `认得导出产物：${n}`);
+    }
+    chk(!fakeIsCoverageExport({ relative_path: 'DJI_20260924095258_0001_V.geojson' }),
+      '真航迹不会被误滤');
+  }
+
   // 实际流水线：scanGeoJSON 先去重 -> renderFiles 再按类型排序
   const pipeline = pick(BOTH, false)
     .map((relative_path, index) => ({ relative_path, index, rank: streamRankOf(relative_path) }))
@@ -123,7 +163,7 @@ console.log('\n=== 同一视频的 .geojson / .3d.geojson 去重 ===');
   pipeline.forEach((line, i) => console.log(`    第${i + 1}行  ${line}`));
   chk(pipeline.length === 3, '列表最终 3 行');
   chk(/3840×2160/.test(pipeline[0]) && /1920×1080/.test(pipeline[1]) && /1280×1024/.test(pipeline[2]),
-    '顺序为 可见光 4K -> 可见光 1080p -> 热成像');
+    '顺序为 Visible 4K -> Visible 1080p -> Thermal');
 
   console.log('\n=== 文件名简化（年月日 时间 · 编号 · 后缀）===');
 {
@@ -185,10 +225,10 @@ console.log('\n=== 按年月日 / 视频类型筛选 ===');
   f.set('2026-09-25', '');
   chk(show('日期 2026-09-25').length === 1, '另一天只剩 1 条');
 
-  f.set('', '可见光 3840×2160');
-  chk(show('类型 可见光 3840×2160').length === 2, '按类型筛出 2 条');
+  f.set('', 'Visible 3840×2160');
+  chk(show('类型 Visible 3840×2160').length === 2, '按类型筛出 2 条');
 
-  f.set('2026-09-24', '热成像 1280×1024');
+  f.set('2026-09-24', 'Thermal 1280×1024');
   chk(show('日期 + 类型组合').length === 1, '两个条件同时生效');
 
   f.set('2026-09-24', '');

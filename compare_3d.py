@@ -2,7 +2,7 @@ import json, sys, io
 from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
-ROOT = Path(__file__).resolve().parent / "Data" / "DJI_202609240950_001"
+ROOT = Path(r"<仓库根>\Data\DJI_202609240950_001")
 
 
 def load(name):

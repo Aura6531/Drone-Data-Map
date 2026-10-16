@@ -14,21 +14,35 @@ Code/tianditu_key.txt
 Data/
 media/
 video_proxy/
-video_clip/                  # 「导出前后10秒」的片段缓存（含用户视频）
 tile_cache/
 lens_probe/
 _backup/
 _upload/
 _acl_reports/
 Project/
+# 检索图墙的缩略图缓存（在视频所在目录下，位置随项目文件夹走，
+# 所以不能用 Data/ 那一条兜住 —— 项目文件夹可能在仓库外）
+**/.thumbs/
 *.mp4
 *.MP4
 *.mov
 *.MOV
 *.avi
+# 注意：图片扩展名要大小写都写。Git 的大小写敏感取决于 core.ignorecase，
+# 而 `.JPG`（大写）在 Windows 上曾漏网，导致「演示数据」里 246 张照片准备被提交。
+*.jpg
+*.JPG
+*.jpeg
+*.JPEG
+*.png
+*.PNG
+*.MRK
+*.mrk
 *.srt
 *.SRT
 *.geojson
+# 「演示数据」是中文目录名，上面的 `Data/` 和 `_*` 都盖不住它（2026-10-12 补）
+演示数据/
 
 # —— ③ 运行产物：缓存与迁移记录 ——
 Code/geocode_cache/
@@ -71,3 +85,26 @@ packaging/*.zip.partial
 
 # —— ⑨ 临时诊断脚本（Code/ 下划线开头的都是我跑一次性检查用的） ——
 Code/_*.py
+
+# —— ⑩ 根目录的一次性诊断脚本与 dry-run 输出（2026-10-12 补） ——
+# 原来只写了 Code/_*.py，根目录那 100 多个 _*.py / _dry*.txt / _*.json 会被
+# `git add .` 一起吞进去，然后永久留在 git 历史里。
+# `_*` 会匹配任意层级以下划线开头的文件与目录：
+#   _dbg_*.py / _i18n_*.py / _dry*.txt（一次性脚本）
+#   _backup/ / _new_pack/ / _fh2_skill/（本地快照与解包，都不该进仓库）
+# 注意：真正要跟踪的文件不要用下划线开头命名。
+_*
+
+# —— ⑪ 上面按扩展名/前缀排除，会误伤这些「必需的图片资源」——
+# 跟 ⑥ 的 packaging 白名单同一个道理：一律排除、再逐条放行，比一条条列要稳。
+# git 的规则是「后面的覆盖前面的」，所以这些否定必须放在所有排除规则之后。
+#
+# 为什么必须有：
+#   vendor/images/  —— Leaflet 的 marker/shadow/layers 图标，缺了就显示不出标记
+#   packaging/*.png —— 安装程序图标（icon_256 / icon_sizes）
+!vendor/leaflet.js
+!vendor/leaflet.css
+!vendor/images/
+!vendor/images/*.png
+!packaging/icon_256.png
+!packaging/icon_sizes.png

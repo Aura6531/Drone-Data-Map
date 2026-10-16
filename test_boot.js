@@ -308,7 +308,53 @@ console.log('\n=== 初始化真的执行到了吗（不是静默跳过）===');
   }
 }
 
-console.log('\n=== 错误横幅真的会显示吗（手动触发 window error）===');
+console.log('\n=== 视场覆盖面板：元素在、事件绑上了、开关能切 ===');
+{
+  const sb = a.sandbox;
+  // 注意：这个桩的 getElementById 是**懒建**的（取到才建），而且 style 初始是空对象
+  // —— 所以不能拿「元素在不在注册表里」或「style.display === 'none'」当断言，
+  // 那验的是桩而不是页面。这里改成按**真实行为**验：点击后从沙箱取元素看变化。
+  const got = (id) => sb.document.getElementById(id);
+  const toggle = got('coverageToggleBtn');
+  const build = got('coverageBuildBtn');
+  const show = got('coverageShowBtn');
+  const metric = got('coverageMetric');
+  const listeners = (el) => (el && el._listeners ? Object.keys(el._listeners) : []);
+  chk(listeners(toggle).includes('click'), 'Coverage 开关挂了 click',
+    listeners(toggle).join(',') || '无');
+  chk(listeners(build).includes('click'), 'Build 挂了 click');
+  chk(listeners(show).includes('click'), 'Show 挂了 click');
+  chk(listeners(metric).includes('change'), '展示方式下拉挂了 change');
+
+  // 真的点一下开关：面板展开、aria-pressed 变 true。
+  // coverageLoadList() 会去 fetch，桩是 reject，被 catch 吃掉，不该抛出来。
+  let threw = null;
+  try {
+    toggle._listeners.click.forEach((fn) => fn({}));
+  } catch (e) { threw = e; }
+  chk(!threw, '点开关不抛异常（fetch 失败被捕获）',
+    threw ? threw.constructor.name + ': ' + threw.message : '');
+  const panel = got('coveragePanel');
+  chk(panel.style.display === 'flex', '点开后展开成 flex', String(panel.style.display));
+  chk(String(toggle.getAttribute('aria-pressed')) === 'true', 'aria-pressed=true');
+
+  // 再点一下收回
+  try { toggle._listeners.click.forEach((fn) => fn({})) } catch (e) { threw = e; }
+  chk(!threw, '再点收回不抛异常', threw ? threw.message : '');
+  chk(panel.style.display === 'none', '再点收回',
+    String(panel.style.display));
+
+  // 阈值/清晰度两个输入框的显示切换，靠 metric 的 change 处理
+  const thWrap = got('coverageThresholdWrap');
+  const gsdWrap = got('coverageGsdWrap');
+  metric.value = 'gsd';
+  try { metric._listeners.change.forEach((fn) => fn({})) } catch (e) { threw = e; }
+  chk(!threw, '切到清晰度视图不抛异常', threw ? threw.message : '');
+  chk(gsdWrap.style.display === 'inline-flex' && thWrap.style.display === 'none',
+    '切到「清晰度」时显示 m/px 输入、藏起帧数输入',
+    `gsd=${gsdWrap.style.display} th=${thWrap.style.display}`);
+}
+
 {
   // 同一类型可能注册了多个监听（空格用捕获阶段拦截），所以按数组取
   const pick = (type) => {
@@ -373,10 +419,10 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   const PHOTO = {
     groups: [
       { stamp: '20260924_095348', folder: 'D:\\数据\\架次1', lat: 23.0415, lon: 114.1064,
-        accuracy: '实测', count: 2, lead: 'WideCamera',
+        accuracy: 'measured', count: 2, lead: 'WideCamera',
         members: [
           { name: 'DJI_20260924095348_0002_V.JPG', folder: 'D:\\数据\\架次1', camera: 'WideCamera',
-            accuracy: '实测', accuracy_note: '', lat: 23.0415, lon: 114.1064,
+            accuracy: 'measured', accuracy_note: '', lat: 23.0415, lon: 114.1064,
             distance: 178.6, depression: 29.4, gimbal_yaw: 166.7, relative_alt: 97.2,
             drone_lat: 23.043, drone_lon: 114.106 },
           { name: 'DJI_20260924095348_0002_T.JPG', folder: 'D:\\数据\\架次1', camera: 'InfraredCamera',
@@ -385,10 +431,10 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
             drone_lat: 23.043, drone_lon: 114.106 }
         ] },
       { stamp: '20260924_102746', folder: 'D:\\数据\\架次1', lat: 23.05, lon: 114.11,
-        accuracy: '位置不准', count: 1, lead: 'WideCamera',
+        accuracy: 'inaccurate', count: 1, lead: 'WideCamera',
         members: [
           { name: 'DJI_20260924102746_0034_T.JPG', folder: 'D:\\数据\\架次1', camera: 'InfraredCamera',
-            accuracy: '位置不准', accuracy_note: '该张没有激光数据，中心点按平地假设估算',
+            accuracy: 'inaccurate', accuracy_note: 'no laser data; ground position estimated on a flat-earth assumption',
             lat: 23.05, lon: 114.11, distance: 171.5, depression: 19.8, gimbal_yaw: 200,
             relative_alt: 97, drone_lat: 23.06, drone_lon: 114.11 }
         ] }
@@ -435,13 +481,22 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     await new Promise((r) => setImmediate(r));
   }
 
+  // 照片统计**不摆在页面上**（用户 2026-10-13：「没必要直接摆放在页面上，
+  // 做成鼠标放到 Load all photos 按钮上悬停时才出现」）。
+  // 所以现在断言两件事：① 页面上那两处是空的；② 按钮的 title 里带着完整统计。
   const count = sb.els.get('photoLayerCount');
   const countExtra = sb.els.get('photoLayerCountExtra');
-  chk(count && /3 张 → 2 个点/.test(String(count.textContent)),
-    '照片计数写到位（3 张 → 2 个点）', count ? String(count.textContent) : '-');
-  chk(countExtra && /1 处合并/.test(String(countExtra.textContent)),
-    '合并了几处单独一段（窄窗口时它能整段让位，不挤掉主信息）',
-    countExtra ? String(countExtra.textContent) : '-');
+  const layerBtn = sb.els.get('photoLayerBtn');
+  chk(count && String(count.textContent) === '',
+    '统计不再摆在页面上（photoLayerCount 为空）', count ? `"${String(count.textContent)}"` : '-');
+  chk(countExtra && String(countExtra.textContent) === '',
+    '原来那第二段也清空了', countExtra ? `"${String(countExtra.textContent)}"` : '-');
+  chk(layerBtn && /3 photos → 2 targets/.test(String(layerBtn.title || '')),
+    '改到按钮悬停提示里（3 photos → 2 targets）',
+    layerBtn ? String(layerBtn.title || '-') : '-');
+  chk(layerBtn && /1 merged/.test(String(layerBtn.title || '')),
+    '合并了几处也一并写进悬停提示',
+    layerBtn ? String(layerBtn.title || '-') : '-');
 
   // 左栏「标签开关」：项目数据/轨迹文件 ↔ 标记点（用户 2026-10-07 要求）
   {
@@ -451,22 +506,22 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
 
     chk(colLeft && colLeft._classes.has('view-project'), '左栏默认显示「项目数据 / 轨迹文件」页');
     chk(colLeft && !colLeft._classes.has('view-markers'), '默认不是标记点页');
-    chk(toggle && String(toggle.textContent) === '‹ 标记点',
-      '开关按钮默认写「‹ 标记点」（带左箭头，点它往左扫到标记点页）',
+    chk(toggle && String(toggle.textContent) === '‹ Markers',
+      '开关按钮默认写「‹ Markers」（带左箭头，点它往左扫到标记点页）',
       toggle ? String(toggle.textContent) : '-');
     chk(toggle && String(toggle.getAttribute('aria-pressed')) === 'false', '默认 aria-pressed=false');
 
     if (toggle) toggle._fire('click');
     chk(colLeft && colLeft._classes.has('view-markers'), '点一下切到标记点页');
-    chk(toggle && String(toggle.textContent) === '项目数据 ›',
-      '切过去之后按钮写「项目数据 ›」（带右箭头）',
+    chk(toggle && String(toggle.textContent) === 'Project ›',
+      '切过去之后按钮写「Project ›」（带右箭头）',
       toggle ? String(toggle.textContent) : '-');
     chk(toggle && String(toggle.getAttribute('aria-pressed')) === 'true', '标记点页时 aria-pressed=true');
-    chk(toggle && /切回项目/.test(String(toggle.title)), '悬停提示跟着变');
+    chk(toggle && /Back to project/.test(String(toggle.title)), '悬停提示跟着变');
 
     if (back) back._fire('click');
-    chk(colLeft && colLeft._classes.has('view-project'), '点标记点页里的「项目数据 ›」切回来');
-    chk(toggle && String(toggle.textContent) === '‹ 标记点', '切回来按钮又写「‹ 标记点」');
+    chk(colLeft && colLeft._classes.has('view-project'), '点标记点页里的「Project ›」切回来');
+    chk(toggle && String(toggle.textContent) === '‹ Markers', '切回来按钮又写「‹ Markers」');
 
     // 旧的「收起成窄轨」应当已经删干净
     chk(!sb.els.has('sideRail') || !html.includes('id="sideRail"'), '窄轨（sideRail）已删除');
@@ -534,7 +589,7 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     chk(/DJI_20260924095348_0002_T\.JPG/.test(html2), '同组的红外那张也一起放出来了');
     chk(/photo-lead/.test(html2), '两张按「大图 + 小图」排版');
     chk(/\/photo\?path=/.test(html2), '图片走后端 /photo 接口');
-    chk(/正在查找对应的视频/.test(String(sb.els.get('photoJump').innerHTML)),
+    chk(/Looking for the matching video/.test(String(sb.els.get('photoJump').innerHTML)),
       '展示区里那块「跳视频」先给出「正在查找」而不是空白');
 
     // 收起

@@ -47,9 +47,9 @@ chk(/function\s+proxyMode\s*\(/.test(body), '存在播放模式判定');
 chk(/return 'auto'/.test(body), '默认 auto：先试原片，失败自动转码');
 chk(/function\s+fallbackToProxy\s*\(/.test(body), '存在自动回退');
 chk(/function\s+serverAlive\s*\(/.test(body), '失败时先探测服务端是否活着');
-chk(/服务端没有响应/.test(body), '服务端不可达时给出明确指引');
-chk(/服务端已连上，因此是文件或编码问题/.test(body), '服务端正常时才归因到编码');
-chk(/fallbackToProxy\(`原片无法播放/.test(body), '原片播放失败时自动回退');
+chk(/The server is not responding/.test(body), '服务端不可达时给出明确指引');
+chk(/The server is reachable, so this is a file or codec problem/.test(body), '服务端正常时才归因到编码');
+chk(/fallbackToProxy\(`Cannot play the original file/.test(body), '原片播放失败时自动回退');
 chk(/currentTime=seekTo/.test(body), '按 bucket 偏移换算 currentTime');
 chk(/q\.set\('start'/.test(body) && /q\.set\('duration'/.test(body), '带上 start/duration 参数');
 chk(/videoPlayer\.error/.test(body), '失败时读取媒体错误码');
@@ -88,7 +88,9 @@ chk(/maxZoom:TRACK_FIT_MAX_ZOOM/.test(body),
 chk(/coreBounds\.getSouthWest\(\)/.test(body), '触发条件只看核心点（不含前方航迹）');
 chk(/pad\(FOLLOW_HEADROOM\)/.test(body), '调整时预留余量，减少调整次数');
 chk(/Date\.now\(\)-\(clip\.lastFollowAt\|\|0\)<FOLLOW_MIN_INTERVAL/.test(body), '有最小调整间隔节流');
-chk(/followViewport\(\);\s*\n\s*syncMapPip\(\);\n}/.test(body),
+// 注意：这份 HTML 是 CRLF 换行 —— 行尾符号必须用 \s*\n\s* 收尾，
+// 直接写 "\n}" 在 CRLF 文件上永远匹配不上（原来就栽在这儿）。
+chk(/followViewport\(\);\s*\n\s*syncMapPip\(\);\s*\n\s*\}/.test(body),
   'syncDroneMarker 结束时先跟随视野、再刷地图小窗');
 
 console.log('\n=== 视频面板固定在右栏，不悬浮、不可拖动 ===');
@@ -126,7 +128,16 @@ console.log('\n=== 视频面板固定在右栏，不悬浮、不可拖动 ===');
   // 打开/关闭时占位说明的显隐
   chk(/hide\(videoSlot\);/.test(body), '打开视频时收起右栏的占位说明');
   chk(/videoSlot\.style\.display=''/.test(body), '关闭视频后把占位说明放回来');
-  chk(/if\(clip\)\{\s*\n\s*show\(mapNotice,'视频窗口打开时/.test(body), '播放中点地图不会打乱选点');
+  // 删掉一条语义已反转的断言：「播放中点地图不会打乱选点」。
+  // 旧实现是播放中点地图会弹「While the video is open…」并且不换选点；
+  // 2026-10-13 用户明确改成「视频开着也照样换选点」——点完立刻能按新位置搜索，
+  // 只是右侧正在播的视频不动。语义正好相反，所以按现在的规则重写。
+  {
+    const start = body.indexOf('function setProbe(');
+    const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
+    chk(fn.length > 0 && !/videoPlayer|closeVideo\(|stopThermal\(/.test(fn),
+      '播放中点地图只换选点、不动正在播的视频');
+  }
 }
 
 console.log('\n=== 视频实时信息栏 ===');
@@ -141,23 +152,25 @@ for (const k of ['BASE_FOCAL', 'M4T_LENS_BANDS', 'GROUND_MIN_PITCH']) {
 chk(/M4T 是四摄/.test(body), '注释里写明 M4T 是四摄');
 chk(/function\s+lensInfoOf\s*\(/.test(body), 'function lensInfoOf()');
 chk(/function\s+opticalFocalOf\s*\(/.test(body), 'function opticalFocalOf()');
-chk(/广角开数码变焦会被误判|必须用「光学焦距」/.test(body), '注释说明了为何要用光学焦距');
+chk(/广角开digital zoom会被误判|必须用「光学焦距」/.test(body), '注释说明了为何要用光学焦距');
 chk(!/WIDE_FOCAL_MAX/.test(body) && !/lensNameOf/.test(body), '旧的两档逻辑已完全移除');
-chk(/name:'广角',\s*base:1/.test(body) && /name:'中长焦',\s*base:3/.test(body)
-  && /name:'长焦',\s*base:7/.test(body), 'DJI 标称倍率 1× / 3× / 7× 已写入');
+chk(/name:'Wide',\s*base:1/.test(body) && /name:'Mid tele',\s*base:3/.test(body)
+  && /name:'Tele',\s*base:7/.test(body), 'DJI 标称倍率 1× / 3× / 7× 已写入');
 chk(/DJI App 的写法/.test(body), '镜头显示采用 DJI App 写法');
 chk(/Number\.isInteger\(total\)\?total:total\.toFixed\(1\)/.test(body),
   '整数倍率不带小数（“7×”而非“7.0×”）');
-chk(/数码变焦 \$\{lens\.digital\.toFixed\(2\)\}×/.test(body), '悬停里说明数码变焦倍数');
-chk(/精确比值 \$\{\(70\/BASE_FOCAL\)\.toFixed\(2\)\}×/.test(body),
-  '悬停里说明中长焦精确比值 2.92×（DJI 标称 3×）');
-chk(/可见光 3840×2160/.test(body) && /可见光 1920×1080/.test(body)
-  && /热成像 1280×1024/.test(body),
-  '三种视频类型标签用数字分辨率（可见光/热成像字样保留）');
-// 只看函数真正 return 出去的标签；注释里提到旧叫法不算问题
-chk(!/return '(可见光 4K|可见光 1080P|热成像 1024P)'/.test(body),
+chk(/digital zoom \$\{lens\.digital\.toFixed\(2\)\}×/.test(body), '悬停里说明digital zoom倍数');
+chk(/exact ratio \$\{\(70\/BASE_FOCAL\)\.toFixed\(2\)\}×/.test(body),
+  '悬停里说明中长焦exact ratio 2.92×（DJI 标称 3×）');
+chk(/Visible 3840×2160/.test(body) && /Visible 1920×1080/.test(body)
+  && /Thermal 1280×1024/.test(body),
+  '三种视频类型标签用数字分辨率（Visible / Thermal 字样保留；界面文案已统一成英文）');
+// 只看函数真正 return 出去的标签；注释里提到旧叫法不算问题。
+// 文案改成英文之后，旧的中文叫法已经不可能再出现 —— 跟到英文叫法上，
+// 否则这条会退化成「永远为真」的空断言。
+chk(!/return '(Visible|Thermal)[^']*(4K|1080P|1024P)[^']*'/.test(body),
   '函数返回的标签不再用 4K / 1080P / 1024P 这种叫法');
-chk(/热成像传感器 640×512，机内超分 2×/.test(body), '悬停里说明 640×512 传感器超分 2×');
+chk(/thermal sensor 640×512, recorded after 2× in-camera upscaling/.test(body), '悬停里说明 640×512 传感器超分 2×');
 
 console.log('\n=== 文件列表：类型标签与排序 ===');
 {
@@ -195,7 +208,7 @@ chk(/function heightsOfTrack\(/.test(body), 'function heightsOfTrack()');
   chk(!/heights:props\.point_heights\|\|\[\]/.test(body), '旧的直接读法已移除');
   chk(/const coords=geometry\.coordinates\|\|\[\];/.test(body), '坐标先取出来复用，避免取两遍');
 }
-chk(/const COMPASS_NAMES=\['北','东','南','西'\]/.test(body), '方位名称表已定义');
+chk(/const COMPASS_NAMES=\['N','E','S','W'\]/.test(body), '方位名称表已定义');
 chk(/api\/project\/telemetry/.test(body), '请求遥测接口');
 chk(/telemetryCache\[path\]/.test(body), '遥测结果按视频缓存');
 chk(/alt\/Math\.tan\(down\*Math\.PI\/180\)/.test(body), '地面距离用 h/tan(俯角)，不是空中直线');
@@ -221,8 +234,8 @@ chk(/\.video-title\{[^}]*text-overflow:ellipsis/.test(html), '标题过长用省
   chk(/\.video-close svg\{display:block\}/.test(html), '× 用 SVG 绘制，不受字体度量影响（必定居中）');
   chk(/M5 5 L19 19 M19 5 L5 19/.test(html), '× 路径关于中心对称');
 }
-chk((html.match(/<option value="(fit|center|off)"/g) || []).length === 3,
-  '跟随模式仍是 fit / center / off 三种');
+// （「跟随模式仍是 fit / center / off 三种」这条与前面「地图跟随」那一段
+//   逐字重复，已合并到那边，这里不再重复数一遍）
 chk(/id="videoCrosshair"/.test(html), '视频画面准星元素存在');
 chk(/class="video-stage"/.test(html), '视频外面套了定位容器（准星才能居中）');
 for (const f of ['centerGroundLatLng', 'syncCrosshair', 'hideMapCrosshair',
@@ -252,7 +265,7 @@ chk(/let droneIcon=null;/.test(body) && /let crosshairIcon=null;/.test(body)
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
   chk(/loadProjects\(\);/.test(fn), '即使没有 Leaflet 也照常加载项目列表');
   chk(/if\(!leafletReady\(\)\)\{/.test(fn), '没有 Leaflet 时走降级分支');
-  chk(/show\(\s*\n?\s*mapNotice,/.test(fn) && /未加载/.test(fn), '降级分支在地图区给出明确原因');
+  chk(/show\(\s*\n?\s*mapNotice,/.test(fn) && /did not load/.test(fn), '降级分支在地图区给出明确原因');
   chk(/ensureMapIcons\(\)/.test(fn), 'boot 里先建图标再建地图（否则建 marker 时 icon 为 null）');
   chk(fn.indexOf('ensureMapIcons()') < fn.indexOf('initMap()'),
     '建图标在建地图之前');
@@ -277,7 +290,11 @@ chk((html.match(/unpkg\.com\/leaflet@1\.9\.4/g) || []).length === 2,
     '地图与视频用同一套准星造型（四段短线+中间留空，各一处）');
   chk(!/stroke="rgba\(0,0,0,\.55\)"/.test(html),
     '准星不带深色描边（按反馈改成纯青色短线，更简洁）');
-  chk((html.match(/stroke="currentColor" stroke-width="2.6"/g) || []).length === 2,
+  // 准星本体是「一个 <g> 包住四段短线」，只有一层青色描线、没有黑边。
+  // 注意：现在还有第三处同款短线 —— #videoTarget（选点投影到画面上的
+  // 「Your point」标记，另加一个虚线圆），它不是准星。所以按 <g> 的确切写法
+  // 来数，准星仍然是地图、视频各一处（共 2 处）。
+  chk((html.match(/<g fill="none" stroke="currentColor" stroke-width="2.6"/g) || []).length === 2,
     '准星只有一层青色描线（无黑边），地图与视频各一处');
   chk(!/stroke="#ffffff" stroke-width="2.6"/.test(html), '旧的白色圆环准星已移除');
   chk(!/cx="20" cy="20" r="9"/.test(html), '旧的“外圈+中心点”准星已移除');
@@ -294,7 +311,7 @@ chk(/\.crosshair-div-icon\.zoomed \.crosshair-svg\{color:var\(--reticle-zoom\)\}
   '地图准星：变焦时变红');
 chk(/transition:color \.18s ease/.test(html), '变色有过渡（不突兀）');
 chk(/const zoomed=\(lens\.total!=null&&lens\.total>1\)/.test(body),
-  '规则：总倍率 > 1× 即变红（中长焦3×/长焦7×/广角叠数码变焦都算）');
+  '规则：总倍率 > 1× 即变红（中长焦3×/长焦7×/广角叠digital zoom都算）');
 chk(/lensInfoOf\(clip\.path,telemetry\.focal\[i\],telemetry\.dzoom\[i\]\)/.test(body),
   '复用同一套镜头判定，不会和「镜头」栏显示不一致');
 chk(/videoCrosshair\.classList\.toggle\('zoomed',zoomed\)/.test(body), '视频准星接上变焦状态');
@@ -329,17 +346,16 @@ chk(!/textContent=(crosshairOn|footprintOn|thermalOn|mapPipOn|compareOn)\?/.test
     .map((m) => m[2]);
   chk(labels.length === 4, '数到 4 个开关按钮', labels.join(' / '));
   chk(labels.every((t) => t && !/开|关/.test(t)), '按钮字面不含「开/关」', labels.join(' / '));
-  chk(labels.includes('小地图') && !labels.includes('小窗'), '地图小窗按钮改叫「小地图」', labels.join(' / '));
-  chk(labels.join(',') === '准星,视场,红外,小地图', '四个开关字面如预期', labels.join(' / '));
-  chk(!/id="dockBtn"/.test(html),
-    '工具栏里没有「归位」（面板固定，不需要归位）');
+  chk(labels.includes('Mini map') && !labels.includes('小窗'), '地图小窗按钮改叫「小地图」', labels.join(' / '));
+  chk(labels.join(',') === 'Crosshair,FOV,IR,Mini map', '四个开关字面如预期', labels.join(' / '));
+  // （「工具栏里没有 #dockBtn」这条与前面「视频面板」那一段逐字重复，已合并到那边）
 }
 chk(/\.toggle-btn\{[^}]*background:#dbeafe/.test(html), '开：蓝底蓝字加粗');
 chk(/\.toggle-btn\.off\{background:#fff;border-color:#e5eaf1;color:#a8b3c2;font-weight:400\}/.test(html),
   '关：白底浅灰字且不加粗（底色就是状态指示）');
 chk(/transition:background \.15s ease/.test(html), '切换底色有过渡');
 chk(/hideMapCrosshair\(\);/.test(body), 'hideDroneMarker 时一并收掉准星');
-chk(/镜头接近水平时没有有效的地面交点/.test(body), '接近水平时不显示假位置');
+chk(/near level/.test(body), '接近水平时不显示假位置');
 chk(/zIndexOffset:900/.test(body), '准星压在航迹之上、飞机箭头之下');
 
 console.log('\n=== 飞机箭头朝向 ===');
@@ -360,7 +376,8 @@ chk(/M20 3 L34 34 L20 26 L6 34 Z/.test(body), '箭头 0° 时朝上（正北）�
 
 console.log('\n=== 镜头视场范围 ===');
 chk(/id="footprintToggle"/.test(html), '视场开关按钮存在');
-chk(/const FOOTPRINT_MAX_DISTANCE=300/.test(body), '模糊边界距离常量存在');
+chk(/const FOOTPRINT_MAX_PER_ALT\s*=\s*\d+/.test(body) && /const FOOTPRINT_MAX_DISTANCE_MIN\s*=\s*\d+/.test(body),
+  '视场远边截断距离按高度成比例（带低空下限）');
 chk(/let footprintOn=true/.test(body), '默认开启（方便直接看到效果）');
 for (const f of ['fovOf', 'groundPointForImage', 'edgePointAtDistance', 'footprintGeometry',
                  'ensureFootprintLayers', 'hideFootprint', 'syncFootprint',
@@ -379,13 +396,13 @@ chk(/dashed\.setLatLngs\(\[geometry\.right,geometry\.left\]\)/.test(body), '虚�
 {
   const start = body.indexOf('function syncDroneMarker(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/renderTelemetry\(\);\s*\n\s*syncCrosshair\(\);\s*\n\s*syncFootprint\(\);\s*\n\s*followViewport\(\);\s*\n\s*syncMapPip\(\)/.test(fn),
-    '每帧依次刷新：信息栏 -> 准星 -> 视场 -> 跟随视野 -> 地图小窗');
+  chk(/renderTelemetry\(\);\s*\n\s*syncCrosshair\(\);\s*\n\s*syncFootprint\(\);\s*\n\s*updateTargetMarker\(\);[^\n]*\n\s*followViewport\(\);\s*\n\s*syncMapPip\(\)/.test(fn),
+    '每帧依次刷新：信息栏 -> 准星 -> 视场 -> 画面里的「你的点」-> 跟随视野 -> 地图小窗');
   chk(/hideFootprint\(\)/.test(body.slice(body.indexOf('function hideDroneMarker('),
     body.indexOf('\n}', body.indexOf('function hideDroneMarker(')))),
     'hideDroneMarker 时一并收掉视场');
 }
-chk(!/fovOf\(optical/.test(body), '视场用报告焦距而非光学焦距（数码变焦是裁切画面，视场确实变窄）');
+chk(!/fovOf\(optical/.test(body), '视场用报告焦距而非光学焦距（digital zoom是裁切画面，视场确实变窄）');
 chk(/const fov=fovOf\(focal\);/.test(body), 'fovOf 收到的就是报告焦距');
 chk(/cssVar\('--reticle'\)/.test(body), '视场颜色跟准星同一个变量，改一处一起变');
 chk(/function currentFootprintGeometry\(/.test(body), 'function currentFootprintGeometry()');
@@ -444,7 +461,7 @@ chk(/<video id="videoThermal" muted playsinline/.test(html), '红外视频静音
 chk(/\.thermal-pip\{position:absolute;left:12px;bottom:56px/.test(html),
   '小窗定位在左下角，底边抬高 56px 让开播放器控制条');
 chk(/\.thermal-pip\{[^}]*pointer-events:none/.test(html), '小窗不挡主视频的点击');
-chk(/class="thermal-pip-label">红外</.test(html), '小窗带「红外」角标');
+chk(/class="thermal-pip-label">IR</.test(html), '小窗带「红外」角标');
 for (const f of ['thermalAvailable', 'mainAbsoluteTime', 'thermalSeekTarget', 'stopThermal',
                  'startThermal', 'syncThermal', 'applyThermalVisibility']) {
   chk(new RegExp('function\\s+' + f + '\\s*\\(').test(body), `function ${f}()`);
@@ -472,16 +489,16 @@ chk(/\.follow-label,\.ctrl-label\{[^}]*flex:0 0 auto/.test(html),
 chk(/\.toggle-btn\{[^}]*flex:0 0 auto/.test(html), '开关按钮不参与收缩');
 chk(!/for="followMode"/.test(html),
   '去掉了独立的「地图跟随」标签，改把说明写进选项（少占约 64px）');
-chk(/<option value="fit">跟随·都可见<\/option>/.test(html), '选项自带「跟随」前缀，去掉标签也不歧义');
+chk(/<option value="fit">Follow · Fit<\/option>/.test(html), '选项自带「跟随」前缀，去掉标签也不歧义');
 chk(/\.row\.video-head-tools\{flex:0 0 auto;flex-wrap:nowrap;gap:6px\}/.test(html),
   '右侧控件单行、间距收紧到 6px');
 
 console.log('\n=== 检索结果卡的备选视频排布 ===');
 chk(/class="alt-video-label"/.test(body), '「同一位置还有其他视频」有专门的类');
 chk(/class="row alt-video-row"/.test(body), '备选按钮有自己的行容器');
-chk(/<div class="alt-video-label">同一位置还有其他视频：<\/div>\s*\n\s*<div class="row alt-video-row">/.test(body),
+chk(/<div class="alt-video-label">Other videos at this position:<\/div>\s*\n\s*<div class="row alt-video-row">/.test(body),
   '说明文字单独一行，按钮另起一行（不再是同一行挤着）');
-chk(!/<div class="row"[^>]*>\s*\n\s*<span[^>]*>同一位置还有其他视频/.test(body),
+chk(!/<div class="row"[^>]*>\s*\n\s*<span[^>]*>Other videos at this position/.test(body),
   '旧写法（文字和按钮同一行）已移除');
 chk(/\.alt-video-label\{[^}]*margin:0 0 8px\}/.test(html), '标签与按钮之间有 8px 间距');
 chk(/\.row\.alt-video-row\{gap:8px/.test(html), '按钮之间 8px 间距，且可自行换行');
@@ -491,7 +508,7 @@ chk(/id="mapPip"/.test(html) && /id="mapPipCanvas"/.test(html), '地图小窗容
 chk(/id="mapPipCanvas" class="map-pip-canvas"><\/div>/.test(html),
   'Leaflet 挂在独立画布上（角标不会被 Leaflet 清掉）');
 chk(/id="mapPipToggle"/.test(html), '地图小窗开关存在');
-chk(!/id="dockBtn"/.test(html), '「归位」按钮已删除（面板固定，没有可归位的）');
+// （「没有 #dockBtn」这条与前面「视频面板」那一段逐字重复，已合并到那边）
 for (const f of ['ensureMapPip', 'applyMapPipBase', 'syncMapPip', 'applyMapPipVisibility',
                  'applyLeftView',
                  'refreshMapPipSize', 'applyThermalVisibility']) {
@@ -576,16 +593,17 @@ console.log('\n=== 全屏要保留小地图 / 红外 / 上方开关 ===');
   chk(/classList\.remove\('theater'\)/.test(close), '关窗口时清掉铺满状态（否则下次打开还是铺满）');
   chk(/exitFullscreen/.test(close), '关窗口时也退出全屏');
 }
-console.log('\n=== 左栏项目流程（创建 / 追加 / 删除 / 检测 / 生成）===');
+console.log('\n=== 左栏项目流程（创建 / 导入 / 删除 / 建轨迹）===');
 {
-  // 四步要按顺序排在左栏，GeoJSON 文件列表在最后
+  // 左栏从上到下：项目卡（删除 / 新建 / 导入）-> 轨迹文件卡（建轨迹 -> 筛选 -> 列表）
   const idx = {};
   for (const [key, needle] of [
     ['新建', 'id="createProjectBtn"'],
     ['追加', 'id="addFolderBtn"'],
     ['删除', 'id="deleteProjectBtn"'],
-    ['检测', 'id="detectBtn"'],
-    ['生成', 'id="makeSrtBtn"'],
+    // 原来这里还有「检测」「生成」两项（detectBtn / makeSrtBtn）—— 已按设计
+    // 合并成一个 Build tracks（原因见下面「单按钮」那一段），所以不再单独列。
+    ['建轨迹', 'id="buildTracksBtn"'],
     ['列表', 'id="fileList"'],
   ]) {
     idx[key] = html.indexOf(needle);
@@ -599,12 +617,12 @@ console.log('\n=== 左栏项目流程（创建 / 追加 / 删除 / 检测 / 生�
     const row = html.slice(rowStart, html.indexOf('</div>', rowStart));
     chk(/id="createProjectBtn"/.test(row) && /id="addFolderBtn"/.test(row),
       '两个动作在同一排');
-    chk(/<button id="createProjectBtn">新建项目<\/button>/.test(html), '按钮叫「新建项目」');
-    chk(/<button id="addFolderBtn" class="secondary">导入数据<\/button>/.test(html),
+    chk(/<button id="createProjectBtn">New project<\/button>/.test(html), '按钮叫「新建项目」');
+    chk(/<button id="addFolderBtn" class="secondary">Import data<\/button>/.test(html),
       '按钮叫「导入数据」（原来叫「添加数据文件夹」）');
     // 用「具体元素/文案」判断，别用裸词 —— JS 注释里也会出现「追加数据」这类词
     chk(!/2 · 给当前项目追加数据/.test(html), '不再有单独的「追加数据」步骤标题');    chk(!/添加数据文件夹/.test(html), '旧的「添加数据文件夹」按钮文案已删除');
-    chk(/<h2>项目数据<\/h2>/.test(html), '标题改成「项目数据」（与「轨迹文件」同为 h2，字号一致）');
+    chk(/<h2>Project<\/h2>/.test(html), '标题改成「项目数据」（与「轨迹文件」同为 h2，字号一致）');
     chk(!/<div class="desc">按/.test(html), '那行「按 1 → N 走一遍」的说明已删除');
   }
   // 项目名改成弹窗里输入，卡片里不再有常驻输入框
@@ -623,19 +641,25 @@ console.log('\n=== 左栏项目流程（创建 / 追加 / 删除 / 检测 / 生�
       '有打开/关闭弹窗的函数');
     chk(/createProjectBtn\.addEventListener\('click',openNewProjectDialog\)/.test(body),
       '点「新建项目」先弹窗，不直接建');
-    chk(/showNewProjectError\('请填项目名称。'\)/.test(body), '名称为空时报错，不提交');
+    chk(/showNewProjectError\('Enter a project name.'\)/.test(body), '名称为空时报错，不提交');
     chk(/e\.key==='Enter'/.test(body), '回车即确认');
     chk(/e\.target===newProjectModal/.test(body), '点遮罩空白处取消');
     chk(/if\(newProjectModal&&newProjectModal\.style\.display!=='none'\)\{closeNewProjectDialog\(\);return\}/
       .test(body), 'Esc 先关弹窗（优先于关视频窗口）');
   }
-  chk(idx['检测'] < idx['生成'] && idx['生成'] < idx['列表'],
-    '检测与生成排在文件列表之前（先准备数据，再看文件）');
+  chk(idx['建轨迹'] < idx['列表'],
+    '「Build tracks」排在文件列表之前（先准备数据，再看文件）');
 
-  for (const id of ['newProjectName', 'createProjectBtn', 'addFolderBtn',
-                    'deleteProjectBtn', 'detectBtn', 'detectResult', 'makeSrtBtn',
-                    'makeGeoBtn']) {
-    chk(new RegExp(`const ${id}=document\\.getElementById\\('${id}'\\)`).test(body),
+  // 变量名与 id 不一定同名（flowStatus -> flowStatusEl），所以成对写。
+  // 三个步骤按钮的引用（detectBtn / detectResult / makeSrtBtn / makeGeoBtn）
+  // 已随合并一起删除。
+  for (const [id, ref] of [['newProjectName', 'newProjectName'],
+                           ['createProjectBtn', 'createProjectBtn'],
+                           ['addFolderBtn', 'addFolderBtn'],
+                           ['deleteProjectBtn', 'deleteProjectBtn'],
+                           ['buildTracksBtn', 'buildTracksBtn'],
+                           ['flowStatus', 'flowStatusEl']]) {
+    chk(new RegExp(`const ${ref}=document\\.getElementById\\('${id}'\\)`).test(body),
       `取了 #${id} 的引用`);
   }
 }
@@ -676,9 +700,9 @@ console.log('\n=== 全自动流水线 ===');
   chk(/hide\(projectNotice\);/.test(body),
     '选中项目后不再重复显示「当前项目：xxx」（下拉框已经写着是哪个项目）');
   chk(!/当前项目：\$\{name\}/.test(body), '「当前项目：」那行提示已删除');
-  chk(/show\(projectNotice,`已创建项目 \$\{name\}`\)/.test(body),
+  chk(/show\(projectNotice,`Created project \$\{name\}`\)/.test(body),
     'projectNotice 仍留给真正的消息（创建/删除/出错）');
-  chk(!/视频结构检测/.test(body), '不再指向已不在流程里的「视频结构检测」页面');
+  chk(!/Video structure/.test(body), '不再指向已不在流程里的「视频结构检测」页面');
 }
 
 console.log('\n=== 只处理 DJI 标准素材，其它如实跳过 ===');
@@ -686,33 +710,36 @@ console.log('\n=== 只处理 DJI 标准素材，其它如实跳过 ===');
   chk(/const DJI_VIDEO_RE=/.test(body), '用正则识别 DJI 标准素材名');
   const start = body.indexOf('async function collectPending(');
   const fn = body.slice(start, body.indexOf('\n}', start));
-  chk(/if\(!DJI_VIDEO_RE\.test\(stem\)\)return;/.test(fn),
-    '非 DJI 素材（如「10 右岸-珠海市.mp4」）不进待办清单');
+  chk(/if\(!DJI_VIDEO_RE\.test\(stem\)\)\{other\.push\(\{folder,video\}\);return\}/.test(fn),
+    '非 DJI 素材（如「10 右岸-珠海市.mp4」）不进待办清单（记进 other 后跳过）');
+  chk(fn.indexOf('if(!DJI_VIDEO_RE') < fn.indexOf('if(!video.srt)srt.push'),
+    '跳过判在收清单之前（否则非 DJI 素材会被塞进待办）');
   chk(/if\(!video\.srt\)srt\.push/.test(fn), '缺 SRT 的进 SRT 清单');
   chk(/if\(!have\.has/.test(fn), '缺 GeoJSON 的进 GeoJSON 清单');
   const jobs = body.slice(body.indexOf('async function runJobs('), body.indexOf('async function runAutoPipeline('));
   chk(/failed\.push\(/.test(jobs) && /catch\(e\)/.test(jobs), '单个失败不影响其它（记下来继续跑）');
 }
 
-console.log('\n=== 三个步骤按钮排一排，做完变绿 ===');
+console.log('\n=== 单按钮「Build tracks」：跑完变绿 ===');
 {
   const start = html.indexOf('class="row flow-actions"');
   const row = html.slice(start, html.indexOf('</div>', start));
-  for (const id of ['detectBtn', 'makeSrtBtn', 'makeGeoBtn']) {
-    chk(new RegExp(`id="${id}"`).test(row), `#${id} 在同一排`);
-  }
-  chk(/<button id="detectBtn" class="secondary">检测字幕<\/button>/.test(html),
-    '按钮改名「检测字幕」（原来是「开始检测」）');
-  chk(!/开始检测/.test(html), '旧名字已不存在');
+  chk(/id="buildTracksBtn"/.test(row), '这一排只有「Build tracks」一个按钮');
+  chk(/<button id="buildTracksBtn">Build tracks<\/button>/.test(html),
+    '检测 / 生成 SRT / 生成 GeoJSON 合并成一个动作（GeoJSON 硬依赖同名 .srt，本来就不能分开走）');
+  // 设计变更：三个独立按钮已合并 —— 断言它们确实不在（文件里只剩解释性注释）
+  chk(!/id="detectBtn"|id="makeSrtBtn"|id="makeGeoBtn"/.test(html),
+    '旧的「检测字幕 / 生成 SRT / 生成 GeoJSON」三个按钮已删除');
+  chk(!/Start inspection/.test(html), '旧名字已不存在');
 
   const css = (html.match(/\.flow-actions[^{]*\{[^}]*\}/) || [''])[0];
-  chk(/flex-wrap:nowrap/.test(css), '这一排不允许换行（三个挤在一行）');
+  chk(/flex-wrap:nowrap/.test(css), '这一排不允许换行');
   const btnCss = (html.match(/\.flow-actions button\{[^}]*\}/) || [''])[0];
   chk(/padding:0 8px/.test(btnCss) && /font-size:12px/.test(btnCss),
-    '按钮收紧（全局 13px 22px 内边距会把它们撑到换行）');
-  // 关键：不能等分宽度，否则最长的「生成 GeoJSON」被压到换行、✓ 掉到第二行
+    '按钮收紧（全局 13px 22px 内边距会把它撑到换行）');
+  // 关键：不能等分宽度，否则最长的那一档文案被压到换行、✓ 掉到第二行
   chk(/flex:1 1 0/.test(btnCss),
-    '三个按钮等分占满整行（需求：刚好占完格子长度，字号与下面那排一致）');
+    '按钮占满整行（需求：刚好占完格子长度，字号与下面那排一致）');
   chk(/white-space:nowrap/.test(btnCss), '文字与 ✓ 始终同一行');
   chk(/button\.done\{background:#dcfce7/.test(html), '完成态用绿色底色表示');
   chk(/button\.done::after\{content:' ✓'\}/.test(html), '完成态加一个 ✓');
@@ -723,53 +750,46 @@ console.log('\n=== 三个步骤按钮排一排，做完变绿 ===');
   chk(!/<h2>数据准备<\/h2>/.test(noComment), '「数据准备」标题已删除');
   chk(!/3 · 检测与生成/.test(noComment), '「3 · 检测与生成」小标题已删除');
   const cardStart = noComment.indexOf('class="row flow-actions"');
-  chk(/<h2>轨迹文件<\/h2>/.test(noComment.slice(Math.max(0, cardStart - 200), cardStart)),
+  chk(/<h2>Tracks<\/h2>/.test(noComment.slice(Math.max(0, cardStart - 200), cardStart)),
     '合并后这张卡以「轨迹文件」标题开头（标题在步骤按钮上方）');
 
-  chk(/function markDone\(/.test(body), 'function markDone()');
-  chk(/function resetFlowButtons\(/.test(body), 'function resetFlowButtons()');
+  // markDone() / resetFlowButtons() 是「三个按钮」时代的产物，随合并一起删除：
+  // 现在只有这一个按钮，直接摘/加 'done' 类即可，不需要中间层。
   chk(/async function refreshFlowStates\(/.test(body), 'function refreshFlowStates()');
 
-  // 全自动流程里逐步点亮
   const auto = body.slice(body.indexOf('async function runAutoPipeline('), body.indexOf('\n}', body.indexOf('async function runAutoPipeline(')));
-  chk(/markDone\(detectBtn,/.test(auto), '自动流程：检测完点亮「检测字幕」');
-  chk(/markDone\(makeSrtBtn,/.test(auto), '自动流程：SRT 完点亮「生成 SRT」');
-  chk(/markDone\(makeGeoBtn,/.test(auto), '自动流程：GeoJSON 完点亮「生成 GeoJSON」');
-  chk(auto.indexOf('markDone(detectBtn') < auto.indexOf('markDone(makeSrtBtn')
-    && auto.indexOf('markDone(makeSrtBtn') < auto.indexOf('markDone(makeGeoBtn'),
-    '点亮顺序与执行顺序一致');
+  chk(/buildTracksBtn\.disabled=true;/.test(auto), '跑之前把按钮置灰（防止连点跑两遍）');
+  chk(/buildTracksBtn\.classList\.remove\('done'\)/.test(auto), '开跑先摘掉上一轮的绿');
+  chk(auto.indexOf("buildTracksBtn.classList.remove('done')") < auto.indexOf("buildTracksBtn.classList.add('done')"),
+    '绿标是跑完才加上去的（不在开头就点亮）');
+  chk(/if\(buildTracksBtn\)buildTracksBtn\.classList\.add\('done'\);/.test(auto),
+    '跑完点亮为完成（绿）');
+  chk(/buildTracksBtn\.disabled=false;/.test(auto), 'finally 里恢复可点（失败也要恢复）');
 
   // 没有待办也算做完（绿），否则"本来就没得做"会一直不亮
-  chk(/markDone\(makeSrtBtn,srtResult\.failed\.length===0\)/.test(auto),
+  chk(/if\(!srt\.length&&!geo\.length&&buildTracksBtn\)buildTracksBtn\.classList\.add\('done'\);/.test(body),
     '没待办时也标为完成（不是只有生成了才绿）');
 
   // 换项目要重置，否则上一轮的绿会留到下一个项目
-  chk(/resetFlowButtons\(\);/.test(body.slice(body.indexOf("projectSelect.addEventListener('change'"))),
-    '切换项目时先重置三个按钮');
+  chk(/if\(buildTracksBtn\)buildTracksBtn\.classList\.remove\('done'\);/.test(body.slice(body.indexOf("projectSelect.addEventListener('change'"))),
+    '切换项目时先摘掉绿标');
   chk(/refreshFlowStates\(\)/.test(body.slice(body.indexOf('async function loadProjects('), body.indexOf('async function loadProjects(') + 600)),
     '载入项目后按实际情况刷新按钮状态');
 }
-{
-  chk(/const DJI_VIDEO_RE=/.test(body), '用正则识别 DJI 标准素材名');
-  const start = body.indexOf('async function collectPending(');
-  const fn = body.slice(start, body.indexOf('\n}', start));
-  chk(/if\(!DJI_VIDEO_RE\.test\(stem\)\)return;/.test(fn),
-    '非 DJI 素材（如「10 右岸-珠海市.mp4」）不进待办清单');
-  chk(/if\(!video\.srt\)srt\.push/.test(fn), '缺 SRT 的进 SRT 清单');
-  chk(/if\(!have\.has/.test(fn), '缺 GeoJSON 的进 GeoJSON 清单');
-  const jobs = body.slice(body.indexOf('async function runJobs('), body.indexOf('async function runAutoPipeline('));
-  chk(/failed\.push\(/.test(jobs) && /catch\(e\)/.test(jobs), '单个失败不影响其它（记下来继续跑）');
-}
+// 这里原来还有一份「只处理 DJI 标准素材」的断言，和上面那一段逐字重复
+// （连说明文字都一样），已合并删除 —— 同一件事只验一遍。
 
 console.log('\n=== 删除项目 = 只清出项目列表，不删数据 ===');
 {
   const start = body.indexOf('if(deleteProjectBtn)deleteProjectBtn.addEventListener');
   const fn = body.slice(start, start + 1600);
   chk(/window\.confirm\(/.test(fn), '删除前要确认');
-  chk(/只会移除这个项目在列表里的那一项/.test(fn), '确认框说明：只移除项目列表里那一项');
-  chk(/Data 里的原始视频、SRT、GeoJSON 全部保留在磁盘上，一个都不会删/.test(fn),
-    '确认框说明：Data 里的文件全部保留、一个都不删');
-  chk(/数据文件夹归哪个项目由你自己决定/.test(fn),
+  // 注意：源码里撇号写在单引号字符串里，是 \' ，所以正则里要带一个反斜杠。
+  chk(/Only this project\\'s entry in the list is removed/.test(fn),
+    '确认框说明：只移除项目列表里那一项');
+  chk(/All source videos, SRT and GeoJSON files stay on disk/.test(fn),
+    '确认框说明：原始视频 / SRT / GeoJSON 全部保留在磁盘上，一个都不删');
+  chk(/It is up to you which project the data belongs to/.test(fn),
     '确认框说明：数据文件夹归哪个项目由用户决定');
   chk(/'\/api\/project\/delete'/.test(fn), '调删除接口');
   chk(/loadedTracks=\[\];/.test(fn), '删完把地图上的轨迹清掉');
@@ -779,7 +799,7 @@ console.log('\n=== 删除项目 = 只清出项目列表，不删数据 ===');
     '「移出项目列表」是下拉框右侧的小 ×（不再是单独一块按钮）');
   chk(/class="proj-row"/.test(html) && html.indexOf('id="projectSelect"') < html.indexOf('id="deleteProjectBtn"'),
     '× 紧跟在项目下拉框之后');
-  chk(/title="把当前项目从项目列表里移除（不会删除任何数据文件）"/.test(html),
+  chk(/title="Remove this project from the list \(no data files are deleted\)"/.test(html),
     '× 上的悬停说明写明不会删数据');
   // 同样要剥注释：说明「已不再使用」的注释里写了 .flow-hint
   chk(!/flow-hint/.test(body) && !/flow-hint/.test(html.replace(/\/\*[\s\S]*?\*\//g, '')),
@@ -810,7 +830,7 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
   chk(/for\(const path of paths\)/.test(fn), '多个文件夹逐个导入');
   chk(/importScannedFolder\(scanned\.folder,paths\.length>1\)/.test(fn),
     '多选时走「安静模式」，不逐个弹提示');
-  chk(/已导入 \$\{done\} 个文件夹/.test(fn), '多选时给一条汇总提示');
+  chk(/Imported \$\{done\} folders/.test(fn), '多选时给一条汇总提示');
 
   // 地图跟随：用户手动动过地图后要宽限 5 秒，不能立刻把视野抢回去
   chk(/const FOLLOW_USER_GRACE=5000;/.test(body), '定义「用户操作后宽限 5 秒」常量');
@@ -844,16 +864,16 @@ console.log('\n=== 追加数据要先扫描再提交 ===');
     '滚轮 / 双击 / Shift 框选都算缩放');
   chk(/closest\('\.leaflet-control-zoom'\)/.test(body), '点 +/− 缩放控件算缩放');
   chk(/function switchFollowToCenter\(\)/.test(body) && /followModeSelect\.value='center'/.test(body),
-    '手动缩放后跟随切到「跟随·居中」');
+    '手动缩放后跟随切到「Follow ·居中」');
   chk(/followModeSelect\.value!=='fit'\)return;/.test(body),
     '只在 fit 模式自动切换，不覆盖用户明确选的「不跟随」');
   chk(/if\(isZoomGesture\(ev\)\)switchFollowToCenter\(\);/.test(body), '记用户操作时顺手切模式');
   chk(/map\.on\('boxzoomstart',mark\)/.test(body), 'Shift 框选缩放也计入用户操作');
 
   // 2 倍速按钮：放在「小地图」右边（按钮在 HTML 段里，不是 script 段 —— 用 html）
-  chk(/id="mapPipToggle"[^>]*>小地图<\/button>\s*<button id="speedToggle"/.test(html),
+  chk(/id="mapPipToggle"[^>]*>Mini map<\/button>\s*<button id="speedToggle"/.test(html),
     '「2倍速」按钮紧挨在「小地图」右边');
-  chk(/id="speedToggle"[^>]*>2倍速<\/button>/.test(html), '按钮文案就是「2倍速」');
+  chk(/id="speedToggle"[^>]*>2× speed<\/button>/.test(html), '按钮文案就是「2倍速」');
   chk(/const FAST_PLAYBACK_RATE=2;/.test(body) && /const NORMAL_PLAYBACK_RATE=1;/.test(body),
     '1 倍 / 2 倍两个档位');
   chk(/speedToggle\.addEventListener\('click'/.test(body) && /fastSpeedOn=!fastSpeedOn/.test(body),
@@ -942,7 +962,7 @@ console.log('\n=== 画面右键取点 -> 地图标记 ===');
       '复用已有的 groundPointForImage（和视场框同一套数学）', flat.slice(-90));
   }
   chk(/const fov=fovOf\(focal\)/.test(body) && !/fovOf\(focal\/dzoom\)/.test(body),
-    '视场用「报告焦距」（含数码变焦），和视场框一致');
+    '视场用「报告焦距」（含digital zoom），和视场框一致');
   chk(/if\(!Number\.isFinite\(pitch\)\|\|pitch>=0\)return null;/.test(body),
     '平视/朝上时不算（射线打不到地面）');
   chk(/if\(!Number\.isFinite\(alt\)\|\|alt<=0\)return null;/.test(body), '高度无效时不算');
@@ -996,9 +1016,9 @@ console.log('\n=== 俯仰角用带符号的数字 ===');
   const fn = body.slice(start, start + 400);
   chk(/pitch<0\?'-':'\+'/.test(fn), '俯角显示负号、仰角显示 +（不再写「俯角/仰角」两个字）');
   chk(/Math\.abs\(pitch\)\.toFixed\(1\)/.test(fn), '数值取绝对值后再带符号（不会出现「--27.2°」）');
-  chk(/Math\.abs\(pitch\)<1/.test(fn) && /'水平'/.test(fn), '接近水平时仍显示「水平」');
+  chk(/Math\.abs\(pitch\)<1/.test(fn) && /'Level'/.test(fn), '接近水平时仍显示「水平」');
   chk(!/'俯角 '|'仰角 '/.test(body), '「俯角 xx°」「仰角 xx°」的旧写法已删除');
-  chk(/<b>俯仰角<\/b>/.test(body), '标题写全「俯仰角」');
+  chk(/<b>Pitch<\/b>/.test(body), '标题写全「俯仰角」');
 }
 
 console.log('\n=== 底图瓦片提示改成小字放地图下面 ===');
@@ -1039,7 +1059,7 @@ console.log('\n=== 顶栏删除、标签名更改 ===');
   chk(!/无人机巡查数据管理/.test(html.replace(/<!--[\s\S]*?-->/g, '')),
     '顶栏文字已删除（注释里的说明另计）');
   chk(!/\.header\{/.test(html.replace(/\/\*[\s\S]*?\*\//g, '')), '.header 样式也已删除');
-  chk(/<title>视频地图<\/title>/.test(html), '浏览器标签名改成「视频地图」');
+  chk(/<title>Fly Data Map<\/title>/.test(html), '浏览器标签名改成「视频地图」');
 
   // 顶栏原来是 76px，布局高度按它算过；删了顶栏必须改成整屏，否则底部空 76px
   const grid = (html.match(/\.layout\{([^}]*)\}/) || [])[1] || '';
@@ -1100,16 +1120,21 @@ console.log('\n=== 轨迹地图的缩放上限 ===');
   chk(/const TRACK_FIT_MAX_ZOOM=15;/.test(body), '有 TRACK_FIT_MAX_ZOOM 常量（自动缩放的上限）');
   chk(/const TRACK_FOCUS_ZOOM=16;/.test(body), '有 TRACK_FOCUS_ZOOM 常量（定位到点的级别）');
 
-  // 关键：fitBounds 不带 maxZoom 时，一小段轨迹会被放到很高一级，元素就出框了
+  // 关键：fitBounds 不带 maxZoom 时，一小段轨迹会被放到很高一级，元素就出框了。
+  // 2026-10-16：覆盖区那次**也补上了上限** —— 覆盖范围常常很小，不加的话会一直
+  // 放大到瓦片服务的最大级别，视野窄到看不出周边（这正是原先那条"唯一例外"
+  // 断言所指出的问题，补上之后例外就没有了）。所以现在要求**每一处都带**。
   const code = body.replace(/\/\/[^\n]*/g, '');
-  const fits = code.split('fitBounds(').slice(1);
-  let capped = 0;
-  for (const chunk of fits) {
-    if (/maxZoom\s*:\s*TRACK_FIT_MAX_ZOOM/.test(chunk.slice(0, 260))) capped++;
-  }
-  chk(capped === fits.length && fits.length >= 4,
-    '每一处 fitBounds 都带了 maxZoom 上限',
-    `${capped}/${fits.length} 处`);
+  const fits = [...code.matchAll(/fitBounds\(/g)];
+  const bad = fits.filter(m => {
+    const after = code.slice(m.index, m.index + 300);
+    return !/maxZoom\s*:\s*TRACK_FIT_MAX_ZOOM/.test(after);
+  });
+  chk(fits.length >= 4 && bad.length === 0,
+    '每一处 fitBounds 都带了 maxZoom 上限（不再有例外）',
+    `${fits.length - bad.length}/${fits.length} 处`);
+  chk(/map\.fitBounds\(b,\{padding:\[24,24\],maxZoom:TRACK_FIT_MAX_ZOOM\}\);/.test(body),
+    '覆盖区那次也带上了上限（它按覆盖范围定视野，范围小时尤其需要）');
   chk(!/maxZoom\s*:\s*17/.test(code), '不再有写死的 maxZoom:17');
   chk(/setView\(hitFocusLatLng,TRACK_FOCUS_ZOOM\)/.test(body),
     '「地图定位到该点」用 TRACK_FOCUS_ZOOM（原来是 17）');
@@ -1151,8 +1176,8 @@ chk(/id="videoSlot"/.test(html), '右栏有未播放时的占位说明');
   chk(/display:grid/.test(grid), '三栏用 grid 布局');
   chk(/grid-template-rows:minmax\(0,1fr\)/.test(grid),
     '显式栅格行高 1fr —— 三栏严格等高，底部才会对齐', grid.slice(0, 130));
-  chk(/380px minmax\(0,1fr\) minmax\(0,1\.12fr\)/.test(grid),
-    '列宽：左固定 380px，中/右按比例（地图略窄、视频略宽）', grid.slice(0, 90));
+  chk(/clamp\(300px,22vw,380px\)\) minmax\(0,1fr\) minmax\(0,1\.12fr\)/.test(grid),
+    '列宽：左栏自适应（300~380px，原来是写死 380px），中/右按比例（地图略窄、视频略宽）', grid.slice(0, 90));
   chk(/height:100vh/.test(html) || /height:100vh/.test(grid), '占满整个视口高度（顶栏已删除）');
   // 左栏现在是「项目页 / 标记点页」两页共用同一块地方，宽度不再变化
   chk(!/side-collapsed/.test(html), '左栏不再有「收起成 40px 窄轨」那套（改成标签开关切页）');
@@ -1167,24 +1192,32 @@ chk(/\.map-stack\{position:relative;flex:1;min-height:240px/.test(html),
 chk(/\.map-stack \.map-wrap\{flex:1;min-height:0;height:auto;margin-top:0\}/.test(html),
   '地图填满 .map-stack');
 
-console.log('\n=== 图例改成地图左下角的小浮层 ===');
+console.log('\n=== 图例改成地图角上的小浮层（已并入 .map-legend）===');
 {
-  chk(/<div class="map-stack">\s*\n\s*<div id="map"[^>]*><\/div>\s*\n\s*<div id="legend"/.test(html),
+  // 设计变更：航迹色卡 / 覆盖色带 / 该点结论三块图例合并成一个 .map-legend，
+  // 元素也从 #legend 改名为 #mapLegend，位置从「左下角」挪到「右下角」
+  // （左下角让给覆盖面板）。.map-stack 里现在还有悬浮的操作栏和覆盖面板，
+  // 所以不能再断言「图例紧跟在 #map 后面」，改成断言它确实在这个容器内。
+  const stackStart = html.indexOf('class="map-stack"');
+  const stackEnd = html.indexOf('id="tileHint"');
+  const legendIdx = html.indexOf('id="mapLegend"');
+  chk(stackStart > 0 && legendIdx > stackStart && legendIdx < stackEnd,
     '图例和地图包在同一个 .map-stack 里（这样才能绝对定位到地图上）');
-  const lg = (html.match(/\.legend\{[^}]*\}/) || [''])[0];
+  const lg = (html.match(/\.map-legend\{[^}]*\}/) || [''])[0];
   chk(/position:absolute/.test(lg), '图例绝对定位（浮在地图上）');
-  chk(/left:10px/.test(lg) && /bottom:10px/.test(lg), '贴在地图左下角');
+  chk(/right:10px/.test(lg) && /bottom:10px/.test(lg), '贴在地图右下角（左下角留给了覆盖面板）');
   chk(/z-index:\d+/.test(lg), '有 z-index', (lg.match(/z-index:(\d+)/) || [])[1] || '');
   chk(Number((lg.match(/z-index:(\d+)/) || [0, 0])[1]) > 700,
     'z-index 高于 Leaflet 的 pane（popup 是 700）',
     (lg.match(/z-index:(\d+)/) || [])[1] || '');
-  chk(/font-size:9px/.test(lg), '字号 9px（14 -> 11 -> 9，用户要求再小 2 号）');
-  chk(/max-height:46%/.test(lg) && /overflow:auto/.test(lg), '内容多了可滚动，不会盖满地图');
-  chk(/\.legend:empty\{display:none\}/.test(html), '没有轨迹时整个框不显示');
-  chk(/\.legend-item\{[^}]*font-size:9px/.test(html), '每一项也是 9px（.legend-item 会覆盖容器的字号）');
-  chk(/\.line\{width:18px;height:3px/.test(html), '色条缩小（原来 30x4）');
+  chk(/font-size:11px/.test(lg), '字号 11px（14 -> 11 -> 9 -> 11，合并成一个框后调回来）');
+  chk(/max-height:52%/.test(lg) && /overflow:auto/.test(lg), '内容多了可滚动，不会盖满地图');
+  chk(/\.map-legend:empty\{display:none\}/.test(html), '没有轨迹时整个框不显示');
+  chk(/\.map-legend \.legend-item\{[^}]*font-size:10px/.test(html),
+    '每一项 10px（.legend-item 会覆盖容器的字号）');
+  chk(/\.map-legend \.line\{width:18px;height:3px/.test(html), '色条缩小（原来 30x4）');
   // 图例不再单独占一行，所以「地图 -> 图例」的 DOM 关系变了
-  chk(html.indexOf('id="legend"') < html.indexOf('id="hitDetail"'),
+  chk(legendIdx > 0 && legendIdx < html.indexOf('id="hitDetail"'),
     '图例仍在该点信息之前');
 }
 
@@ -1195,16 +1228,21 @@ console.log('\n=== 重要按钮合并成一条操作栏，其余挪到地图下�
   const detailIdx = html.indexOf('id="hitDetail"');
   const statsIdx = html.indexOf('id="stats"');
   const altIdx = html.indexOf('id="altVideos"');
-  const legendIdx = html.indexOf('id="legend"');
+  const legendIdx = html.indexOf('id="mapLegend"');
+  const stackEnd = html.indexOf('id="tileHint"');
 
-  chk(probeIdx > 0 && probeIdx < mapIdx, '操作栏在地图上面');
+  // 设计变更（用户 2026-10-13）：搜索框和几个主要按钮从「地图上方各占一块」
+  // 改成**地图内的悬浮覆盖层**（.action-bar，position:absolute），把高度还给地图。
+  chk(/\.action-bar\{position:absolute/.test(html), '操作栏是覆盖在地图上的浮层（不再占地图上方一行）');
+  chk(probeIdx > 0 && mapIdx > 0 && probeIdx > mapIdx && probeIdx < stackEnd,
+    '操作栏落在地图容器里面（#map 之后，.map-stack 之内）');
   chk(statsIdx > mapIdx && detailIdx > mapIdx && altIdx > mapIdx,
     '统计 / 其他视频 / 该点信息都在地图下面',
     `地图@${mapIdx} 统计@${statsIdx} 其他视频@${altIdx} 该点信息@${detailIdx}`);
   chk(detailIdx > legendIdx, '顺序：地图 -> 图例 -> 该点信息');
 
   // 4 个重要按钮在同一栏、同一行
-  const bar = html.slice(probeIdx, mapIdx);
+  const bar = html.slice(probeIdx, html.indexOf('id="coveragePanel"'));
   for (const id of ['searchNearbyBtn', 'clearProbeBtn', 'playHitBtn', 'resultFlyBtn']) {
     chk(new RegExp(`id="${id}"`).test(bar), `操作栏里有 #${id}`);
   }
@@ -1236,11 +1274,12 @@ console.log('\n=== 结果按钮改成常驻按钮（不再每次重建 DOM）===
   chk(/refreshMapSizeSoon\(\);/.test(fn), '渲染后让地图重算尺寸');
 }
 {
-  const init = body.slice(body.indexOf('clearProbeBtn.addEventListener'));
-  chk(/playHitBtn\.addEventListener\('click'/.test(init.slice(0, 400)),
-    '「播放此处视频」在初始化时挂一次监听');
-  chk(/resultFlyBtn\.addEventListener\('click'/.test(init.slice(0, 400)),
-    '「地图定位到该点」在初始化时挂一次监听');
+  // 这两个按钮的监听在初始化时各挂一次（renderNearbyResult 里不再挂）。
+  // 直接数次数最稳：中间隔着折叠卡那一段代码，按字符窗口截取容易被挤出去。
+  const nPlay = (body.match(/playHitBtn\.addEventListener\('click'/g) || []).length;
+  const nFly = (body.match(/resultFlyBtn\.addEventListener\('click'/g) || []).length;
+  chk(nPlay === 1, '「播放此处视频」在初始化时挂且只挂一次监听', nPlay + ' 处');
+  chk(nFly === 1, '「地图定位到该点」在初始化时挂且只挂一次监听', nFly + ' 处');
 }
 
 console.log('\n=== 地图下面的次要内容要缩小 ===');
@@ -1256,8 +1295,10 @@ console.log('\n=== 该点信息用哪种排布 ===');
   const chunk = body.slice(body.indexOf('hitDetail.innerHTML'), body.indexOf('hitDetail.innerHTML') + 1500);
   chk(/class="hit-chips"/.test(chunk), '用小标签排布（一行一个字段）');
   chk(!/class="result-grid"/.test(body), '旧的 7 行网格已移除');
-  // 距离字段标签固定为「水平距离」；命中画面时在数值后加「（画面中心）」区分语义
-  for (const k of ['水平距离', '命中方式', '画面位置', '视频类型', '轨迹段', '该点视频时间', '轨迹段结束', '该点相对高度', '视频文件']) {
+  // 距离字段标签固定为「地面距离」；命中画面时在数值后加「(frame center)」区分语义。
+  // 界面文案已统一成英文，九个字段一个都不能少。
+  for (const k of ['Ground distance', 'Match', 'In frame', 'Video type', 'Segments',
+                   'Video time', 'Segment end', 'Height above take-off', 'Video file']) {
     chk(new RegExp('<span class="k">' + k + '</span>').test(chunk), `字段「${k}」在地图下面`);
   }
   chk(/id="hitHeight"/.test(chunk), '异步补高度用的 #hitHeight 也一起搬了（否则补不上）');
@@ -1303,13 +1344,16 @@ console.log('\n=== 文件列表：只留必要信息 ===');
 
   chk(/esc\(shortFileName\(f\.relative_path\)\)/.test(fn),
     '文件名用简化后的形式显示（年月日 时间 · 编号 · 后缀）');
-  chk(!/file-meta/.test(fn) && !/数据文件夹：\$\{esc/.test(fn),
+  // 后半句原来盯的是那条中文小字（`数据文件夹：${esc(...)}`）—— 文案改成英文后
+  // 那个字符串不可能再出现，就退化成空断言了。改成盯真正的判据：
+  // 渲染模板里不再出现文件夹名（它只出现在悬停提示 item.title 里）。
+  chk(!/file-meta/.test(fn) && !/item\.innerHTML=`[^`]*folder_name/.test(fn),
     '不再渲染「数据文件夹 / 相对路径」那行（太长会把窄列撑出横向滚动条）');
-  chk(/item\.title=/.test(fn) && /相对路径：\$\{f\.relative_path\}/.test(fn),
+  chk(/item\.title=/.test(fn) && /Relative path: \$\{f\.relative_path\}/.test(fn),
     '完整路径挪到悬停提示里，信息没丢');
   chk(/class="file-badges"/.test(fn), '徽标放进独立容器，可整组换行');
   chk(/badge-type/.test(fn) && /formatSize\(f\.size\)/.test(fn)
-    && /记录 \$\{f\.record_count/.test(fn) && /轨迹段 \$\{f\.segment_count/.test(fn),
+    && /record_count\?\?'-'\} points/.test(fn) && /segment_count\?\?'-'\} segments/.test(fn),
     '保留：类型 / 大小 / 记录数 / 轨迹段');
 
   chk(/function parseDjiName\(/.test(body), 'function parseDjiName()（拆文件名，供显示和筛选共用）');
@@ -1358,24 +1402,24 @@ for (const f of ['fileMatchesFilter', 'filteredGeoFiles', 'buildFileFilters', 'u
   const start = body.indexOf('function renderFiles(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
   chk(/const entries=filteredGeoFiles\(\);/.test(fn), '列表按筛选结果渲染');
-  chk(/if\(!entries\.length\)\{/.test(fn) && /没有符合筛选条件的文件/.test(fn),
+  chk(/if\(!entries\.length\)\{/.test(fn) && /No files match the filter/.test(fn),
     '筛不出东西时给出提示，而不是空白');
   chk(/const f=geoFiles\[index\];/.test(fn), '仍然用 geoFiles 的下标取数据');
 }
 {
   const start = body.indexOf('function updateLoadAllLabel(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/加载筛选（\$\{n\}）/.test(fn), '有筛选时按钮写明加载几条');
-  chk(/'加载全部轨迹'/.test(fn), '没筛选时显示「加载全部轨迹」');
+  chk(/Load filtered \(\$\{n\}\)/.test(fn), '有筛选时按钮写明加载几条');
+  chk(/'Load all tracks'/.test(fn), '没筛选时显示「加载全部轨迹」');
 }
 // 按钮文字必须禁止换行，否则窄栏里会被挤成「重新扫/描」两行
 chk(/\.card-tools button\{[^}]*white-space:nowrap/.test(html),
   '卡片头部按钮禁止文字换行（原来会被挤成两行）');
 chk(/\.card-tools button\{[^}]*height:var\(--ctrl-h\);padding:0 10px;font-size:12px/.test(html),
   '卡片头部按钮收紧到 12px / --ctrl-h（全局 button 是 16px + 13px 22px）');
-chk(/<button id="refreshBtn" class="secondary">刷新<\/button>/.test(html),
+chk(/<button id="refreshBtn" class="secondary">Refresh<\/button>/.test(html),
   '「重新扫描」改叫「刷新」（更短，一行放得下）');
-chk(/<button id="loadAllBtn">加载全部轨迹<\/button>/.test(html),
+chk(/<button id="loadAllBtn">Load all tracks<\/button>/.test(html),
   '左栏那个按钮叫「加载全部轨迹」（和「加载全部照片」区分开）');
 {
   const start = body.indexOf('function ensureAllLoaded(');
@@ -1439,7 +1483,7 @@ chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
   const headStart = html.indexOf('id="sideToggle"');
   const head = html.slice(Math.max(0, headStart - 320), headStart + 260);
   chk(/class="card-head"/.test(head), '标签开关在 .card-head 标题行里');
-  chk(head.indexOf('<h2>项目数据</h2>') < head.indexOf('id="sideToggle"'),
+  chk(head.indexOf('<h2>Project</h2>') < head.indexOf('id="sideToggle"'),
     '标题在左、按钮在右');
   const st = (html.match(/\.side-toggle\{[^}]*\}/) || [''])[0];
   chk(!/position:absolute/.test(st), '不再是绝对定位（那会让它单独占一行）');
@@ -1497,7 +1541,7 @@ chk(/id="sideToggleBack"/.test(html), '标记点页里也有一个切回「项�
   const start = body.indexOf('function applyLeftView(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
   chk(/view-markers/.test(fn) && /view-project/.test(fn), '切换 view-markers / view-project 类');
-  chk(/markers\?'项目数据 ›':'‹ 标记点'/.test(fn),
+  chk(/markers\?'Project ›':'‹ Markers'/.test(fn),
     '按钮文案跟着当前页切换，且带方向箭头（用户要求「加上箭头标示方向」）');
   chk(/renderMarkerList\(\)/.test(fn), '切到标记点页时重排列表（栏宽变了）');
   chk(/map\.invalidateSize\(\)/.test(fn), '切换后让地图重算尺寸');
@@ -1554,22 +1598,22 @@ chk((html.match(/<div class="card-tools/g) || []).length === 3,
   String((html.match(/<div class="card-tools/g) || []).length) + ' 处');
 chk(/<div class="card-tools map-tools">/.test(html), '地图卡片的控件组额外带 map-tools');
 chk(/<div class="card-tools marker-tools">/.test(html), '标记点卡片的控件组额外带 marker-tools');
-chk(/<div class="card-head">\s*\n\s*<h2>轨迹地图<\/h2>/.test(html),
-  '「轨迹地图」在新结构里');
-chk(/<h2>轨迹文件<\/h2>/.test(html),
+chk(/<div class="card-head">\s*\n\s*<h2>Track map<\/h2>/.test(html),
+  '「轨迹地图」在新结构里（文案已改成英文）');
+chk(/<h2>Tracks<\/h2>/.test(html),
   '两张卡已合并，标题为「轨迹文件」');
 {
-  // 合并后行序：标题 -> 三个步骤 -> 筛选 -> 三个动作 -> 列表
-  const order = ['<h2>轨迹文件</h2>', 'id="detectBtn"', 'class="file-filter"',
+  // 合并后行序：标题 -> 建轨迹 -> 筛选 -> 三个动作 -> 列表
+  const order = ['<h2>Tracks</h2>', 'id="buildTracksBtn"', 'class="file-filter"',
                  'card-tools file-actions', 'id="fileList"'].map((s) => html.indexOf(s));
   chk(order.every((n) => n > 0) && order.every((v, i) => i === 0 || order[i - 1] < v),
-    '行序：标题 → 检测/生成 → 筛选 → 加载全部/刷新/清空 → 文件列表', order.join(','));
+    '行序：标题 → Build tracks → 筛选 → 加载全部/刷新/清空 → 文件列表', order.join(','));
 
   const acts = html.slice(html.indexOf('card-tools file-actions'), html.indexOf('id="fileNotice"'));
   const ids = ['loadAllBtn', 'refreshBtn', 'clearBtn'].map((id) => acts.indexOf('id="' + id + '"'));
-  chk(ids.every((n) => n > 0), '三个动作按钮在同一排');
-  chk(ids[0] < ids[1] && ids[1] < ids[2], '顺序：加载全部 → 刷新 → 清空');
-  chk(/<button id="clearBtn" class="secondary">清空<\/button>/.test(html), '「清除地图」改叫「清空」');
+  chk(ids.every((n) => n > 0), '「加载全部轨迹 / 刷新 / 清空」在同一排按钮里');
+  chk(ids[0] < ids[1] && ids[1] < ids[2], '顺序：加载全部轨迹 → 刷新 → 清空');
+  chk(/<button id="clearBtn" class="secondary">Clear<\/button>/.test(html), '「清除地图」改叫「清空」');
 }
 chk(!/class="row" style="justify-content:space-between"/.test(html),
   '嵌套 .row 的旧头部写法已全部移除');
@@ -1590,36 +1634,37 @@ chk(/\.map-tools button\.secondary\{height:var\(--ctrl-h\)/.test(html),
   '地图卡片头部按钮高度对齐下拉框的 36px');
 // 「清除地图」和「重新扫描 / 加载全部轨迹」是一类操作，挪到一起了
 {
-  const tools = html.slice(html.indexOf('card-tools file-actions'), html.indexOf('id="fileList"'));
-  const ids = ['loadAllBtn', 'refreshBtn', 'clearBtn'].map((id) => tools.indexOf('id="' + id + '"'));
-  chk(ids.every((n) => n > 0), '「加载全部轨迹 / 刷新 / 清空」在同一排按钮里');
-  chk(ids[0] < ids[1] && ids[1] < ids[2], '顺序：加载全部轨迹 → 刷新 → 清空');
-  // 整行头部：从标题切到搜索区结束，里面应当只有底图选择、没有「清除地图」
-  const mapHead = html.slice(html.indexOf('<h2>轨迹地图</h2>'),
+  // 「清除地图」和「重新扫描 / 加载全部轨迹」是一类操作，挪到一起了。
+  // （这里原本还对同一排按钮重复数了一遍 loadAll/refresh/clear，
+  //   与上面那个 acts 块逐字同义，已合并到上面。）
+  // 地图卡片头部：标题到 poiList 之间。
+  // 设计变更（用户 2026-10-13）：地名搜索框从标题行挪进地图里当悬浮控件，
+  // 标题行里只剩「底图 + 天地图 key」。下面原本还有一段重复判断同样的东西，
+  // 已合并到这里。
+  const mapHead = html.slice(html.indexOf('<h2>Track map</h2>'),
                              html.indexOf('id="poiList"'));
   chk(!/id="clearBtn"/.test(mapHead), '地图卡片头部里不再有「清除地图」');
   chk(/id="baseMap"/.test(mapHead), '地图卡片头部保留底图选择');
-  chk(/id="placeInput"/.test(mapHead), '地名搜索也在同一行（不再单独占一行）');
+  chk(!/id="placeInput"/.test(mapHead), '地名输入框不再占标题行（已挪进地图里当悬浮控件）');
+  // 搜索框必须落在 .map-stack 里，否则地图上方又会多出一行
+  const stackStart = html.indexOf('class="map-stack"');
+  const placeIdx = html.indexOf('id="placeInput"');
+  chk(placeIdx > stackStart && placeIdx < html.indexOf('id="tileHint"'),
+    '搜索框（#placeInput）确实在地图容器内');
 }
   // 注意别在末尾写 \} —— 这条规则后面还有 flex/min-width 才到右括号，
   // 要求「紧随右括号」会匹配不上（我上一版就栽在这儿）
   chk(/\.search-bar\{[^}]*margin:0/.test(html),
-    '搜索区不再是独立一行（并进标题行；间距交给行内 gap，不再自带左外边距）');
-chk(/\.search-bar\{[^}]*flex:1 1 auto/.test(html),
-  '搜索区占满标题与「底图」之间的剩余宽度（宽度自适应，不再固定收窄）');
+    '搜索区不再自带外边距（间距交给容器的 gap）');
+// （「搜索框 flex:1 1 auto」这条与前面「天地图 key 按钮」那一段逐字重复，
+//   已合并到那边 —— 搜索框现在住在地图内的悬浮卡里，两边说的是同一条规则）
 chk(/\.search-bar input\{[^}]*min-width:120px/.test(html), '输入框最小宽度 120px（给右侧的底图/key 按钮腾位置）');
 chk(/\.search-bar input\{[^}]*height:var\(--ctrl-h\)/.test(html),
   '输入框高度走 --ctrl-h（原来整行时是 50px）');
 chk(/\.search-bar button\{height:var\(--ctrl-h\)/.test(html),
   '「搜索地名」按钮与输入框等高（都走 --ctrl-h）');
-{
-  // 地名搜索必须真的在标题行里，否则地图上方又会多占一行
-  const head = html.slice(html.indexOf('<h2>轨迹地图</h2>'), html.indexOf('id="poiList"'));
-  chk(/id="placeInput"/.test(head), '地名输入框在轨迹地图的标题行内');
-  chk(/id="baseMap"/.test(head), '底图选择也在同一行');
-  const after = html.slice(html.indexOf('id="poiList"'), html.indexOf('id="probePanel"'));
-  chk(!/class="search-bar"/.test(after), '标题行下面不再有独立的搜索行');
-}
+// （原来这里还有一段「地名搜索必须真的在标题行里」的断言，和上面那个 mapHead
+//   块重复；标题行现在按要求不再放搜索框，判断已合并到上面那一处。）
 
 console.log('\n=== 2D / 3D GeoJSON 合并 ===');
 chk(/const SHOW_3D_FILES=false;/.test(body), 'SHOW_3D_FILES 开关存在且默认关闭');
@@ -1629,7 +1674,11 @@ chk(/geoFiles=pickOneGeoFilePerVideo\(d\.files\|\|\[\]\)/.test(body),
 {
   const start = body.indexOf('function pickOneGeoFilePerVideo(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/if\(SHOW_3D_FILES\)return list;/.test(fn), '开关打开时原样返回（可一键恢复）');
+  // 变量名从 list 改成了 tracks（先滤掉覆盖图层导出的矢量产物，再判 3D）
+  chk(/if\(SHOW_3D_FILES\)return tracks;/.test(fn), '开关打开时原样返回（可一键恢复）');
+  chk(/if\(SHOW_3D_FILES\)return tracks;/.test(fn)
+    && fn.indexOf('isCoverageExport') < fn.indexOf('if(SHOW_3D_FILES)'),
+    '开关之前先滤掉覆盖图层的导出产物（开关打开也不能漏进来）');
   chk(/plainKeys/.test(fn) && /return !plainKeys\.has/.test(fn),
     '有普通版时丢掉 3D 版');
   chk(/streamKeyOf\(f\.relative_path\)/.test(fn), '用 streamKeyOf 抹掉 .3d 后再配对');
@@ -1669,7 +1718,7 @@ chk(/GPS 高度是台阶状的/.test(body), '注释记录了残差来源（高�
 chk(!/等价替换/.test(body), '不再声称是「等价替换」——实测有残差');
 
 console.log('\n=== 轨迹气泡 ===');
-chk(/从点击位置播放/.test(body), '气泡里有播放按钮');
+chk(/Play from here/.test(body), '气泡里有播放按钮');
 {
   const start = body.indexOf('function openVideoFromPopup(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
@@ -1683,8 +1732,11 @@ chk((body.match(/openVideoFromPopup\(/g) || []).length >= 3,
 console.log('\n=== 报错可见性（跨域脚本脱敏）===');
 chk(/s\.crossOrigin='anonymous'/.test(html),
   'CDN 兜底脚本带 crossorigin —— 否则 Leaflet 内部报错只会显示「Script error.」');
-chk(/Script error/.test(body) && /跨域脚本内部抛出/.test(body),
-  '横幅对「Script error.」给出专门解释（否则提示等于没有信息量）');
+// 只认那句专门的判断分支（"Script error" 这几个字在别处的注释里也出现过，
+// 单看它等于没约束）+ 分支里那段解释文字。
+chk(/Script error\\\.\?\$\/i\.test\(String\(message\)\.trim\(\)\)/.test(body)
+  && /Thrown inside a cross-origin script/.test(body),
+  '横幅对「Script error.」给出专门解释（跨域脚本抹掉了详情，否则提示等于没有信息量）');
 chk(/function iconsUsable\(\)/.test(body), 'function iconsUsable()');
 {
   const start = body.indexOf('function iconsUsable(');
@@ -1810,9 +1862,9 @@ console.log('\n=== 按钮尺寸一致性 ===');
   }
   chk(/\.row>\.play-btn\{margin-top:0\}/.test(html), 'flex 行内的播放按钮不带额外上边距（不会错位）');
   // 操作条里这两个按钮必须同栏同一行、样式成对（一个主按钮、一个次要按钮）
-  chk(/<button id="playHitBtn" class="play-btn"[^>]*>▶ 播放此处视频<\/button>/.test(html),
+  chk(/<button id="playHitBtn" class="play-btn"[^>]*>▶ Play video here<\/button>/.test(html),
     '“播放此处视频”是常驻主按钮');
-  chk(/<button id="resultFlyBtn" class="secondary"[^>]*>地图定位到该点<\/button>/.test(html),
+  chk(/<button id="resultFlyBtn" class="secondary"[^>]*>Center map here<\/button>/.test(html),
     '“地图定位到该点”用 secondary 通用样式');
   {
     const rowStart = html.indexOf('class="row action-row"');
@@ -1855,7 +1907,7 @@ console.log('\n=== 标记点报告（Word）===');
     (html.match(/name="reportBasemap"/g) || []).length + ' 处');
   chk(/<input type="radio" name="reportBasemap" value="satellite" checked>/.test(html),
     '报告底图默认选卫星图（选项里也标了「推荐」）');
-  chk(/推荐 —— 影像底图更好认/.test(html),
+  chk(/Recommended — imagery is easier to recognise/.test(html),
     '推荐理由就写「影像底图更好认」（短句，一行放得下）');
   chk(!/<select id="reportBasemap"/.test(html), '不再用下拉框');
   chk(/const REPORT_DEFAULT_BASEMAP='satellite'/.test(body),
@@ -1863,14 +1915,14 @@ console.log('\n=== 标记点报告（Word）===');
   chk(/function reportBasemapKind\(\)/.test(body), 'function reportBasemapKind()');
   chk(/reportBasemapRadios\.find\(input=>input\.checked\)/.test(body),
     '取值从选中的那个单选框读');
-  chk(/地图截图用下面选的底图（\$\{basemapDisplayName\(reportBasemapKind\(\)\)\}）/.test(body),
+  chk(/Map images use the base map chosen below \(\$\{basemapDisplayName\(reportBasemapKind\(\)\)\}\)/.test(body),
     '弹窗说明里写明会用哪个底图');
   chk(/function refreshReportBaseHint\(\)/.test(body)
     && /reportBasemapRadios\.forEach\(input=>input\.addEventListener\('change'/.test(body),
     '改单选，那句说明立即跟着变');
   chk(!/currentBaseMapKind/.test(report),
     '报告流程里不再引用网页地图的底图（两套底图彻底解耦）');
-  chk(/return '未解析'/.test(body), '逆地理编码失败就标「未解析」（不编造位置）');
+  chk(/return 'unresolved'/.test(body), '逆地理编码失败就标「未解析」（不编造位置）');
   chk(/link\.download=result\.download_name/.test(report),
     '下载用服务端给的中文文件名（download 属性）');
   chk(/reportBusy/.test(report) && /finally\{/.test(report),
@@ -1916,7 +1968,7 @@ console.log('\n=== 点标记点跳转：只定位、不自动播放 ===');
     'startClip：不自动播放时停在那一帧就 return');
   chk(/JSON\.stringify\(payload\)\), false\)/.test(body),
     '点标记点跳转时明确传 false');
-  chk(/已定位到该时刻（未自动播放）/.test(body), '状态栏写明未自动播放');
+  chk(/Positioned at that moment \(not playing\)/.test(body), '状态栏写明未自动播放');
   chk(/openVideoFromPopup\('\$\{encoded\}'\)/.test(html),
     '轨迹气泡的「从点击位置播放」没被改动（那个仍然自动播）');
 }
@@ -1945,11 +1997,12 @@ console.log('\n=== 服务端返回网页时的报错要能看懂 ===');
 {
   chk(/const text=await r\.text\(\)/.test(body),
     'api() 先取文本再自己解析 JSON（不再直接 r.json()）');
-  chk(/服务端返回的不是数据，而是一个网页/.test(body),
+  chk(/The server returned a web page instead of data/.test(body),
     '不是 JSON 时给出人话解释（原来的 "Unexpected token \'<\'" 看不懂）');
   chk(/旧代码的服务/.test(body),
     '提示里点明「端口上还跑着旧代码服务」这个最常见原因');
-  chk(/return d;\n\}/.test(body) && /if\(d&&d\.error\)throw new Error\(d\.error\)/.test(body),
+  // CRLF 换行：行尾同样要用 \s*\n\s* 收，直接写 "\n}" 永远匹配不上
+  chk(/return d;\s*\n\s*\}/.test(body) && /if\(d&&d\.error\)throw new Error\(d\.error\)/.test(body),
     '正常 JSON 的路径不变：r.ok 且无 error 才返回，有 error 照旧抛');
 }
 

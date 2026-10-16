@@ -31,16 +31,52 @@ python packaging/fetch_deps.py
 ## 验一遍（改完必须做）
 
 ```bash
-node run_tests.js          # 15 套，任何一套失败就非零退出
+node run_tests.js --with-net     # 36 套，任何一套失败就非零退出
 ```
 
-**任何改动都要让它保持 15/15** —— 其中 `test_report.py` 那套里 3 条失败是
-测试数据依赖（见 `docs/待办与后续.md`），换了 `Data/` 之后数会变。
+**当前基线：36 套，35 通过。唯一失败的是 `test_report.py`** ——
+它拿真实视频抽帧做快照，属**测试数据依赖**（`ValueError: Frame extraction failed`），
+与代码质量无关，见 `docs/待办与后续.md`。
+
+> 历史提示：`check_page.js` 曾长期失败（最多 79 条断言），
+> 2026-10-16 已清理完毕（1005 条断言全过）。它失败的原因是**断言写的是已经不存在的旧 UI**
+> （例如"左栏有独立的检测按钮"，那些按钮早已合并成 `Build tracks`）。
+> **教训**：不要看到"既有失败"就跳过 —— 那 79 条一直在掩盖真实的界面回归。
+
+`test_coverage*.py`（视场覆盖栅格 / 矢量化 / 接口层）**依赖 numpy**。
+用系统 Python 跑时若没装 numpy，这三套会**明确打印 `[SKIP]` 并算通过**，不会误报失败。
+想真正跑到它们，用带 numpy 的解释器：
+
+```bash
+PYTHON=%USERPROFILE%\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe node run_tests.js
+```
+
+**接口层的 HTTP 实测**（会通过接口自建夹具项目、测完删掉）**不在默认套件里**，
+因为它需要开发服务在跑。要验的话单独跑：
+
+```bash
+python -B test_coverage_http.py      # 服务没在跑会明确 [SKIP]，不算失败
+```
 
 另外几件容易踩的：
 
 - 前端是**单文件** `Code/project_geojson_preview.html`，后端是 `Code/project_manager.py`；
   页面 HTML 是**后端启动时读进内存**的 —— 改完必须**重启开发服务**，否则浏览器看不到新界面。
+- **重启服务有个陷阱，踩过两次**：用 `Start-Process` 起服务时，
+  若**没先确认老进程真的退出了**，新进程会因 8000 端口被占而失败，
+  而**老进程继续服务** —— 于是你看到的、测到的全是**旧代码**的结果，
+  会得出完全错误的结论（我就因此一度以为"接口过滤失效""页面改动没生效"）。
+
+  **正确做法**（先杀干净 + `-PassThru` + 起来后验证新行为）：
+  ```powershell
+  Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Sleep 4
+  Start-Process -FilePath $py -ArgumentList '-B','project_manager.py' -PassThru `
+      -WindowStyle Hidden -RedirectStandardError '<仓库根>\_srv.err'
+  Start-Sleep 12
+  (Get-Process python).Count          # 必须是 1
+  ```
+  判据不是"我执行过重启"，而是**"我验过新行为出现了"**。
 - `node a.js b.js` 里第二个文件会被静默忽略（只跑第一个），别那样写。
 - `check_page.js` 里 `html` 是整页、`body` 只是 `<script>` 段：断言 HTML 元素要用 `html`。
 

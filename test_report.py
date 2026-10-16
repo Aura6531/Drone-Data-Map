@@ -485,7 +485,7 @@ else:
             },
             {
                 "name": '2 号 <桥下> & "涵洞"', "lat": 23.0346, "lng": 112.4671,
-                "place": "未解析",
+                "place": "unresolved",
                 "video": "DJI_20260924101516_0001_V.MP4", "time": 90,
                 "video_image": "不存在的图.jpg", "map_image": maps[-1].name,
                 "basemap_name": "街道图（天地图）", "zoom": 16,
@@ -516,18 +516,18 @@ else:
         f"{len(document.tables[0].columns)} 列 {len(document.tables[0].rows)} 行")
     chk(document.tables[0].rows[1].cells[4].text == "广东省肇庆市高要区南岸街道",
         "汇总表里带所在位置")
-    chk("缩放 16 级" in xml,
-        "图注里的「缩放 N 级」跟着传进来的级别走（这一份是 16 级）")
+    chk("zoom 16" in xml,
+        "图注里的「zoom N」跟着传进来的级别走（这一份是 16 级）")
 
     zoomed_payload = dict(payload)
     zoomed_payload["points"] = [dict(payload["points"][0], zoom=17)]
     zoomed = pm.build_docx_report(zoomed_payload)
     with zipfile.ZipFile(ROOT / "report_cache" / zoomed["file"]) as package:
         zoomed_xml = package.read("word/document.xml").decode("utf-8")
-    chk("缩放 17 级" in zoomed_xml and "缩放 16 级" not in zoomed_xml,
+    chk("zoom 17" in zoomed_xml and "zoom 16" not in zoomed_xml,
         "换个级别，图注跟着变（不是写死的）")
-    chk(document.tables[0].rows[2].cells[4].text == "未解析",
-        "解析不到就写「未解析」，不编造")
+    chk(document.tables[0].rows[2].cells[4].text == "unresolved",
+        "解析不到就写「unresolved」，不编造")
     chk(document.tables[0].rows[1].cells[6].text == "00:10:08",
         "视频时间格式化成 时:分:秒", document.tables[0].rows[1].cells[6].text)
 
@@ -640,16 +640,16 @@ else:
         pm.format_latitude(-12.3456789))
     chk(pm.format_longitude(-70.5) == "-70.500000", "西经是负数", pm.format_longitude(-70.5))
 
-    chk(document.tables[1].rows[1].cells[0].text == "纬度（°N）",
+    chk(document.tables[1].rows[1].cells[0].text == "Latitude (°N)",
         "字段表把半球写在表头里", document.tables[1].rows[1].cells[0].text)
-    chk(document.tables[1].rows[2].cells[0].text == "经度（°E）",
+    chk(document.tables[1].rows[2].cells[0].text == "Longitude (°E)",
         "经度表头同样", document.tables[1].rows[2].cells[0].text)
     chk(" N" not in document.tables[1].rows[1].cells[1].text
         and " E" not in document.tables[1].rows[2].cells[1].text,
         "数字里不再带 N/E（复制时最碍事）",
         document.tables[1].rows[1].cells[1].text + " / " + document.tables[1].rows[2].cells[1].text)
-    chk(document.tables[0].rows[0].cells[2].text == "纬度（°N）"
-        and document.tables[0].rows[0].cells[3].text == "经度（°E）",
+    chk(document.tables[0].rows[0].cells[2].text == "Lat (°N)"
+        and document.tables[0].rows[0].cells[3].text == "Lng (°E)",
         "汇总表表头也写明半球",
         document.tables[0].rows[0].cells[2].text + " / " + document.tables[0].rows[0].cells[3].text)
 

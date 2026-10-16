@@ -255,17 +255,19 @@ def ground_target(meta, ground_elevation=None, prefer_lrf=True):
 
     target_lat, target_lon = destination(lat, lon, float(yaw), distance)
 
-    # 数据质量标签（用户要求：退回平地假设的，必须明确标成「位置不准」）
+    # 数据质量标签。前端按 === 'measured' 判定，所以这里必须用英文标识符
+    # （历史坑：前端已改成 'measured'，后端还在发「实测」，导致每一组都被
+    #   当成「位置不准」并显示中文原值）。
     if method == "flat-ground":
-        accuracy = "位置不准"
+        accuracy = "inaccurate"
         accuracy_note = (
-            "激光测距失败（LRFStatus=" + (lrf_status or "空") + "）"
+            "Laser rangefinder failed (LRFStatus=" + (lrf_status or "none") + ")"
             if lrf_status and lrf_status != "Normal"
-            else "该张没有激光数据"
-        ) + "，中心点按平地假设估算"
+            else "No laser data for this photo"
+        ) + "; ground position estimated on a flat-earth assumption"
     else:
-        accuracy = "实测"
-        accuracy_note = "中心点由激光测距结果解算"
+        accuracy = "measured"
+        accuracy_note = "Ground position derived from the laser rangefinder"
 
     return {
         "lat": target_lat,
