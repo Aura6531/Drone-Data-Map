@@ -6672,6 +6672,102 @@ class ProjectManagerHandler(
 
             return
 
+        # ---------------- 照片缩略图 ----------------
+        #
+        # 为什么必须有：`/photo` 返回的是**原图字节**。普通照片 3~4 MB 还能忍，
+        # 但全景照片是 14400×7200、单张 **34 MB**（实测那批 150 张共 4.85 GB）——
+        # 照片卡片里放一张"缩略图"就要下 34 MB，等于把整批数据拉一遍。
+        #
+        # 这里按宽度降采样并**落盘缓存**，第一次 0.1~0.4 s，之后就是读文件。
+        # JPEG 解码用 PIL 的 draft()：它能让 libjpeg 直接按 1/2、1/4、1/8 解码，
+        # 对 14400×7200 这种大图比"解码整幅再缩"快一个数量级。
+        if path == "/photo/thumb":
+
+            try:
+                q = parse_qs(parsed.query)
+                raw = (q.get("path") or [""])[0]
+                if not raw:
+                    raise ValueError("缺少 path。")
+                try:
+                    want = int((q.get("w") or ["640"])[0])
+                except (TypeError, ValueError):
+                    want = 640
+                want = max(64, min(1600, want))
+
+                candidate = Path(raw).resolve()
+                if candidate.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                    raise ValueError("只支持 jpg/png。")
+
+                # 与 /photo 同一套"必须落在某个项目文件夹内"的校验，
+                # 否则这里就成了任意文件读取的口子。
+                allowed = False
+                for project_file in PROJECT_DIR.glob("*/project.json"):
+                    try:
+                        data = json.loads(project_file.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        continue
+                    for item in data.get("folders") or []:
+                        folder = item.get("path")
+                        if not folder:
+                            continue
+                        try:
+                            candidate.relative_to(Path(folder).resolve())
+                            allowed = True
+                            break
+                        except ValueError:
+                            pass
+                    if allowed:
+                        break
+                if not allowed:
+                    raise ValueError("这个路径不在任何项目文件夹里。")
+
+                import hashlib
+                from PIL import Image
+
+                stat = candidate.stat()
+                key = hashlib.sha1(
+                    ("%s|%d|%d|%d" % (candidate, stat.st_size, int(stat.st_mtime), want)).encode("utf-8")
+                ).hexdigest()[:20]
+                cache_dir = PROJECT_DIR / "_thumbs"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                cached = cache_dir / ("%s_%d.jpg" % (key, want))
+
+                if not cached.is_file():
+                    Image.MAX_IMAGE_PIXELS = None
+                    with Image.open(candidate) as im:
+                        # draft() 让 libjpeg 直接低分辨率解码（大图的关键优化）
+                        try:
+                            im.draft("RGB", (want, max(1, want // 2)))
+                        except Exception:
+                            pass
+                        im = im.convert("RGB")
+                        # 只缩不放：本来就比 want 窄的图保持原尺寸
+                        if im.width > want:
+                            ratio = want / float(im.width)
+                            im = im.resize((want, max(1, int(round(im.height * ratio)))),
+                                           Image.LANCZOS)
+                        tmp = cached.with_suffix(".jpg.tmp")
+                        im.save(tmp, format="JPEG", quality=82, optimize=True)
+                        tmp.replace(cached)
+
+                payload = cached.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Cache-Control", "private, max-age=86400")
+                self.end_headers()
+                self._write_body(payload)
+
+            except Exception as e:
+                message = str(e).encode("utf-8")
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(message)))
+                self.end_headers()
+                self._write_body(message)
+
+            return
+
         if path == "/photo":
 
             try:

@@ -368,7 +368,11 @@ console.log('\n=== 5) 展示区：变焦大图优先、其余小图并排 ===');
     String((g.match(/photo-shot photo-thumb/g) || []).length) + ' 张');
   chk(g.indexOf('0004_V.JPG') > g.indexOf('0004_S.JPG'), '小图排在大图之后');
   chk(g.indexOf('0004_V.JPG') < g.indexOf('0004_T.JPG'), '小图内部保持后端给的顺序（广角在热成像前）');
-  chk((g.match(/\/photo\?path=/g) || []).length === 3, '三张都走后端 /photo 接口');
+  // 2026-10-19：改走 /photo/thumb（按宽度降采样 + 后端缓存）。
+  // 直接拉 /photo 原图时，全景照片一张 34 MB，"缩略图"就下 34 MB。
+  chk((g.match(/\/photo\/thumb\?w=\d+(?:&amp;|&)path=/g) || []).length === 3,
+    '三张都走后端 /photo/thumb（缩略图）接口');
+  chk(!/\/photo\?path=/.test(g), '不再直接拉 /photo 原图');
   chk(g.includes('%5C'), '绝对路径里的反斜杠被编码（否则后端解析不出 path）');
   chk(g.includes('data-photo-name='), '小图带文件名，点它才知道要按哪张的时刻跳');
   chk(/alt="[^"]*Photo"/.test(g), '每张都有 alt（图片取不到时不至于一片空白）');

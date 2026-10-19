@@ -4873,8 +4873,17 @@ function hexToRgba(hex,alpha){
 
 // 一张照片的图片地址。path 必须用后端允许的绝对路径（/photo 会校验
 // 它是否落在某个项目文件夹里，越界一律挡掉）。
-function photoThumbUrl(folder,name){
-  return '/photo?path='+encodeURIComponent(String(folder||'')+'\\'+String(name||''));
+// 照片图 URL。
+//
+// **不要直接指向 /photo** —— 那个接口返回原图字节。普通照片 3~4 MB 还凑合，
+// 但全景照片是 14400×7200、**单张 34 MB**（实测一批 150 张共 4.85 GB）：
+// 照片卡片里放一张"缩略图"就要下 34 MB。
+// 所以统一走 /photo/thumb（后端按宽度降采样 + 落盘缓存）。
+//
+// w 不给就用默认：卡片大图 720，小图 240。
+function photoThumbUrl(folder,name,w){
+  const p=String(folder||'')+'\\'+String(name||'');
+  return '/photo/thumb?w='+Number(w||240)+'&path='+encodeURIComponent(p);
 }
 
 // 某条航迹 / 组文件夹的「视频流前缀」：去掉 .JPG 和最后那段 _T / _V / _S，
@@ -5569,7 +5578,7 @@ function photoGalleryHtml(group){
     (lead.panorama ? ` data-pano="1"` : '') +
     (lead.panorama ? ` title="Click to look around in this 360 photo"`
                    : ` title="Open the video at this photo\'s time"`) + `>`
-    +`<img src="${esc(photoThumbUrl(lead.folder,lead.name))}" alt="${esc(photoCameraLabel(lead.camera))}Photo">`
+    +`<img src="${esc(photoThumbUrl(lead.folder,lead.name,720))}" alt="${esc(photoCameraLabel(lead.camera))}Photo">`
     +(lead.panorama ? `<span class="pano-badge">360</span>` : '')
     +leadCaption
     +`</figure>`;
@@ -5581,7 +5590,7 @@ function photoGalleryHtml(group){
       +(m.panorama ? ` data-pano="1"` : '')
       +(m.panorama ? ` title="Click to look around in this 360 photo"`
                    : ` title="Open the video at this photo\'s time"`) + `>`
-      +`<img src="${esc(photoThumbUrl(m.folder,m.name))}" alt="${esc(photoCameraLabel(m.camera))}Photo">`
+      +`<img src="${esc(photoThumbUrl(m.folder,m.name,240))}" alt="${esc(photoCameraLabel(m.camera))}Photo">`
       +(m.panorama ? `<span class="pano-badge">360</span>` : '')
       +`<figcaption class="photo-cap">`
       +`<span class="${photoCameraClass(m.camera)}">${esc(photoCameraLabel(m.camera))}</span>`

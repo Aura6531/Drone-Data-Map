@@ -588,7 +588,10 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     chk(/DJI_20260924095348_0002_V\.JPG/.test(html2), '展示区里放出了该组的可见光那张');
     chk(/DJI_20260924095348_0002_T\.JPG/.test(html2), '同组的红外那张也一起放出来了');
     chk(/photo-lead/.test(html2), '两张按「大图 + 小图」排版');
-    chk(/\/photo\?path=/.test(html2), '图片走后端 /photo 接口');
+    // 2026-10-19：图片改走 /photo/thumb（按宽度降采样 + 后端缓存），
+    // 不再直接拉 /photo 的原图 —— 全景照片单张 34 MB，一张"缩略图"就下 34 MB。
+    chk(/\/photo\/thumb\?w=\d+(?:&amp;|&)path=/.test(html2), '图片走后端 /photo/thumb（缩略图）接口');
+    chk(!/\/photo\?path=/.test(html2), '不再直接拉 /photo 原图（全景照片一张 34 MB）');
     chk(/Looking for the matching video/.test(String(sb.els.get('photoJump').innerHTML)),
       '展示区里那块「跳视频」先给出「正在查找」而不是空白');
 
