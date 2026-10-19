@@ -72,6 +72,9 @@ const el = {
 };
 
 const code = `
+// 页面里的 t() 是 i18n 查表（英文原串当键，查不到原样返回）。这里用恒等桩：
+// 单测只验"文案是哪个键"，不验译文（译文由 test_i18n.py / 语言切换实测管）。
+const t=k=>k;
 ${extractFn('formatTime')}
 ${extractFn('nextMarkerName')}
 ${extractFn('markerListLayout')}

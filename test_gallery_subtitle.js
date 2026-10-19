@@ -18,8 +18,10 @@ const chk = (c, label, extra = '') => {
   console.log(`  ${c ? '[OK]' : '[FAIL]'} ${label}${extra ? ' -> ' + extra : ''}`);
 };
 
-// 取出 frameGalleryRender 里组装标题/副标题的那一段
-const iHead = html.indexOf('const headHtml=\'<div class="fg-head">');
+// 取出 frameGalleryRender 里组装标题/副标题的那一段。
+// 注意 headHtml 现在是 `'<div class="fg-head"><h4>'+t('Frames of this spot')…`，
+// 所以只锚在字符串字面量本身，不要再锚 `=`（i18n 那轮把它从 '=' 改成了 '+'）。
+const iHead = html.indexOf("const headHtml='<div class=\"fg-head\"><h4>'+");
 const iEnd = html.indexOf('frameGalleryAppend();', iHead);
 const seg = iHead >= 0 && iEnd > iHead ? html.slice(iHead, iEnd) : '';
 
@@ -35,11 +37,13 @@ chk(iHead > 0, '找到 headHtml 的组装处');
   chk(!/\/\/\s|\/\*/.test(value),
     'headHtml 的值里没有混进注释文字', value.slice(0, 60).replace(/\s+/g, ' '));
 }
-chk(/across <b>\$\{sorties\}<\/b> flight\(s\)/i.test(seg),
+// 文案改成 t('英文原串') 之后，断言跟到同样的形状上 ——
+// 不然这些会因为"字符串被 t() 包起来"而误报（实际逻辑一个字没改）。
+chk(/across'\)\} <b>\$\{sorties\}<\/b> \$\{t\('flight\(s\)'\)\}/i.test(seg),
   '副标题里报了跨架次数 sorties');
-chk(/\$\{shownPasses\}<\/b> frame\(s\)/.test(seg),
+chk(/<b>\$\{shownPasses\}<\/b> \$\{t\('frame\(s\)'\)\}/.test(seg),
   '副标题里报了这次列了几张 frame(s)');
-chk(/\$\{esc\(modeLabel\)\}/.test(seg),
+chk(/\$\{esc\(t\(modeLabel\)\)\}/.test(seg),
   '副标题开头是当前检索档位名（Different angles / Every pass / Clearest only）');
 
 console.log('\n=== 2) 注释写在赋值之前，不在字符串里 ===');
@@ -100,7 +104,7 @@ console.log('\n=== 4) 每张卡 = 一个**独立趟次**（不是一个架次一
   const i = html.indexOf('const shownPasses=hits.length;');
   // 切片要够长：中间插了下拉框的代码（档位 + 边距），1200 会截不到副标题模板。
   // 改成取到"写回 box.innerHTML"那一段为止，跟着代码走而不是写死长度。
-  const iEnd = html.indexOf('box.innerHTML=headHtml', i);
+  const iEnd = html.indexOf("box.innerHTML=headHtml", i);
   const seg = i < 0 ? '' : html.slice(i, iEnd > i ? iEnd : i + 3000);
   chk(i > 0, '副标题里有趟数逻辑');
   // 副标题要说明排序依据。用户 2026-10-13 改成了「居中 > 变焦覆盖 > 其余」，
@@ -112,14 +116,14 @@ console.log('\n=== 4) 每张卡 = 一个**独立趟次**（不是一个架次一
   chk(/\$\{recNote\}|\$\{shownPasses\}/.test(seg),
     '副标题里带上了推荐条数与张数');
   chk(/passes_total/.test(seg), '用了后端给的 passes_total');
-  chk(/Showing \$\{shownPasses\} of \$\{allPasses\}/.test(seg),
+  chk(/\$\{t\('Showing'\)\} \$\{shownPasses\} \$\{t\('of'\)\} \$\{allPasses\} \$\{t\('pass\(es\) found\.'\)\}/.test(seg),
     '被 limit 截断时会说明"只显示 N / 共 M 趟"');
-  chk(/\$\{esc\(modeLabel\)\}/.test(seg), '副标题写明了当前档位名');
+  chk(/\$\{esc\(t\(modeLabel\)\)\}/.test(seg), '副标题写明了当前档位名');
   // 边距限制也要在副标题里回显（否则看不出当前用的是哪一档）
-  chk(/\$\{esc\(insetLabel\)\}/.test(seg), '副标题写明了当前边距档位名');
+  chk(/\$\{esc\(t\(insetLabel\)\)\}/.test(seg), '副标题写明了当前边距档位名');
 
   // 卡片上要显示"本趟时长"，好区分"专程拍"和"路过扫到"
-  chk(/this pass \$\{Number\(h\.pass_seconds\)/.test(html),
+  chk(/\$\{t\('this pass'\)\} \$\{Number\(h\.pass_seconds\)/.test(html),
     '卡片显示本趟时长（区分专程拍 / 路过扫到）');
 }
 

@@ -432,6 +432,48 @@ def get_project_directories():
 # 读取项目
 # ============================================================
 
+def queue_pano_precache(project_name, tier="full", force=False, scan_root=None):
+    """把一个项目里所有 `.OSV` 排进转码队列。返回 (queued_list, already_done_count)。
+
+    为什么要抽成函数：**导入数据时和手动调用时都要用**。
+    用户说「不怕预加载和导入的过程中生成文件」—— 导入后自动转一次，
+    之后点开任何 360 素材都是秒开（否则第一次点要等几分钟）。
+
+    `scan_root` 只扫这个目录（导入时只关心**刚加进来的那个文件夹**，
+    不必把项目里其它文件夹重扫一遍）。
+    """
+    import pano360_transcode
+    if tier not in pano360_transcode.QUALITY_TIERS:
+        raise ValueError("Unknown tier: %s" % tier)
+
+    if scan_root is not None:
+        folders = [Path(scan_root).expanduser()]
+    else:
+        project = load_project(project_name)
+        folders = [Path(item.get("path")).expanduser()
+                   for item in (project.get("folders") or []) if item.get("path")]
+
+    queued, already, seen = [], 0, set()
+    for f in folders:
+        if not f.is_dir():
+            continue
+        for src in sorted(list(f.rglob("*.OSV")) + list(f.rglob("*.osv"))):
+            key = str(src.resolve()).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out = src.parent / "pano_cache" / ("%s_%s.mp4" % (src.stem, tier))
+            if pano360_transcode.is_valid_output(out) and not force:
+                already += 1
+                continue
+            queued.append({
+                "job": pano360_transcode.submit(
+                    src, out, tier=tier, force=force, label=src.name),
+                "video": src.name,
+            })
+    return queued, already
+
+
 def _resolve_project_media(project_name, relative_path, want_suffix=None):
     """把项目内的相对路径解析成真实文件，并**确保它确实在项目文件夹里**。
 
@@ -6972,28 +7014,7 @@ class ProjectManagerHandler(
                 if tier not in pano360_transcode.QUALITY_TIERS:
                     raise ValueError("Unknown tier: %s" % tier)
 
-                project = load_project(name)
-                folders = [Path(item.get("path")).expanduser()
-                           for item in (project.get("folders") or []) if item.get("path")]
-                queued, already = [], 0
-                seen = set()
-                for f in folders:
-                    if not f.is_dir():
-                        continue
-                    for src in sorted(list(f.rglob("*.OSV")) + list(f.rglob("*.osv"))):
-                        key = str(src.resolve()).lower()
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        out = src.parent / "pano_cache" / ("%s_%s.mp4" % (src.stem, tier))
-                        if pano360_transcode.is_valid_output(out) and not force:
-                            already += 1
-                            continue
-                        queued.append({
-                            "job": pano360_transcode.submit(
-                                src, out, tier=tier, force=force, label=src.name),
-                            "video": src.name,
-                        })
+                queued, already = queue_pano_precache(name, tier=tier, force=force)
                 json_response(self, {
                     "success": True, "queued": len(queued), "already_done": already,
                     "jobs": queued, "tier": tier,
@@ -8570,6 +8591,24 @@ class ProjectManagerHandler(
                 project
             )
 
+            # 导入后**顺手把 360 素材排进转码队列**。
+            #
+            # 为什么放在导入时：转码是分钟级（79 秒素材约 7 分钟）。
+            # 如果等用户点开才转，第一次点要干等好几分钟；
+            # 用户说过「不怕预加载和导入的过程中生成文件」，
+            # 所以就在导入时后台转，之后点开即秒开。
+            #
+            # 只扫**刚加进来的这个文件夹**（`scan_root`），不必重扫整个项目。
+            # 失败不能影响导入本身 —— 导入成功是主结果，预转只是附带。
+            precache = {"queued": 0, "already_done": 0, "error": None}
+            try:
+                queued, already = queue_pano_precache(
+                    project_name, scan_root=folder_path)
+                precache = {"queued": len(queued), "already_done": already,
+                            "error": None}
+            except Exception as e:
+                precache["error"] = "%s: %s" % (type(e).__name__, e)
+
             json_response(
                 self,
                 {
@@ -8577,7 +8616,11 @@ class ProjectManagerHandler(
                         True,
 
                     "project":
-                        project
+                        project,
+
+                    # 让前端能提示"后台正在转 N 个 360 素材"
+                    "pano_precache":
+                        precache,
                 }
             )
 

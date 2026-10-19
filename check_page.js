@@ -1016,9 +1016,9 @@ console.log('\n=== 俯仰角用带符号的数字 ===');
   const fn = body.slice(start, start + 400);
   chk(/pitch<0\?'-':'\+'/.test(fn), '俯角显示负号、仰角显示 +（不再写「俯角/仰角」两个字）');
   chk(/Math\.abs\(pitch\)\.toFixed\(1\)/.test(fn), '数值取绝对值后再带符号（不会出现「--27.2°」）');
-  chk(/Math\.abs\(pitch\)<1/.test(fn) && /'Level'/.test(fn), '接近水平时仍显示「水平」');
+  chk(/Math\.abs\(pitch\)<1/.test(fn) && /t\('Level'\)/.test(fn), '接近水平时仍显示「水平」');
   chk(!/'俯角 '|'仰角 '/.test(body), '「俯角 xx°」「仰角 xx°」的旧写法已删除');
-  chk(/<b>Pitch<\/b>/.test(body), '标题写全「俯仰角」');
+  chk(/<b>\$\{t\('Pitch'\)\}<\/b>/.test(body), '标题写全「俯仰角」（文案走 t()）');
 }
 
 console.log('\n=== 底图瓦片提示改成小字放地图下面 ===');
@@ -1349,12 +1349,13 @@ console.log('\n=== 文件列表：只留必要信息 ===');
   // 渲染模板里不再出现文件夹名（它只出现在悬停提示 item.title 里）。
   chk(!/file-meta/.test(fn) && !/item\.innerHTML=`[^`]*folder_name/.test(fn),
     '不再渲染「数据文件夹 / 相对路径」那行（太长会把窄列撑出横向滚动条）');
-  chk(/item\.title=/.test(fn) && /Relative path: \$\{f\.relative_path\}/.test(fn),
+  chk(/item\.title=/.test(fn) && /t\('Relative path:'\)\} \$\{f\.relative_path\}/.test(fn),
     '完整路径挪到悬停提示里，信息没丢');
   chk(/class="file-badges"/.test(fn), '徽标放进独立容器，可整组换行');
   chk(/badge-type/.test(fn) && /formatSize\(f\.size\)/.test(fn)
-    && /record_count\?\?'-'\} points/.test(fn) && /segment_count\?\?'-'\} segments/.test(fn),
-    '保留：类型 / 大小 / 记录数 / 轨迹段');
+    && /record_count\?\?'-'\} \$\{t\('points'\)\}/.test(fn)
+    && /segment_count\?\?'-'\} \$\{t\('segments'\)\}/.test(fn),
+    '保留：类型 / 大小 / 记录数 / 轨迹段（计数单位走 t()，中英各一份）');
 
   chk(/function parseDjiName\(/.test(body), 'function parseDjiName()（拆文件名，供显示和筛选共用）');
   chk(/function shortFileName\(/.test(body), 'function shortFileName()');
@@ -1409,8 +1410,9 @@ for (const f of ['fileMatchesFilter', 'filteredGeoFiles', 'buildFileFilters', 'u
 {
   const start = body.indexOf('function updateLoadAllLabel(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/Load filtered \(\$\{n\}\)/.test(fn), '有筛选时按钮写明加载几条');
-  chk(/'Load all tracks'/.test(fn), '没筛选时显示「加载全部轨迹」');
+  chk(/Load filtered/.test(fn) && /t\('Load filtered'\)/.test(fn),
+    '有筛选时按钮写明加载几条（文案走 t()）');
+  chk(/t\('Load all tracks'\)/.test(fn), '没筛选时显示「加载全部轨迹」（文案走 t()）');
 }
 // 按钮文字必须禁止换行，否则窄栏里会被挤成「重新扫/描」两行
 chk(/\.card-tools button\{[^}]*white-space:nowrap/.test(html),

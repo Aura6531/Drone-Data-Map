@@ -273,7 +273,10 @@ function run() {
   const ret = '\n;return {' +
     'searchFramesOfSpot, frameGalleryDebug, coverageDebugState, jumpToFrameHitAt,' +
     'frameGalleryClear, frameGalleryHitsRaw, videoContextDebug, frameThumbUrl,' +
-    'setProbe, map, projectSelect' +
+    'setProbe, map, projectSelect,' +
+    // 逐点帧号那一节：loadedTracks 用来登记一条带 point_frames 的合并航迹，
+    // attachPointFrames / frameLineOf 是被测的消费方本身。
+    'loadedTracks, attachPointFrames, frameLineOf' +
     '};';
   let threw = null, api = null;
   try {
@@ -608,6 +611,110 @@ chk(d2.hits === 0, '没有命中');
 const sub2 = String(d2.sub).replace(/\s+/g, '');
 chk(/Noframeinthisproject/.test(sub2), '明确说没有覆盖', sub2.slice(0, 50));
 chk(/Build/.test(d2.sub), '提示要去 Build 建网格');
+
+console.log('\n=== 14) 逐点帧号：命中挂帧号 / 卡片列出三路 / 跳转按帧号定位 ===');
+{
+  // 数据形状照抄合并航迹的 properties（point_times + point_frames{路->逐点数组}）。
+  // 帧号是**推不出来**的（三路帧率不同还各有丢帧），所以只能查表。
+  const TRACK = {
+    coords: [[114.10, 23.04, 30], [114.11, 23.05, 30], [114.12, 23.06, 30]],
+    times: [0, 30, 60],
+    heights: [30, 30, 30],
+    fileInfo: { relative_path: 'DJI_Z_0001.geojson', folder_index: 0 },
+    feature: null, layer: null, color: '#000', name: 'DJI_Z_0001.geojson',
+    video: 'DJI_Z_0001_V.MP4',
+    videos: { S: 'DJI_Z_0001_S.MP4', T: 'DJI_Z_0001_T.MP4', V: 'DJI_Z_0001_V.MP4' },
+    streams: ['S', 'T', 'V'],
+    // 同一时刻三路帧号：V 18297 / S 18282 / T 18433（实测差 181 帧）
+    pointFrames: { V: [0, 10, 18297], S: [0, 9, 18282], T: [0, 12, 18433] },
+    referenceStream: 'V',
+    videoEnd: 60,
+  };
+  api.loadedTracks.push(TRACK);
+  const FK = {
+    ok: true, total: 3, returned: 3, preroll_seconds: 3,
+    hits: [
+      { srt: 'Z_V.srt', video_path: 'X\\DJI_Z_0001_V.MP4', video_name: 'DJI_Z_0001_V',
+        folder_index: 0, relative_path: 'DJI_Z_0001_V.MP4', frame: 120,
+        // 命中自带时刻 59.9、帧号所在时刻 60.0 —— 特意错开，才能验出定位用的是后者
+        target_seconds: 59.9, player_seek_seconds: 59.9, start_seconds: 56.9,
+        ground_m_per_px: 0.011, can_resolve_cm: 1.1, frames: 300, passes: 3,
+        alt_m: 31.0, pitch_deg: -90.0, yaw_deg: 0.0, focal_mm: 24.0,
+        zoomed: false, stream: 'visible' },
+      { srt: 'Z_T.srt', video_path: 'X\\DJI_Z_0001_T.MP4', video_name: 'DJI_Z_0001_T',
+        folder_index: 0, relative_path: 'DJI_Z_0001_T.MP4', frame: 130,
+        target_seconds: 59.9, player_seek_seconds: 59.9, start_seconds: 56.9,
+        ground_m_per_px: 0.05, can_resolve_cm: 5.0, frames: 90, passes: 1,
+        alt_m: 31.0, pitch_deg: -90.0, yaw_deg: 0.0, focal_mm: 24.0,
+        zoomed: false, stream: 'thermal' },
+      { srt: 'A.srt', video_path: 'X\\DJI_A_0001_V.MP4', video_name: 'DJI_A_0001_V',
+        folder_index: 1, relative_path: 'DJI_A_0001_V.MP4', frame: 360,
+        target_seconds: 12.0, player_seek_seconds: 12.0, start_seconds: 9.0,
+        ground_m_per_px: 0.02, can_resolve_cm: 9.0, frames: 80, passes: 1,
+        alt_m: 40.0, pitch_deg: -60.0, yaw_deg: 0.0, focal_mm: 24.0,
+        zoomed: false, stream: 'visible' },
+    ],
+    skipped: [],
+  };
+  sandbox._setFetch(() => Promise.resolve({
+    ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(FK)),
+  }));
+  api.setProbe({ lat: 23.05, lng: 114.11 }, 'map click', '');
+  api.searchFramesOfSpot();
+  for (let i = 0; i < 8; i++) await tick();
+  const d = api.frameGalleryDebug();
+  chk(d.hits === 3, '拿到 3 条命中', String(d.hits));
+  // 本轮**新追加**的那三张卡：桩里卡片是 appendChild 进网格的、网格的 innerHTML
+  // 一直是空的（页面用 `grid.innerHTML` 判"要不要清"，在桩里永远判成空），
+  // 所以桩里的卡片会**累积** —— 和前几节一样，只看最后 added 张，不数全部。
+  const tail = d.frames.slice(-d.added);
+  const tailTitles = d.titles.slice(-d.added);
+  chk(d.added === 3 && tail.length === 3, '本轮追加了 3 张卡', `added=${d.added}`);
+  chk(d.frameData[0] && d.frameData[0].frame === 18297 && d.frameData[0].stream === 'V',
+    'V 路命中挂上 V 自己的帧号', JSON.stringify(d.frameData[0]));
+  chk(d.frameData[1] && d.frameData[1].frame === 18433 && d.frameData[1].stream === 'T',
+    'T 路命中挂的是 T 自己的帧号（不是 V 的 18297）', JSON.stringify(d.frameData[1]));
+  chk(d.frameData[1] && d.frameData[1].all && d.frameData[1].all.V === 18297
+      && d.frameData[1].all.S === 18282 && d.frameData[1].all.T === 18433,
+    '同一时刻三路对照一起带上', JSON.stringify(d.frameData[1] && d.frameData[1].all));
+  chk(tail[0] === 'frame V 18297 · S 18282 · T 18433',
+    '卡片上真的渲染出三路帧号（V/S/T 顺序固定）', tail[0]);
+  chk(tail[1] === 'frame V 18297 · S 18282 · T 18433',
+    'T 路那张卡也列出同一时刻三路帧号 —— 用户一眼看出差多少帧', tail[1]);
+  chk(tail[2] === '', '对不上号的命中不会多出那一行（优雅退化）',
+    JSON.stringify(tail[2]));
+  chk(d.frameData[2] && d.frameData[2].frame === null && d.frameData[2].all === null,
+    '查不到帧号的命中身上没有帧号值', JSON.stringify(d.frameData[2]));
+
+  // 跳转：有帧号时定位到"帧号所在那一刻"（60.0），不是命中自带的 59.9
+  api.jumpToFrameHitAt(0);
+  const v0 = api.videoContextDebug();
+  chk(v0 && v0.frameNo === 18297, '跳播载荷里带着精确帧号（V 路）', String(v0 && v0.frameNo));
+  chk(v0 && v0.frameStream === 'V', '并标明是哪一路 —— 不会被拿去 seek 别的路',
+    String(v0 && v0.frameStream));
+  chk(v0 && Math.abs(v0.videoStart - 60.0) < 1e-9,
+    '定位到"帧号所在那一刻"（60.0，而不是命中自带的 59.9）',
+    String(v0 && v0.videoStart));
+  // T 路：必须用 T 自己的帧号
+  api.jumpToFrameHitAt(1);
+  const v1 = api.videoContextDebug();
+  chk(v1 && v1.frameNo === 18433, 'T 路跳转用的是 T 自己的帧号 18433',
+    String(v1 && v1.frameNo));
+  chk(v1 && v1.path === 'DJI_Z_0001_T.MP4', '开的是 T 路的视频文件', String(v1 && v1.path));
+  chk(v1 && v1.frameStream === 'T', 'T 路标注为 T', String(v1 && v1.frameStream));
+
+  // 退化：没有帧号的那条 -> 时刻与载荷完全按老行为
+  api.jumpToFrameHitAt(2);
+  const v2 = api.videoContextDebug();
+  chk(v2 && v2.frameNo === null, '没有帧号的命中，载荷里没有帧号', String(v2 && v2.frameNo));
+  chk(v2 && v2.videoStart === 12.0 && v2.photoPauseAt === 12.0,
+    '没有帧号时定位时刻仍是 target_seconds（与改动前一致）',
+    v2 ? `start=${v2.videoStart} pause=${v2.photoPauseAt}` : '');
+  const t2 = tailTitles[2] || '';
+  chk(/from 0+:09/.test(t2) && /pause at 0+:12/.test(t2),
+    '卡片提示仍是原来的措辞（起播 0:09 / 停在 0:12）', t2);
+  api.loadedTracks.pop();
+}
 
 console.log('\n结果:', ok ? '全部通过' : '有失败项');
 return ok ? 0 : 1;

@@ -324,7 +324,8 @@ console.log('\n=== 每项独占一行、标签加粗、值左对齐 ===');
   // 所有行必须在**同一个** .kv 里（分成两个栅格值列会错开 —— 实测 493 vs 485）。
   // 锚点要选得够 specific：两个分支开头都是 `<div class="lg-sec"><div class="kv">`，
   // 所以用"带 Coverage + badge 那个标题行"来定界（踩过一次，切到了短分支）。
-  const iKv = html.indexOf('+`<div class="hd">Coverage<span class="badge');
+  // 注意 i18n 那轮把标签包进了 t()，锚点至今跟到 `<div class="hd">${t('Coverage')}`。
+  const iKv = html.indexOf("+`<div class=\"hd\">${t('Coverage')}<span class=\"badge");
   const iEnd = html.indexOf('`</div></div>`;', iKv);
   // 往前退到这一段的开头
   const iStart = html.lastIndexOf('return `<div class="lg-sec"><div class="kv">`', iKv);
@@ -333,9 +334,9 @@ console.log('\n=== 每项独占一行、标签加粗、值左对齐 ===');
     '所有 KV 行在同一个栅格里（分两个会让值列错开）',
     `切到 ${block.length} 字符, kv 数 ${(block.match(/class="kv"/g) || []).length}`);
   for (const label of ['Confidence', 'Observed', 'Best', 'Sharpest', 'Boundary']) {
-    chk(new RegExp(`<b[^>]*>${label}</b>`).test(block), `有独立一行：${label}`);
+    chk(new RegExp(`<b>\\$\\{t\\('${label}'\\)\\}</b>`).test(block), `有独立一行：${label}`);
   }
-  chk(/<div class="hd">Coverage/.test(block), '标题行也在这个栅格里（占满一行）');
+  chk(/<div class="hd">\$\{t\('Coverage'\)\}/.test(block), '标题行也在这个栅格里（占满一行）');
 }
 
 console.log('\n=== 准确度说明改成 i 图标（只留图标，悬停/点击才显示）===');

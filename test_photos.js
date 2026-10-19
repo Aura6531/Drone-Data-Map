@@ -101,6 +101,9 @@ const consts = {
 
 const src = [
   ...Object.entries(consts).map(([k, v]) => `const ${k}=${v};`),
+  // 页面里的 t() 是 i18n 查表（英文原串当键 / 查不到原样返回）。单测只验"文案键"，
+  // 用恒等桩就够了；真正的译文由 test_i18n.py 与语言切换实测覆盖。
+  `const t=k=>k;`,
   extractFn('streamLabelOf'),
   extractFn('esc'),
   extractFn('formatTime'),
@@ -659,7 +662,7 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   chk(/>Load all photos</.test(html), '按钮叫「加载全部照片」（用户定的名字）');
   chk(/<button id="loadAllBtn">Load all tracks<\/button>/.test(html),
     '左栏那个改叫「加载全部轨迹」（和「加载全部照片」区分开）');
-  chk(/textContent=filtered\?`Load filtered \(\$\{n\}\)`:'Load all tracks'/.test(html),
+  chk(/textContent=filtered\?\(t\('Load filtered'\)\+` \(\$\{n\}\)`\):t\('Load all tracks'\)/.test(html),
     '筛选后按钮文案也跟着「加载全部轨迹」');
   // 这一行的三段（用户 2026-10-07 定的顺序）：
   //   ① 加载全部照片（贴左，就在「轨迹地图」标题正下方，不留空）

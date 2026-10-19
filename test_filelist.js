@@ -15,7 +15,8 @@ function extractFn(name) {
   }
   throw new Error(name);
 }
-const src = extractFn('streamLabelOf') + '\n' + extractFn('streamNoteOf') + '\n'
+const src = 'const t=k=>k;\n'
+  + extractFn('streamLabelOf') + '\n' + extractFn('streamNoteOf') + '\n'
   + extractFn('streamRankOf') + '\n' + extractFn('streamKeyOf') + '\n'
   + extractFn('is3dTrack') + '\n' + extractFn('parseDjiName') + '\n' + extractFn('shortFileName')
   + '\n' + extractFn('dateOfFile')

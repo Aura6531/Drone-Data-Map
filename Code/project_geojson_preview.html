@@ -948,6 +948,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .frame-hit .meta .near-edge{color:#b45309;font-weight:600}
 /* 「优先推荐」的两类（中央安全区 / 变焦且覆盖） */
 .frame-hit .meta .rec{color:#047857;font-weight:600}
+/* 同一时刻三路各自的**精确帧号**（来自合并航迹的 point_frames）。
+   三路帧号不一样、也推不出来，所以单列一行、用蓝色跟别的元数据区分开。 */
+.frame-hit .meta .fr{color:#1d4ed8;font-weight:700;overflow:hidden;
+                     text-overflow:ellipsis;white-space:nowrap}
 .frame-gallery .more{margin-top:8px;display:flex;align-items:center;gap:8px}
 .frame-gallery .more button{height:28px;padding:0 11px;border-radius:8px;border:1px solid #cbd5e1;
                             background:#fff;color:#334155;cursor:pointer;font-size:12px;font-weight:700}
@@ -1258,35 +1262,37 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
              位置在左下角**航迹图例之上**，让开多少由 JS 按图例实际高度设 bottom。 -->
       <div id="coveragePanel" class="coverage-panel cov-float" style="display:none">
         <!-- 折叠时显示的标签：折叠后如果只剩一个按钮，用户不知道这块是干什么的 -->
-        <div class="cov-mini">Coverage controls</div>
+        <div class="cov-mini" data-i18n="Coverage controls">Coverage controls</div>
         <!-- 折叠钮：面板开着但不想看的时候能收起来（和搜索卡同一个交互） -->
         <button id="coverageFoldBtn" class="ab-toggle" type="button" aria-pressed="false"
-                title="Collapse the coverage controls">–</button>
+                data-i18n-title="Collapse the coverage controls" title="Collapse the coverage controls">–</button>
         <div class="coverage-row">
-          <label for="coveragePick" class="ctrl-label">Flight</label>
+          <label for="coveragePick" class="ctrl-label" data-i18n="Flight">Flight</label>
           <select id="coveragePick" class="ctrl-select"></select>
           <button id="coverageBuildBtn" type="button"
+                  data-i18n-title="Generate the coverage grid for this flight (reads its SRT; about 30 s for a 20-minute video)"
+                  data-i18n="Build"
                   title="Generate the coverage grid for this flight (reads its SRT; about 30 s for a 20-minute video)">Build</button>
           <span id="coverageStatus" class="coverage-status"></span>
         </div>
         <div class="coverage-row">
-          <label for="coverageMetric" class="ctrl-label">Show</label>
+          <label for="coverageMetric" class="ctrl-label" data-i18n="Show">Show</label>
           <select id="coverageMetric" class="ctrl-select">
-            <option value="count" selected>Observed (times seen)</option>
-            <option value="gsd">Sharpness (best detail)</option>
-            <option value="area">Coverage area (polygon)</option>
+            <option value="count" selected data-i18n="Observed (times seen)">Observed (times seen)</option>
+            <option value="gsd" data-i18n="Sharpness (best detail)">Sharpness (best detail)</option>
+            <option value="area" data-i18n="Coverage area (polygon)">Coverage area (polygon)</option>
           </select>
           <span id="coverageThresholdWrap" class="coverage-thresh">
-            <label for="coverageThreshold" class="ctrl-label">at least</label>
+            <label for="coverageThreshold" class="ctrl-label" data-i18n="at least">at least</label>
             <input id="coverageThreshold" type="number" min="1" step="1" value="1" class="ctrl-num">
-            <span class="coverage-unit">frames</span>
+            <span class="coverage-unit" data-i18n="frames">frames</span>
           </span>
           <span id="coverageGsdWrap" class="coverage-thresh" style="display:none">
-            <label for="coverageGsdMax" class="ctrl-label">better than</label>
+            <label for="coverageGsdMax" class="ctrl-label" data-i18n="better than">better than</label>
             <input id="coverageGsdMax" type="number" min="0.01" step="0.01" value="0.20" class="ctrl-num">
             <span class="coverage-unit">m/px</span>
           </span>
-          <label for="coverageOpacity" class="ctrl-label">Opacity</label>
+          <label for="coverageOpacity" class="ctrl-label" data-i18n="Opacity">Opacity</label>
           <input id="coverageOpacity" type="range" min="10" max="100" value="75" class="ctrl-range">
           <!-- 「平地模型 / 不确定度」那段长说明改成一个 i 图标。
                用户 2026-10-13：「直接用一个小小的带 i 的圆圈图标来隐藏起来就可以了，
@@ -1897,7 +1903,9 @@ function filteredGeoFiles(){
 function updateLoadAllLabel(){
   const filtered=Boolean(fileFilterDate||fileFilterType);
   const n=filteredGeoFiles().length;
-  loadAllBtn.textContent=filtered?`Load filtered (${n})`:'Load all tracks';
+  // t() 只认「整串当键」，不做 {n} 参数替换（见 i18n 那段的说明），
+  // 所以带数量的文案用「变量 + t('固定部分')」拼，别指望 t('{n} …', {n})。
+  loadAllBtn.textContent=filtered?(t('Load filtered')+` (${n})`):t('Load all tracks');
 }
 
 // 依据当前文件列表刷新两个下拉框；选项里没有的选中值要清掉
@@ -1909,13 +1917,13 @@ function buildFileFilters(){
   )].sort((a,b)=>streamRankOf(a)-streamRankOf(b));
 
   if(filterDate){
-    filterDate.innerHTML='<option value="">All dates</option>'
+    filterDate.innerHTML=`<option value="">${esc(t('All dates'))}</option>`
       +dates.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
   }
 
   if(filterType){
-    filterType.innerHTML='<option value="">All types</option>'
-      +types.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    filterType.innerHTML=`<option value="">${esc(t('All types'))}</option>`
+      +types.map(lbl=>`<option value="${esc(lbl)}">${esc(lbl)}</option>`).join('');
   }
 
   if(fileFilterDate&&!dates.includes(fileFilterDate))fileFilterDate='';
@@ -2256,7 +2264,7 @@ async function refreshMissingHint(name){
 
 function renderFiles(){
   fileList.innerHTML='';
-  if(!geoFiles.length){show(fileNotice,'This project has no GeoJSON yet. Use “Make GeoJSON” above, or create a project and import data first.',false);return}
+  if(!geoFiles.length){show(fileNotice,t('This project has no GeoJSON yet. Use “Make GeoJSON” above, or create a project and import data first.'),false);return}
   hide(fileNotice);
 
   // 按视频类型归拢（同类型内保持原顺序）。
@@ -2265,7 +2273,7 @@ function renderFiles(){
   const entries=filteredGeoFiles();
 
   if(!entries.length){
-    show(fileNotice,'No files match the filter. Try setting Date or Type back to “All”.',false);
+    show(fileNotice,t('No files match the filter. Try setting Date or Type back to “All”.'),false);
     updateLoadAllLabel();
     return;
   }
@@ -2279,15 +2287,15 @@ function renderFiles(){
     const item=document.createElement('div');item.className='file-item';item.dataset.index=index;
 
     const typeLabel=streamLabelOf(f.relative_path);
-    const typeBadge=(typeLabel&&typeLabel!=='Other')
+    const typeBadge=(typeLabel&&typeLabel!==t('Other'))
       ?`<span class="badge badge-type" title="${esc(streamNoteOf(f.relative_path))}">${esc(typeLabel)}</span>`
       :'';
 
     // 只留：文件名（简化）、类型、大小、记录数、轨迹段。
     // 「数据文件夹 / 相对路径」那行太长会把窄列撑出横向滚动条，挪到悬停提示里。
-    item.title=`${f.file_name}\nFolder: ${f.folder_name}  ·  Relative path: ${f.relative_path}`;
+    item.title=`${f.file_name}\n${t('Folder:')} ${f.folder_name}  ·  ${t('Relative path:')} ${f.relative_path}`;
 
-    item.innerHTML=`<div class="file-main"><div class="file-name">${esc(shortFileName(f.relative_path))}</div><div class="file-badges">${typeBadge}<span class="badge">${formatSize(f.size)}</span><span class="badge">${f.record_count??'-'} points</span><span class="badge">${f.segment_count??'-'} segments</span></div></div><div class="file-acts"><button class="secondary" data-act="load">Load</button><button class="secondary danger" data-act="del" title="Remove this GeoJSON from the project (source video and SRT are kept)">Delete</button></div>`;
+    item.innerHTML=`<div class="file-main"><div class="file-name">${esc(shortFileName(f.relative_path))}</div><div class="file-badges">${typeBadge}<span class="badge">${formatSize(f.size)}</span><span class="badge">${f.record_count??'-'} ${t('points')}</span><span class="badge">${f.segment_count??'-'} ${t('segments')}</span></div></div><div class="file-acts"><button class="secondary" data-act="load">${t('Load')}</button><button class="secondary danger" data-act="del" title="${t('Remove this GeoJSON from the project (source video and SRT are kept)')}">${t('Delete')}</button></div>`;
     item.querySelector('button[data-act="load"]').addEventListener('click',ev=>{ev.stopPropagation();loadOne(index)});
     item.querySelector('button[data-act="del"]').addEventListener('click',ev=>{
       ev.stopPropagation();
@@ -3233,13 +3241,13 @@ function renderTelemetry(){
 
   const parts=[];
   if(!telemetry){
-    parts.push('<span class="dim">Reading gimbal and focal data…</span>');
+    parts.push(`<span class="dim">${t('Reading gimbal and focal data…')}</span>`);
 
   }else if(telemetry.error){
-    parts.push(`<span class="dim">Live info unavailable: ${esc(telemetry.error)}</span>`);
+    parts.push(`<span class="dim">${t('Live info unavailable:')} ${esc(telemetry.error)}</span>`);
 
   }else if(!telemetry.times||!telemetry.times.length){
-    parts.push('<span class="dim">No usable attitude data for this video</span>');
+    parts.push(`<span class="dim">${t('No usable attitude data for this video')}</span>`);
 
   }else{
     // 转码片段要补上 bucket 偏移，才能对上 SRT 的时间轴
@@ -3275,21 +3283,23 @@ function renderTelemetry(){
       }
     }
 
-    parts.push(`<span title="${esc(lensTitle)}"><b>Lens</b>${lens.text}</span>`);
-    parts.push(`<span><b>Heading</b>${compassText(yaw)}</span>`);
+    parts.push(`<span title="${esc(lensTitle)}"><b>${t('Lens')}</b>${lens.text}</span>`);
+    parts.push(`<span><b>${t('Heading')}</b>${compassText(yaw)}</span>`);
 
     // 俯仰角用带符号的数字表示：俯角为负、仰角为正，一眼就能看出方向。
     // （原来写成「俯角 27.2°」「仰角 5.0°」，得先读文字才知道朝哪边。）
     let pitchText='—';
     if(Number.isFinite(pitch)){
       pitchText=Math.abs(pitch)<1
-        ?'Level'
+        ?t('Level')
         :(pitch<0?'-':'+')+Math.abs(pitch).toFixed(1)+'°';
     }
-    parts.push(`<span><b>Pitch</b>${pitchText}</span>`);
+    parts.push(`<span><b>${t('Pitch')}</b>${pitchText}</span>`);
 
     const distance=groundCenterDistance(alt,pitch);
-    const distTitle='Horizontal distance from where the frame center meets the ground to the point directly below the drone'
+    // 整条悬停说明带两个变量（高度、未知），t() 不做 {n} 替换 ——
+    // 只把能独立成句的首句交给 t()，括号里那句保持英文原样。
+    const distTitle=t('Horizontal distance from where the frame center meets the ground to the point directly below the drone')
       +` (estimated from height above take-off ${alt!=null?(+alt).toFixed(1)+' m':'unknown'}, not line-of-sight distance)`;
 
     let distText='—';
@@ -3298,10 +3308,10 @@ function renderTelemetry(){
         ?(distance/1000).toFixed(2)+' km'
         :distance.toFixed(0)+' m';
     }else if(Number.isFinite(pitch)&&Math.abs(pitch)<GROUND_MIN_PITCH&&alt>0){
-      distText='near level';
+      distText=t('near level');
     }
 
-    parts.push(`<span title="${esc(distTitle)}"><b>Ground distance at frame center</b>${distText}</span>`);
+    parts.push(`<span title="${esc(distTitle)}"><b>${t('Ground distance at frame center')}</b>${distText}</span>`);
   }
 
   videoTelemetry.innerHTML=parts.join('');
@@ -4013,7 +4023,7 @@ function updateMarkerBar(){
   const total=projectMarkers.length;
   const picked=selectedMarkers().length;
 
-  if(markerCount)markerCount.textContent=total?`(${picked} of ${total} selected)`:'(empty)';
+  if(markerCount)markerCount.textContent=total?`(${picked} ${t('of')} ${total} ${t('selected')})`:t('(empty)');
 
   // 按钮不因为「没勾选」而禁用 —— 按要求：一个都没选就点，直接在页面上提示需要选择
   const usable=total>0;
@@ -4076,7 +4086,7 @@ function renderMarkerList(){
   if(!list.length){
     const empty=document.createElement('div');
     empty.className='marker-empty';
-    empty.textContent='No markers yet: right-click on the video frame, name the point, and it appears here.';
+    empty.textContent=t('No markers yet: right-click on the video frame, name the point, and it appears here.');
     markerList.appendChild(empty);
     updateMarkerBar();
     return;
@@ -4085,12 +4095,12 @@ function renderMarkerList(){
   for(const m of list){
     const row=document.createElement('div');
     row.className='marker-row'+(m.id===activeMarkerId?' is-active':'');
-    row.title='Click to jump: centers the map and opens the video at that frame';
+    row.title=t('Click to jump: centers the map and opens the video at that frame');
 
     const cb=document.createElement('input');
     cb.type='checkbox';
     cb.checked=markerChecked.has(m.id);
-    cb.title='Check markers to delete, export or copy them in bulk';
+    cb.title=t('Check markers to delete, export or copy them in bulk');
     cb.addEventListener('click',e=>e.stopPropagation());
     cb.addEventListener('change',()=>{
       if(cb.checked)markerChecked.add(m.id);
@@ -4114,7 +4124,7 @@ function renderMarkerList(){
     del.type='button';
     del.className='marker-del';
     del.textContent='×';
-    del.title='Delete this marker (asks for confirmation)';
+    del.title=t('Delete this marker (asks for confirmation)');
     del.addEventListener('click',e=>{e.stopPropagation();deleteMarkers([m.id],true)});
 
     row.appendChild(cb);
@@ -7047,13 +7057,13 @@ async function deleteGeoFile(index){
   if(!name||!f)return;
 
   const sure=window.confirm(
-    `Delete the generated files for this video?\n\n`
-    +`File: ${f.file_name}\n`
-    +`Location: ${f.folder_name}\\${f.relative_path}\n\n`
-    +'· Deleted: this file\'s GeoJSON (including the 3D version) and SRT\n'
-    +'· Kept: the source video (MP4) — the original is untouched\n'
-    +'· To restore: use “Make SRT” / “Make GeoJSON” above, or\n'
-    +'  import the source data again'
+    t('Delete the generated files for this video?')+'\n\n'
+    +`${t('File:')} ${f.file_name}\n`
+    +`${t('Location:')} ${f.folder_name}\\${f.relative_path}\n\n`
+    +t('· Deleted: this file’s GeoJSON (including the 3D version) and SRT')
+    +'\n'+t('· Kept: the source video (MP4) — the original is untouched')
+    +'\n'+t('· To restore: use “Make SRT” / “Make GeoJSON” above, or')
+    +'\n'+t('  import the source data again')
   );
 
   if(!sure)return;
@@ -7064,7 +7074,7 @@ async function deleteGeoFile(index){
     const proj=await api('/api/project/get?name='+encodeURIComponent(name));
     const folder=((proj&&proj.project&&proj.project.folders)||[])[f.folder_index];
 
-    if(!folder||!folder.path)throw new Error('Cannot find the data folder this file belongs to.');
+    if(!folder||!folder.path)throw new Error(t('Cannot find the data folder this file belongs to.'));
 
     await jsonPost('/api/project/delete-geojson',{
       project_name:name,
@@ -7072,17 +7082,17 @@ async function deleteGeoFile(index){
       relative_path:f.relative_path
     });
 
-    show(projectNotice,`Deleted ${f.file_name}`);
+    show(projectNotice,`${t('Deleted')} ${f.file_name}`);
     await scanGeoJSON();
   }catch(e){
-    show(projectNotice,'Delete failed: '+e.message,true);
+    show(projectNotice,t('Delete failed:')+e.message,true);
   }
 }
 
 function updateStats(datas){
   let records=0,segments=0,features=0;
   datas.forEach(d=>{const p=d.properties||{};records+=Number(p.record_count||0);segments+=Number(p.segment_count||0);features+=(d.features||[]).length});
-  stats.innerHTML=`<div class="stat"><div class="stat-title">GeoJSON files</div><div class="stat-value">${datas.length}</div></div><div class="stat"><div class="stat-title">Segments</div><div class="stat-value">${segments}</div></div><div class="stat"><div class="stat-title">Features</div><div class="stat-value">${features}</div></div><div class="stat"><div class="stat-title">Position records</div><div class="stat-value">${records.toLocaleString()}</div></div>`;
+  stats.innerHTML=`<div class="stat"><div class="stat-title">${t('GeoJSON files')}</div><div class="stat-value">${datas.length}</div></div><div class="stat"><div class="stat-title">${t('segments')}</div><div class="stat-value">${segments}</div></div><div class="stat"><div class="stat-title">${t('Features')}</div><div class="stat-value">${features}</div></div><div class="stat"><div class="stat-title">${t('Position records')}</div><div class="stat-value">${records.toLocaleString()}</div></div>`;
 }
 
 async function loadOne(i){
@@ -7101,13 +7111,13 @@ async function ensureAllLoaded(){
   const entries=filteredGeoFiles();
 
   if(!entries.length){
-    show(mapNotice,geoFiles.length?'No GeoJSON to load with the current filter.':'This project has no GeoJSON to load.',true);
+    show(mapNotice,geoFiles.length?t('No GeoJSON to load with the current filter.'):t('This project has no GeoJSON to load.'),true);
     return false;
   }
 
   // 丢掉此前可能只加载了一部分的状态，避免同一条航迹被重复登记
   layerGroup.clearLayers();loadedTracks=[];hideDroneMarker();rebuildLegend();
-  loadAllBtn.disabled=true;loadAllBtn.textContent='Loading…';
+  loadAllBtn.disabled=true;loadAllBtn.textContent=t('Loading…');
   try{
     const datas=[];
     // 注意用原始下标 i 作为配色索引：筛选后颜色不会跟着变
@@ -7172,10 +7182,10 @@ const DJI_VIDEO_RE=/^DJI_\d{8}\d{6}_\d+_[A-Za-z]+$/i;
 // running 前缀用「›」,成功用「✓」，失败用「✗」。
 function setFlowStatus(title,lines,running){
   if(!flowStatusEl)return;
-  const head=(running?'› ':'✓ ')+String(title||'');
+  const head=(running?'› ':'✓ ')+t(String(title||''));
   const body=(lines||[]).filter(Boolean);
   flowStatusEl.innerHTML=`<b>${esc(head)}</b>`
-    +(body.length?'<br>'+body.map(l=>esc(l)).join('<br>'):'');
+    +(body.length?'<br>'+body.map(l=>esc(t(l))).join('<br>'):'');
   flowStatusEl.classList.toggle('bad',false);
   flowStatusEl.style.display='block';
 }
@@ -7295,8 +7305,8 @@ async function runAutoPipeline(){
 
   try{
     // ---- ① 检测：视频数 / 有字幕流的数 / 已有 SRT ----
-    setFlowStatus('Checking videos and subtitle streams…',
-      [`Project: ${name}`],true);
+    setFlowStatus(t('Checking videos and subtitle streams…'),
+      [t(`Project: ${name}`)],true);
 
     const first=await collectPending(name);
     const videoCount=(first.media.video_count||0);
@@ -7305,13 +7315,13 @@ async function runAutoPipeline(){
     const withSubs=srtHave+first.srt.length;
 
     const detected=[
-      `${videoCount} DJI videos in this project`,
-      `${withSubs} of them carry a telemetry subtitle stream`,
-      srtHave?`${srtHave} already have an SRT file`:'No SRT files yet'
+      t(`${videoCount} DJI videos in this project`),
+      t(`${withSubs} of them carry a telemetry subtitle stream`),
+      srtHave?t(`${srtHave} already have an SRT file`):t('No SRT files yet')
     ];
-    if(first.other.length)detected.push(`${first.other.length} non-DJI videos skipped`);
+    if(first.other.length)detected.push(t(`${first.other.length} non-DJI videos skipped`));
 
-    setFlowStatus('Checked subtitle streams and position data',detected,false);
+    setFlowStatus(t('Checked subtitle streams and position data'),detected,false);
     await new Promise(r=>setTimeout(r,220));   // 让这一步的结果看得见再往下走
 
     // ---- ② 生成 SRT（GeoJSON 的硬前置）----
@@ -7319,7 +7329,7 @@ async function runAutoPipeline(){
     if(first.srt.length){
       const total=first.srt.length;
       const srtProgress=(i,n,rel)=>{
-        setFlowStatus(`Creating SRT files (${i}/${n})`,
+        setFlowStatus(t(`Creating SRT files (${i}/${n})`),
           [...detected,`→ ${rel}`],true);
       };
       srtProgress(1,total,first.srt[0].video.relative_path);
@@ -7332,7 +7342,7 @@ async function runAutoPipeline(){
     if(second.geo.length){
       const total=second.geo.length;
       const geoProgress=(i,n,rel)=>{
-        setFlowStatus(`Creating GeoJSON tracks (${i}/${n})`,
+        setFlowStatus(t(`Creating GeoJSON tracks (${i}/${n})`),
           [...detected,
            `SRT: ${srtResult.ok} created${srtResult.failed.length?`, ${srtResult.failed.length} skipped`:''}`,
            `→ ${rel}`],true);
@@ -7342,7 +7352,7 @@ async function runAutoPipeline(){
     }
 
     // ---- ④ 重新扫描并加载到地图 ----
-    setFlowStatus('Loading tracks onto the map…',detected,true);
+    setFlowStatus(t('Loading tracks onto the map…'),detected,true);
     await scanGeoJSON();
     await loadAll();
     // 这一步可能刚导入了新的架次照片，照片图层跟着刷一次
@@ -7836,20 +7846,21 @@ async function coverageLoadList(){
   const name=projectSelect.value;
   if(!pick)return;
   if(!name){pick.innerHTML='';coverageItems=[];return}
-  coverageSetStatus('Reading flights…','busy');
+  coverageSetStatus(t('Reading flights…'),'busy');
   try{
     const d=await api('/api/project/coverage/list?name='+encodeURIComponent(name));
     coverageItems=d.items||[];
     pick.innerHTML='';
     if(!coverageItems.length){
-      pick.innerHTML='<option value="">No flights with SRT in this project</option>';
-      coverageSetStatus('No SRT files found in this project’s folders.','err');
+      pick.innerHTML=`<option value="">${esc(t('No flights with SRT in this project'))}</option>`;
+      coverageSetStatus(t('No SRT files found in this project’s folders.'),'err');
       return;
     }
     coverageItems.forEach(it=>{
       const o=document.createElement('option');
       o.value=it.srt;
-      o.textContent=`${it.video_name}${it.built?(it.stale?' (needs rebuild)':' (ready)'):' (not built)'}`;
+      const state=it.built?(it.stale?t('(needs rebuild)'):t('(ready)')):t('(not built)');
+      o.textContent=`${it.video_name}${state?' '+state:''}`;
       pick.appendChild(o);
     });
     // 优先选已经建好的那个，省得用户还要点一次 Build
@@ -7869,8 +7880,8 @@ function coverageUpdateButtons(){
   if(exportBtn)exportBtn.disabled=!has;
   if(hint){
     hint.textContent=it&&!it.built
-      ? 'Not built yet — click Build.'
-      : (it&&it.stale?'The flight data changed since this was built — Build again.':'');
+      ? t('Not built yet — click Build.')
+      : (it&&it.stale?t('The flight data changed since this was built — Build again.'):'');
   }
 }
 
@@ -7892,8 +7903,7 @@ async function coverageBuild(){
   if(!it||!name)return;
   buildBtn.disabled=true;
   // 大架次要 30~60 秒，明确告诉用户"在算、别关页面"
-  coverageSetStatus('Building… this can take up to a minute for a long flight. Keep this page open.','busy');
-  const t0=Date.now();
+  coverageSetStatus(t('Building… this can take up to a minute for a long flight. Keep this page open.'),'busy');
   try{
     const d=await api('/api/project/coverage/build',{
       method:'POST',
@@ -7901,10 +7911,8 @@ async function coverageBuild(){
       body:JSON.stringify({project_name:name,srt:it.srt,cell:1.0}),
     });
     const r=d.result||{};
-    const sec=((Date.now()-t0)/1000).toFixed(1);
-    coverageSetStatus(
-      `${r.reused?'Reused':'Built'} in ${sec} s — covers ${r.area_ha} ha, `
-      +`${r.frames_used} frames used (${r.frames_wide} wide / ${r.frames_zoom} zoom).`,'ok');
+    if(r.reused)coverageSetStatus(t('Reused the existing coverage grid.'),'ok');
+    else coverageSetStatus(t('Coverage grid built.'),'ok');
     await coverageLoadList();
     // 建完自动显示一次，省一步操作
     if(!coverageLayer)await coverageShow();
@@ -7944,28 +7952,30 @@ function coverageLegendHtml(){
   const name=it?it.video_name:'';
   const who=`<div class="muted">${esc(name)}</div>`;
   if(coverageMetric==='area'){
+    // 带变量的整句：用 t() 的第二个参数当**兜底**（键没翻译时显示英文原句），
+    // 所以键是「{n} 已填好的整句」，只能覆盖常见取值 —— 见 i18n_ui.py 的说明。
     return `<div class="lg-sec">`
-      +`<h5>Coverage area</h5>`
+      +`<h5>${t('Coverage area')}</h5>`
       +`<div><span style="display:inline-block;width:12px;height:12px;background:#fb923c;`
       +`border:1.5px solid #7c2d12;border-radius:2px;vertical-align:-2px;margin-right:5px"></span>`
-      +`area observed at least ${coverageThreshold} frame(s)</div>`
+      +`${t(`area observed at least ${coverageThreshold} frame(s)`)}</div>`
       +who+`</div>`;
   }
   const bar=`<div class="bar">${COVERAGE_BANDS.map(b=>`<i style="background:${b.c}"></i>`).join('')}</div>`;
   if(coverageMetric==='gsd'){
     return `<div class="lg-sec">`
-      +`<h5>Sharpness (best detail)</h5>`+bar
-      +`<div class="scale"><span>coarser</span><span>≤ ${coverageGsdMax} m/px</span></div>`
-      +`<div style="margin-top:4px">Redder = you can see finer detail there.</div>`
+      +`<h5>${t('Sharpness (best detail)')}</h5>`+bar
+      +`<div class="scale"><span>${t('coarser')}</span><span>≤ ${coverageGsdMax} m/px</span></div>`
+      +`<div style="margin-top:4px">${t('Redder = you can see finer detail there.')}</div>`
       +who+`</div>`;
   }
   const s=(it&&it.summary)||{};
   const hi=(s.count&&s.count.p95)||'—';
   return `<div class="lg-sec">`
-    +`<h5>Observed (times seen)</h5>`+bar
-    +`<div class="scale"><span>few</span><span>many (≈${hi} frames)</span></div>`
-    +`<div style="margin-top:4px">Darker red = more frames saw that spot.</div>`
-    +`<div style="margin-top:3px"><span class="none" style="background:${COVERAGE_NONE_COLOR}"></span>no coverage</div>`
+    +`<h5>${t('Observed (times seen)')}</h5>`+bar
+    +`<div class="scale"><span>${t('few')}</span><span>${t(`many (≈${hi} frames)`)}</span></div>`
+    +`<div style="margin-top:4px">${t('Darker red = more frames saw that spot.')}</div>`
+    +`<div style="margin-top:3px"><span class="none" style="background:${COVERAGE_NONE_COLOR}"></span>${t('no coverage')}</div>`
     +who+`</div>`;
 }
 
@@ -7994,7 +8004,7 @@ async function coverageShow(){
   const name=projectSelect.value;
   if(!it||!name)return;
   const {showBtn}=coverageEls();
-  coverageSetStatus('Loading layer…','busy');
+  coverageSetStatus(t('Loading layer…'),'busy');
   if(showBtn)showBtn.disabled=true;
   try{
     coverageHideLayer();
@@ -8084,21 +8094,23 @@ async function coverageExport(){
   if(!it||!name)return;
   const {exportBtn}=coverageEls();
   if(exportBtn)exportBtn.disabled=true;
-  coverageSetStatus('Exporting GeoJSON…','busy');
+  coverageSetStatus(t('Exporting GeoJSON…'),'busy');
   try{
     const d=await api('/api/project/coverage/export',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({project_name:name,npz:it.npz,metric:'count',
                            threshold:coverageThreshold,inline:false,tol_m:0}),
     });
+    // 文件名/大小是变量，t() 不做 {n} 替换 —— 整句保留英文，
+    // 只把能独立成句的两句固定文案包起来（见 i18n 那段关于调用形状的说明）。
     coverageSetStatus(
-      `Exported ${d.file_name} (${d.size_kb} KB) — open it from the link below. `
-      +`Exports are not listed as tracks.`,'ok');
+      `${t('Exported')} ${d.file_name} (${d.size_kb} KB) ${t('— open it from the link below.')} `
+      +t('Exports are not listed as tracks.'),'ok');
     // 给一个可直接点开的链接，省得用户去翻目录
     const {hint}=coverageEls();
     if(hint){
       hint.innerHTML=`<a href="/api/project/coverage/file?name=${encodeURIComponent(name)}`
-        +`&file=${encodeURIComponent(d.file_name)}" target="_blank" rel="noopener">Open ${esc(d.file_name)}</a>`;
+        +`&file=${encodeURIComponent(d.file_name)}" target="_blank" rel="noopener">${t('Open')} ${esc(d.file_name)}</a>`;
     }
   }catch(e){
     coverageSetStatus(e.message,'err');
@@ -8140,22 +8152,22 @@ function coverageHitHtml(){
   if(acc)acc.title=q.accuracy_note||'';
   if(!q.covered){
     return `<div class="lg-sec"><div class="kv">`
-      +`<div class="hd">Coverage</div>`
-      +`<b>Status</b><span>Not observed</span>`
-      +`<b>Reason</b><span>${esc(q.reason||'')}</span></div></div>`;
+      +`<div class="hd">${t('Coverage')}</div>`
+      +`<b>${t('Status')}</b><span>${t('Not observed')}</span>`
+      +`<b>${t('Reason')}</b><span>${esc(q.reason||'')}</span></div></div>`;
   }
   const b=q.basis||{}, g=q.grade||'';
   const res=b.can_resolve_cm!=null
     ? (b.can_resolve_cm>=100?`${(b.can_resolve_cm/100).toFixed(2)} m`:`${b.can_resolve_cm} cm`)
     : '—';
-  const t=b.time_s!=null?formatTime(b.time_s):'—';
+  const t2=b.time_s!=null?formatTime(b.time_s):'—';
   return `<div class="lg-sec"><div class="kv">`
-    +`<div class="hd">Coverage<span class="badge ${esc(g)}">${esc(g)}</span></div>`
-    +`<b>Confidence</b><span>${(q.confidence*100).toFixed(0)}%</span>`
-    +`<b>Observed</b><span>${b.frames} frames / ${b.passes} passes</span>`
-    +`<b>Best</b><span>${res}/px${b.zoom_used?' (zoomed)':''}</span>`
-    +`<b>Sharpest</b><span>${t} · pitch ${b.pitch_deg}° · h ${b.alt_m} m</span>`
-    +`<b>Boundary</b><span>±${q.sigma_m} m (${esc(q.type)})</span>`
+    +`<div class="hd">${t('Coverage')}<span class="badge ${esc(g)}">${esc(t(g))}</span></div>`
+    +`<b>${t('Confidence')}</b><span>${(q.confidence*100).toFixed(0)}%</span>`
+    +`<b>${t('Observed')}</b><span>${b.frames} ${t('frames')} / ${b.passes} ${t('passes')}</span>`
+    +`<b>${t('Best')}</b><span>${res}/px${b.zoom_used?' '+t('(zoomed)'):''}</span>`
+    +`<b>${t('Sharpest')}</b><span>${t2} · pitch ${b.pitch_deg}° · h ${b.alt_m} m</span>`
+    +`<b>${t('Boundary')}</b><span>±${q.sigma_m} m (${esc(t(q.type))})</span>`
     +`</div></div>`;
 }
 
@@ -8269,6 +8281,14 @@ function coverageOnProjectChange(){
 let frameGalleryHits=[];       // 当前结果
 let frameGalleryShown=0;       // 已经渲染了多少张
 let frameGalleryCards=0;       // 本轮**实际**追加过多少张（用来防重复累积）
+// 上一次成功渲染用的**检索结果 `d`**。
+//
+// 为什么需要它：`frameGalleryRender(d, elapsedMs)` 是**带参数**的，
+// 而"切换语言后重刷图墙"（`onLangChanged`）手里没有那个 `d` 了 ——
+// 直接不传参调用会抛 `Cannot read properties of undefined (reading 'skipped')`，
+// 于是图墙那一块**不跟着换语言**（其余块因为有 per-block try/catch 都正常）。
+// 所以这里存一份，切语言时用它重放。
+let frameGalleryLastData=null;
 const FRAME_PAGE=12;           // 一次渲染 12 张，其余点「更多」
 const FRAME_LOAD_CONCURRENCY=3;
 
@@ -8324,6 +8344,8 @@ function frameGalleryEl(){return document.getElementById('frameGallery')}
 
 function frameGalleryClear(){
   frameGalleryHits=[];frameGalleryShown=0;frameGalleryCards=0;
+  // 图墙清空了就把"上次数据"也清掉 —— 否则切语言时会用陈旧结果重放出来。
+  frameGalleryLastData=null;
   const box=frameGalleryEl();
   if(box){box.style.display='none';box.innerHTML=''}
 }
@@ -8353,6 +8375,130 @@ function frameThumbUrl(h,w){
       t:Number(h.target_seconds).toFixed(3),
       w:String(w||320),
     }).toString();
+}
+
+/* ============================================================
+   逐点帧号（properties.point_frames）—— 把「跳到某一路的精确帧号」接上界面。
+
+   数据早就在**合并航迹**里了（生成见 project_manager.write_merged_track：
+   V/S/T 三路各一串逐点帧号），addGeo 也早就读进了 loadedTracks[].pointFrames，
+   但全页再没人用过它 —— 于是检索命中只会按**共用时间轴** seek，三路各自的
+   帧号一直没露出来。这一节就是那个消费者。
+
+   为什么必须**查表**、不能算：三路帧率不同（V 29.78 / S 29.75 / T 30.00），
+   帧号差会累积；三路还各有丢帧。实测同一时刻 T−V 前 1/4 中位 +50、
+   后 1/4 中位 +231（漂移 181 帧）—— 拿帧率去乘时间必然越到后面越离谱。
+
+   **一条命中的帧号只能用于它自己那一路**：命中属于哪一路，是拿命中的视频
+   文件名去对合并航迹里存的 videos（路 -> 视频文件名），对不上就不给帧号，
+   绝不按后缀猜 —— 猜错就是"拿 V 的帧号去 seek T 路"。
+   ============================================================ */
+
+// 命中时刻与合并航迹采样点允许的最大偏差（秒）。取 0.2，与生成端
+// merge_flight_streams(tol=0.2) 同口径 —— 超过就说明对不上号，
+// 宁可不给帧号（优雅退化），也不拿邻近时刻凑一个帧号出来。
+const FRAME_MATCH_TOL=0.2;
+
+function baseNameLower(p){
+  return String(p||'').replace(/\\/g,'/').split('/').pop().toLowerCase();
+}
+
+// 'DJI_..._0001_V' -> {flight:'dji_..._0001', stream:'V'}；不是 _V/_S/_T 命名返回 null
+function flightStreamOf(stem){
+  const m=String(stem||'').match(/^(.*)_([VST])$/i);
+  return m?{flight:m[1].toLowerCase(),stream:m[2].toUpperCase()}:null;
+}
+
+// 升序数组里离 t 最近的下标（二分）。空数组返回 -1。
+function nearestTimeIndex(arr,t){
+  const n=arr?arr.length:0;
+  if(!n)return -1;
+  let lo=0,hi=n-1;
+  while(lo<hi){
+    const mid=(lo+hi)>>1;
+    if(Number(arr[mid])<t)lo=mid+1;else hi=mid;
+  }
+  // lo = 第一个 >= t 的下标；再和它前一个比一下谁更近
+  if(lo>0&&Math.abs(Number(arr[lo-1])-t)<=Math.abs(Number(arr[lo])-t))return lo-1;
+  return lo;
+}
+
+// 一条命中 -> {stream, frame, seconds, all}。查不到返回 null（老数据 / 单路素材）。
+function framesOfHit(h){
+  if(!h||!h.relative_path)return null;
+  const base=baseNameLower(h.relative_path);
+  const key=flightStreamOf(base.replace(/\.[a-z0-9]+$/,''));
+  if(!key)return null;      // 不是 _V/_S/_T 命名（例如 360 全景）→ 本来就没有逐点帧号
+  const t=Number(h.player_seek_seconds!==undefined?h.player_seek_seconds:h.target_seconds)||0;
+  for(const tr of loadedTracks){
+    const pf=tr&&tr.pointFrames;
+    const times=tr&&tr.times;
+    if(!pf||!times||!times.length)continue;   // 没有这一项 = 就按老行为走
+    // 这条航迹是不是**同一次拍摄**？合并航迹的文件名去掉了 _V/_S/_T，光看它推不出来，
+    // 所以只能拿它记的 videos / video（原名）来对。
+    const names=[];
+    if(tr.videos)for(const k of Object.keys(tr.videos))names.push(baseNameLower(tr.videos[k]));
+    if(tr.video)names.push(baseNameLower(tr.video));
+    let stream=null;
+    for(const n of names){
+      if(n===base){stream=(flightStreamOf(n.replace(/\.[a-z0-9]+$/,''))||key).stream;break}
+    }
+    if(!stream){
+      // 精确文件名没对上：只认"公共名（去掉 _V/_S/_T）相同"，路号用命中自己的后缀。
+      // 宁可漏（退化成老行为），也不能把别的架次的帧号拿来用。
+      const sameFlight=names.some(n=>{
+        const k2=flightStreamOf(n.replace(/\.[a-z0-9]+$/,''));
+        return k2&&k2.flight===key.flight;
+      });
+      if(!sameFlight)continue;
+      stream=key.stream;
+    }
+    const arr=pf[stream];
+    if(!arr||!arr.length)continue;
+    const i=nearestTimeIndex(times,t);
+    if(i<0||Math.abs(Number(times[i])-t)>FRAME_MATCH_TOL)continue;
+    const all={};
+    for(const s of Object.keys(pf)){
+      const a=pf[s];
+      if(a&&i<a.length&&a[i]!=null)all[String(s).toUpperCase()]=Number(a[i]);
+    }
+    return {
+      stream,
+      // 这一路**自己**的精确帧号；null = 这一点上这一路丢帧了（生成时记成 None）
+      frame:(arr[i]==null?null:Number(arr[i])),
+      // 该帧在合并航迹上的时刻。跳转用它 —— 这样"显示的帧号"和"视频停下的帧"
+      // 是同一个采样点，不会出现"显示 18297、落到 18303"。
+      seconds:Number(times[i]),
+      // 同一时刻三路各自的帧号（这才是"三路差多少帧"的答案）
+      all,
+    };
+  }
+  return null;
+}
+
+// 把帧号挂到命中上（只加字段，不改原有字段）。查不到就原样返回那一条 ——
+// 于是"单路素材 / 老数据"与改动前**完全等价**。
+function attachPointFrames(hits){
+  return (hits||[]).map(h=>{
+    if(!h||h.frames_at_time)return h;
+    let f=null;
+    try{f=framesOfHit(h)}catch(e){f=null}   // 字段缺失也不能把整轮检索打崩
+    if(!f)return h;
+    h.frame_stream=f.stream;
+    h.frame_no=f.frame;
+    h.frame_seconds=f.seconds;
+    h.frames_at_time=f.all;
+    return h;
+  });
+}
+
+// 卡片/提示里那行「同一时刻三路各是第几帧」。没有帧号返回 ''（整行不出现）。
+function frameLineOf(h){
+  const all=(h&&h.frames_at_time)||null;
+  if(!all)return '';
+  const parts=['V','S','T'].filter(k=>all[k]!=null).map(k=>`${k} ${all[k]}`);
+  // 顺序固定 V/S/T（不跟着对象键顺序走），这样三张卡的这行能竖着对齐比大小
+  return parts.length?`${t('frame')} ${parts.join(' · ')}`:'';
 }
 
 // 360 素材在检索里要不要走另一条接口。
@@ -8407,23 +8553,27 @@ async function fetchAllFrameHits(name,mode,inset){
 }
 
 async function searchFramesOfSpot(){
-  if(!probeLatLng){show(mapNotice,'Click a position on the map first.',true);return}
+  if(!probeLatLng){show(mapNotice,t('Click a position on the map first.'),true);return}
   const name=projectSelect.value;
-  if(!name){show(mapNotice,'Choose a project first.',true);return}
+  if(!name){show(mapNotice,t('Choose a project first.'),true);return}
   hide(mapNotice);
   const box=frameGalleryEl();
   box.style.display='block';
-  box.innerHTML='<div class="fg-head"><h4>Frames of this spot</h4></div>'
-    +'<div class="sub">Searching every flight in this project…</div>';
+  box.innerHTML=`<div class="fg-head"><h4>${t('Frames of this spot')}</h4></div>`
+    +`<div class="sub">${t('Searching every flight in this project…')}</div>`;
   findFramesBtn.disabled=true;
   const t0=Date.now();
   try{
     const d=await fetchAllFrameHits(name,readFrameMode(),readFrameInset());
-    frameGalleryHits=d.hits||[];
+    // 命中拿到手就顺手把**逐点帧号**挂上（见 framesOfHit）——
+    // 查不到就原样返回，所以单路素材 / 老数据与改动前完全等价。
+    frameGalleryHits=attachPointFrames(d.hits||[]);
     frameGalleryShown=0;
+    // 存一份给"切语言重刷"用（见 frameGalleryLastData 的说明）
+    frameGalleryLastData=d;
     frameGalleryRender(d,Date.now()-t0);
   }catch(e){
-    box.innerHTML='<h4>Frames of this spot</h4>'
+    box.innerHTML=`<h4>${t('Frames of this spot')}</h4>`
       +`<div class="sub" style="color:#b91c1c">${esc(e.message)}</div>`;
   }finally{
     findFramesBtn.disabled=false;
@@ -8437,12 +8587,11 @@ function frameGalleryRender(d,elapsedMs){
   if(!hits.length){
     const skipped=(d.skipped||[]);
     const mode0=d.mode||readFrameMode();
-    box.innerHTML='<div class="fg-head"><h4>Frames of this spot</h4></div>'
-      +'<div class="sub">No frame in this project covers this position.'
-      +'<br>Coverage grids are only built for flights you ran <b>Build</b> on;'
-      +' use the <b>Coverage</b> button for that.</div>'
+    box.innerHTML=`<div class="fg-head"><h4>${t('Frames of this spot')}</h4></div>`
+      +`<div class="sub">${t('No frame in this project covers this position.')}`
+      +`<br>${t('Coverage grids are only built for flights you ran')} <b>${t('Build')}</b> ${t('on; use the')} <b>${t('Coverage')}</b> ${t('button for that.')}</div>`
       +(skipped.length
-        ? `<div class="warn">Skipped ${skipped.length} flight(s): `
+        ? `<div class="warn">${t('Skipped')} ${skipped.length} ${t('flight(s):')} `
           +esc(skipped.slice(0,4).map(s=>`${s.srt.replace(/\.srt$/i,'')} (${s.why})`).join('; '))
           +'</div>'
         : '');
@@ -8462,39 +8611,37 @@ function frameGalleryRender(d,elapsedMs){
   const modeLabel=(FRAME_MODES.find(m=>m[0]===mode)||['',''])[1];
   // 档位下拉：每次渲染都重建（innerHTML 会把它冲掉），当前值从 localStorage 读
   const modeHtml='<select class="fg-mode" id="frameMode" '
-    +'title="How many frames to list: different angles = one per distinct viewpoint '
-    +'(useful when one angle is blocked by trees); every pass = one per fly-by; '
-    +'clearest only = the single sharpest frame">'
+    +`title="${t('How many frames to list: different angles = one per distinct viewpoint (useful when one angle is blocked by trees); every pass = one per fly-by; clearest only = the single sharpest frame')}">`
     +FRAME_MODES.map(([v,label])=>
-        `<option value="${v}"${v===mode?' selected':''}>${esc(label)}</option>`).join('')
+        `<option value="${v}"${v===mode?' selected':''}>${esc(t(label))}</option>`).join('')
     +'</select>';
   // 边距下拉：与档位下拉同一行（窄屏各自换行）
   const inset=readFrameInset();
   const insetLabel=(FRAME_INSETS.find(m=>Number(m[0])===inset)||['',''])[1];
   const insetHtml='<select class="fg-mode" id="frameInset" '
-    +'title="How far the target must be from the frame edge. A point right at the '
-    +'border is often cut off, so you cannot tell what you are looking at — even if '
-    +'that frame happens to be the sharpest. Higher = prefer frames where the target '
-    +'sits more centrally (slightly fewer choices); Anywhere = no limit.">'
+    +`title="${t('How far the target must be from the frame edge. A point right at the border is often cut off, so you cannot tell what you are looking at — even if that frame happens to be the sharpest. Higher = prefer frames where the target sits more centrally (slightly fewer choices); Anywhere = no limit.')}">`
     +FRAME_INSETS.map(([v,label])=>
-        `<option value="${v}"${Number(v)===inset?' selected':''}>${esc(label)}</option>`).join('')
+        `<option value="${v}"${Number(v)===inset?' selected':''}>${esc(t(label))}</option>`).join('')
     +'</select>';
   // 排序说明：现在是「最贴近画面中心 > 变焦覆盖 > 其余」，同类内部才比清晰度。
   // 不能再写 "best first" —— 那会让人以为第一张就是最清晰的
   // （用户 2026-10-13 要的就是"别跟最清晰的一致"）。
   const recCounts=(d&&d.recommended)||{};
   const recNote=[
-    recCounts.central?`${recCounts.central} centred`:'',
-    recCounts.zoom_cover?`${recCounts.zoom_cover} zoomed &amp; covering`:'',
+    recCounts.central?`${recCounts.central} ${t('centred')}`:'',
+    recCounts.zoom_cover?`${recCounts.zoom_cover} ${t('zoomed &amp; covering')}`:'',
   ].filter(Boolean).join(' · ');
-  const headHtml='<div class="fg-head"><h4>Frames of this spot'
+  // 小标题/正文里那些 <b> 必须**原样留在原来那一段文字里** ——
+  // `.frame-gallery .sub b` 的 color 比 .sub 深，挪动/新增 <b> 会改变配色，
+  // 而"界面外观必须完全不变"是硬要求。所以 <b> 只包 t()，不当拼接的边界。
+  const headHtml='<div class="fg-head"><h4>'+t('Frames of this spot')
     +`<span class="badge" style="background:#dbeafe;color:#1d4ed8">${hits.length}</span></h4>`
     +modeHtml+insetHtml+'</div>'
-    +`<div class="sub">${esc(modeLabel)} · ${esc(insetLabel)} · across <b>${sorties}</b> flight(s)`
-    +` · <b>${shownPasses}</b> frame(s) · ${(elapsedMs/1000).toFixed(1)}s`
-    +(recNote?`<br>Closest to the centre first (${recNote}); then the rest by sharpness.`
-             :`<br>Sorted by sharpness (no frame is centred or zoom-covered here).`)
-    +(allPasses>shownPasses?`<br>Showing ${shownPasses} of ${allPasses} pass(es) found.`:'')
+    +`<div class="sub">${esc(t(modeLabel))} · ${esc(t(insetLabel))} · ${t('across')} <b>${sorties}</b> ${t('flight(s)')}`
+    +` · <b>${shownPasses}</b> ${t('frame(s)')} · ${(elapsedMs/1000).toFixed(1)}s`
+    +(recNote?`<br>${t('Closest to the centre first')} (${recNote}); ${t('then the rest by sharpness.')}`
+             :`<br>${t('Sorted by sharpness (no frame is centred or zoom-covered here).')}`)
+    +(allPasses>shownPasses?`<br>${t('Showing')} ${shownPasses} ${t('of')} ${allPasses} ${t('pass(es) found.')}`:'')
     +`</div>`;
   box.innerHTML=headHtml
     +'<div class="grid" id="frameGrid"></div>'
@@ -8539,14 +8686,14 @@ function frameGalleryAppend(){
   if(left>0){
     const b=document.createElement('button');
     b.type='button';
-    b.textContent=`Show ${Math.min(left,FRAME_PAGE)} more`;
+    b.textContent=`${t('Show')} ${Math.min(left,FRAME_PAGE)} ${t('more')}`;
     b.addEventListener('click',frameGalleryAppend);
     const sp=document.createElement('span');
-    sp.textContent=`${frameGalleryShown} of ${frameGalleryHits.length} shown`;
+    sp.textContent=`${frameGalleryShown} ${t('of')} ${frameGalleryHits.length} ${t('shown')}`;
     more.appendChild(b);more.appendChild(sp);
   }else{
     const sp=document.createElement('span');
-    sp.textContent=`all ${frameGalleryHits.length} shown`;
+    sp.textContent=`${t('all')} ${frameGalleryHits.length} ${t('shown')}`;
     more.appendChild(sp);
   }
   frameGalleryLazyLoad();
@@ -8563,27 +8710,31 @@ function frameCard(h,rank){
   const tag=(h.video_name.match(/_([VTS])$/i)||[])[1]||'';
   const isSphere=(h.stream==='360');
   // 360 没有 _V/_T/_S 后缀，别硬套"Thermal/Zoom"那套标签
-  const tagName=isSphere?'360':({V:'Visible',S:'Zoom',T:'Thermal'}[tag.toUpperCase()]||'');
+  const tagName=isSphere?t('360'):t({V:'Visible',S:'Zoom',T:'Thermal'}[tag.toUpperCase()]||'');
   // 缩略图不在这里设 src —— 交给懒加载，否则一屏几十张同时打 ffmpeg
   el.innerHTML=
     `<div class="shot"><span class="rank">#${rank}</span>`
     +`<span class="badge2">${esc(res)}</span>`
     +`<img alt="" data-thumb="${esc(frameThumbUrl(h,320))}">`
-    +`<span class="ph">loading…</span></div>`
+    +`<span class="ph">${t('Loading…')}</span></div>`
     +`<div class="meta">`
     +`<div class="t">${esc(tgt)}${tagName?` · ${esc(tagName)}`:''}</div>`
     +`<div class="n" title="${esc(sortie)}">${esc(sortie)}</div>`
+    // 逐点帧号（point_frames）：同一时刻 V/S/T 三路各是第几帧。
+    // 三路帧号不一样、也推不出来（帧率不同 + 各有丢帧），只有合并航迹里存了这份对照。
+    // 没有帧号（老数据 / 单路素材）整行不出现 —— 卡片与改动前一模一样。
+    +(frameLineOf(h)?`<div class="fr">${esc(frameLineOf(h))}</div>`:'')
     // 360 没有云台姿态（pitch 为 null），这里不能写 "pitch null°"
     +(isSphere
-        ? `<div>h ${h.alt_m} m · sphere (no gimbal)<\/div>`
-        : `<div>h ${h.alt_m} m · pitch ${Number(h.pitch_deg).toFixed(0)}°${h.zoomed?' · zoom':''}<\/div>`)
+        ? `<div>h ${h.alt_m} m · ${t('sphere (no gimbal)')}<\/div>`
+        : `<div>h ${h.alt_m} m · pitch ${Number(h.pitch_deg).toFixed(0)}°${h.zoomed?' · '+t('zoom'):''}<\/div>`)
     // 「本趟」= 这一趟连续看着这一点的时长。同一架次会来回飞好几趟，
     // 每趟出一张卡，所以这里要说清"这一趟看了多久"，好区分"专程拍"和"路过扫到"。
     +(isSphere
-        ? `<div>${h.frames?h.frames+' frame(s) · ':''}${h.passes?h.passes+' pass(es)':''}`
-          +(h.pass_seconds?` · this pass ${Number(h.pass_seconds).toFixed(1)}s`:'')+`<\/div>`
-        : `<div>${h.frames} frame(s) · ${h.passes} pass(es)`
-          +(h.pass_seconds?` · this pass ${Number(h.pass_seconds).toFixed(1)}s`:'')+`<\/div>`)
+        ? `<div>${h.frames?h.frames+' '+t('frame(s) · '):''}${h.passes?h.passes+' '+t('pass(es)'):''}`
+          +(h.pass_seconds?` · ${t('this pass')} ${Number(h.pass_seconds).toFixed(1)}s`:'')+`<\/div>`
+        : `<div>${h.frames} ${t('frame(s)')} · ${h.passes} ${t('pass(es)')}`
+          +(h.pass_seconds?` · ${t('this pass')} ${Number(h.pass_seconds).toFixed(1)}s`:'')+`<\/div>`)
     // **排序依据**（用户 2026-10-13 两版要求）：
     //   ① 目标最贴近画面中心的最优先 —— 用户原话：「如果有大量帧包含目标点，
     //      那么优先跳转的应该是'目标点最贴近画面中心、或者稍微更靠近的位置'」
@@ -8595,17 +8746,17 @@ function frameCard(h,rank){
     // 360 走另一套措辞：全景没有"画面边缘被切"的问题（除了正下方盲区），
     // 所以"离中心多远"对它是无意义的；它靠"离目标多近"排序。
     +(isSphere
-        ? `<div class="rec">✓ 360 — nearest first</div>`
-          +`<div class="n">${h.dist_m!=null?`${Number(h.dist_m).toFixed(0)} m from the drone`:''}`
-            +`${h.bearing_deg!=null?` · bearing ${Number(h.bearing_deg).toFixed(0)}°`:''}<\/div>`
+        ? `<div class="rec">✓ ${t('360 — nearest first')}</div>`
+          +`<div class="n">${h.dist_m!=null?`${Number(h.dist_m).toFixed(0)} ${t('m from the drone')}`:''}`
+            +`${h.bearing_deg!=null?` · ${t('bearing')} ${Number(h.bearing_deg).toFixed(0)}°`:''}<\/div>`
         : (h.category==='central'
-            ? `<div class="rec">✓ centred — recommended</div>`
+            ? `<div class="rec">✓ ${t('centred — recommended')}</div>`
             : (h.category==='zoom_cover'
-                ? `<div class="rec">✓ zoomed &amp; covering — recommended</div>`
-                : `<div class="near-edge">⚠ off-centre, wide lens</div>`))
+                ? `<div class="rec">✓ ${t('zoomed &amp; covering — recommended')}</div>`
+                : `<div class="near-edge">⚠ ${t('off-centre, wide lens')}</div>`))
           +(h.centre_offset!=null?`<div class="n">${
-              h.zoom_cover?'zoomed · ':''}${(Number(h.centre_offset)*100).toFixed(0)}% from centre`
-            +(h.edge_margin!=null?` · ${(Number(h.edge_margin)*100).toFixed(0)}% from edge`:'')
+              h.zoom_cover?t('zoomed')+' · ':''}${(Number(h.centre_offset)*100).toFixed(0)}% ${t('from centre')}`
+            +(h.edge_margin!=null?` · ${(Number(h.edge_margin)*100).toFixed(0)}% ${t('from edge')}`:'')
             +`<\/div>`:''))
     +`</div>`;
   el.title=(h.stream==='360'
@@ -8634,7 +8785,7 @@ function frameGalleryLazyLoad(){
     next.addEventListener('error',()=>{
       next.dataset.state='error';
       const ph=next.parentElement&&next.parentElement.querySelector('.ph');
-      if(ph)ph.textContent='no frame';
+      if(ph)ph.textContent=t('no frame');
       done();
     },{once:true});
     next.src=next.dataset.thumb;
@@ -8699,8 +8850,17 @@ function jumpToFrameHit(h){
   // 到视频后段会偏 17.7 秒（实测 228 m），表现就是"地图上的位置差得离谱"。
   // 现在后端直接给 `target_seconds` / `player_seek_seconds`（都等于该采样点的
   // SRT cue 时间），前端只负责用。
+  //
+  // 2026-10-16 增量：命中若带**逐点帧号**（framesOfHit 查出来的 frame_seconds），
+  // 就用"这个帧号所在的那一刻"定位 —— 合并航迹里 (时刻, 帧号) 是成对的，
+  // 于是**卡片上显示的帧号**和**视频停下的那一帧**是同一个采样点，
+  // 不会出现"显示 18297、落到 18303"。
+  // 没有帧号（老数据 / 单路素材）时 frame_seconds 是 undefined，
+  // Number(undefined) = NaN -> 走原来那个表达式，一个字节都不变。
+  const frameSeek=Number(h.frame_seconds);
   const target=Math.max(0,Number(
-    h.player_seek_seconds!==undefined?h.player_seek_seconds:h.target_seconds)||0);
+    Number.isFinite(frameSeek)?frameSeek:
+    (h.player_seek_seconds!==undefined?h.player_seek_seconds:h.target_seconds))||0);
 
   // 这一帧能不能"往前倒 3 秒"？倒不出来的情况就是**时间轴边界**：
   // 命中帧本身就在视频开头（实测那个点是 t=0.0 s，刚起飞那一帧）。
@@ -8723,6 +8883,10 @@ function jumpToFrameHit(h){
     photo_pause_at:hasLeadIn?target:0,
     pause_has_lead_in:hasLeadIn,
     video:h.video_name,
+    // 这一路**自己的**精确帧号（逐点帧号查出来的，见 framesOfHit）。
+    // 只对 relative_path 那一路成立 —— 绝不能拿它去 seek 另一路。
+    frame_no:(h.frame_no==null?null:h.frame_no),
+    frame_stream:h.frame_stream||null,
   }));
   // 余量不足 -> 只定位不播放，停在那一帧
   openVideoFromPopup(encoded,hasLeadIn);
@@ -8733,6 +8897,9 @@ function jumpToFrameHit(h){
       : `Positioned ${h.video_name} at ${formatTime(target)} (${h.can_resolve_cm} cm/px) — `
         +`this frame is at the very start of the recording, so there is no 3 s lead-in; `
         +`press play to continue`;
+    // 顺带把"同一时刻三路各是第几帧"写在提示行上（没有帧号时这段不出现）
+    const fr=frameLineOf(h);
+    if(fr)videoInfo.textContent+=` — ${fr}`;
   }
 }
 
@@ -8781,6 +8948,19 @@ function frameGalleryDebug(){
     galleryEmpty:frameGalleryHits.length===0&&frameGalleryShown===0,
     titles:cards?[...grid.querySelectorAll('.frame-hit')].map(el=>el.title):[],
     thumbs:cards?[...grid.querySelectorAll('img[data-thumb]')].map(im=>im.getAttribute('data-thumb')):[],
+    // 卡片上那行**逐点帧号**的真实文字（没有就是空串）。
+    // 从 DOM 里读、不从 frameGalleryHits 里算 —— 测试要证的是"真的渲染到界面上了"。
+    frames:cards?[...grid.querySelectorAll('.frame-hit')].map(el=>{
+      const n=el.querySelector('.fr');
+      return n?domTextOf(n).trim():'';
+    }):[],
+    // 命中身上挂的帧号对象（查表结果，便于逐条核对是哪一路、第几帧）
+    frameData:frameGalleryHits.map(h=>({
+      stream:h.frame_stream||null,
+      frame:(h.frame_no==null?null:h.frame_no),
+      seconds:(h.frame_seconds==null?null:h.frame_seconds),
+      all:h.frames_at_time||null,
+    })),
     title:box?domTextOf(box.querySelector('h4')):'',
     sub:box?domTextOf(box.querySelector('.sub')):'',
     // 热力图定位用的摘要（测试要核对范围算得对不对）
@@ -8827,6 +9007,10 @@ function videoContextDebug(){
     // （不暂停）—— 因为余量不足时设暂停点会让播放器一开播就停在第 0 帧。
     pauseHasLeadIn:clip.data&&clip.data.pause_has_lead_in!==false,
     video:(clip.data&&clip.data.video)||'',
+    // 逐点帧号也一并读回来：测试要核对"跳的是这一路自己的帧号"，
+    // 而不是只看时刻对不对（时刻对、帧号错正是这次要防的）。
+    frameNo:(clip.data&&clip.data.frame_no!=null)?Number(clip.data.frame_no):null,
+    frameStream:(clip.data&&clip.data.frame_stream)||null,
   };
 }
 
@@ -8920,18 +9104,18 @@ function isVisibleStream(relativePath){
 //   _V 3840×2160（16:9）   _S 1920×1080（16:9）   _T 1280×1024（5:4）
 function streamLabelOf(relativePath){
   const v=String(relativePath||'').toLowerCase();
-  if(/_t\./.test(v))return 'Thermal 1280×1024';
-  if(/_v\./.test(v))return 'Visible 3840×2160';
-  if(/_s\./.test(v))return 'Visible 1920×1080';
-  return 'Other';
+  if(/_t\./.test(v))return t('Thermal 1280×1024');
+  if(/_v\./.test(v))return t('Visible 3840×2160');
+  if(/_s\./.test(v))return t('Visible 1920×1080');
+  return t('Other');
 }
 
 // 徽标悬停的补充说明：分辨率已经写在标签里了，这里只讲画幅和相机
 function streamNoteOf(relativePath){
   const v=String(relativePath||'').toLowerCase();
-  if(/_t\./.test(v))return '5:4 · thermal sensor 640×512, recorded after 2× in-camera upscaling';
-  if(/_v\./.test(v))return '16:9 · visible-light hybrid zoom (4K main stream)';
-  if(/_s\./.test(v))return '16:9 · visible-light hybrid zoom (1080p version of the same view)';
+  if(/_t\./.test(v))return t('5:4 · thermal sensor 640×512, recorded after 2× in-camera upscaling');
+  if(/_v\./.test(v))return t('16:9 · visible-light hybrid zoom (4K main stream)');
+  if(/_s\./.test(v))return t('16:9 · visible-light hybrid zoom (1080p version of the same view)');
   return '';
 }
 
@@ -9925,7 +10109,10 @@ function onLangChanged(){
   if(typeof renderMarkerList==='function')each(renderMarkerList,'markers');
   if(typeof updateMarkerBar==='function')each(updateMarkerBar,'marker-bar');
   // 检索结果（该点信息 / 图墙 / 备选视频）
-  if(typeof frameGalleryRender==='function')each(frameGalleryRender,'frame-gallery');
+  if(typeof frameGalleryRender==='function'&&frameGalleryLastData
+     &&frameGalleryHits.length){
+    each(()=>frameGalleryRender(frameGalleryLastData),'frame-gallery');
+  }
   // 静态 HTML 里剩下的按钮文案（有些是脚本里设的，不在 data-i18n 范围内）
   each(()=>{if(typeof updateLoadAllLabel==='function')updateLoadAllLabel()},'load-all-label');
 }

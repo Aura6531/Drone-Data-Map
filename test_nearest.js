@@ -34,14 +34,32 @@ const helpers = [
 ].join('\n');
 const searchBlock = extractBetween('// 同一位置可能有多路视频', 'async function searchNearby(){');
 
+// 逐点帧号（properties.point_frames）的**消费方**—— 页面里那一节新代码。
+// 抠出来用**真实三路数据**验：命中该挂哪一路的帧号、会不会串路、查不到怎么办。
+// 这几个函数就是「把逐点帧号接到界面上」的落点，页面上少一个就说明那段被删了。
+const frameHelpers = [
+  (html.match(/const FRAME_MATCH_TOL=[^;]+;/) || [''])[0],
+  extractFn('baseNameLower'),
+  extractFn('flightStreamOf'),
+  extractFn('nearestTimeIndex'),
+  extractFn('framesOfHit'),
+  extractFn('attachPointFrames'),
+  extractFn('frameLineOf'),
+].join('\n');
+if (!/const FRAME_MATCH_TOL/.test(frameHelpers)) {
+  throw new Error('页面上找不到逐点帧号的消费方（FRAME_MATCH_TOL）');
+}
+
 // videoPathFromGeojson 的第三级取值是「加载时登记好的映射表」VIDEO_REL_BY_GEOJSON
 // （页面里全页共用，见 addGeo）。这里只抠了单个函数，得把这个模块级常量也补上，
 // 否则一走到第三级就 ReferenceError。页面里它是空表起手、由 addGeo 填，
 // 所以桩也照这个来（addGeo 在测试里没被抠出来，自然也不会有人填）。
 const sandboxConsts = `
 const VIDEO_REL_BY_GEOJSON=Object.create(null);
+// streamLabelOf 现在会调 t()（英文原串当键）。单测只验"文案键"，用恒等桩。
+const t=k=>k;
 `;
-const src = helpers + '\n' + sandboxConsts + searchBlock;
+const src = helpers + '\n' + sandboxConsts + '\n' + frameHelpers + '\n' + searchBlock;
 
 // Leaflet 最小替身：latLng + haversine 距离（与 Leaflet 同算法）
 const L = { latLng: (lat, lng) => ({ lat, lng }) };
@@ -96,10 +114,10 @@ for (const n of names) {
 }
 
 const api = new Function('loadedTracks', 'map', 'L', src +
-  '\nreturn {nearestPerStream,pickNearestGroup,streamLabelOf,videoPathFromGeojson,formatTime,GROUP_METERS,GROUP_SECONDS,trackMatchesPath,flightStemOfForMatch,loadedTracksRead:()=>loadedTracks};');
+  '\nreturn {nearestPerStream,pickNearestGroup,streamLabelOf,videoPathFromGeojson,formatTime,GROUP_METERS,GROUP_SECONDS,trackMatchesPath,flightStemOfForMatch,framesOfHit,attachPointFrames,frameLineOf,nearestTimeIndex,loadedTracksRead:()=>loadedTracks};');
 const A = api(loadedTracks, map, L);
 const { nearestPerStream, pickNearestGroup, streamLabelOf, videoPathFromGeojson, formatTime,
-        trackMatchesPath } = A;
+        trackMatchesPath, attachPointFrames, frameLineOf } = A;
 
 let ok = true;
 const chk = (c, label, extra = '') => { ok &&= !!c; console.log(`  ${c ? '[OK]' : '[FAIL]'} ${label}${extra ? ' -> ' + extra : ''}`); };
@@ -179,6 +197,79 @@ chk(V.streams.every(suf => Array.isArray(frames[suf]) && frames[suf].length === 
   V.streams.map(s => `${s}:${(frames[s] || []).length}`).join(' '));
 chk(frames.V[k] !== frames.T[k],
   '同一时刻 T 与 V 的帧号不同（正是推不出来的证据）', `V=${frames.V[k]} T=${frames.T[k]}`);
+
+console.log('\n=== 4b) 命中挂上**逐点帧号**：三路各查各的，绝不串路 ===');
+{
+  // 这一节验的是**消费方**：后端 find_frames 给的命中（只有共用时间轴，没有帧号），
+  // 挂上"它自己那一路的精确帧号"之后，界面才有东西显示、跳转才有帧号可用。
+  //
+  // 最要防的错：拿 V 的帧号去 seek T 路。实测同一时刻 T−V 前 1/4 中位 +50、
+  // 后 1/4 中位 +231 —— 串了路就是差一两百帧的画面。
+  const tAtK = V.times[k];
+  const mkHit = (suf, t) => ({
+    video_name: videoOf(V, suf).replace(/\.[^.]+$/, ''),
+    relative_path: videoOf(V, suf),
+    folder_index: 0,
+    target_seconds: t,
+    player_seek_seconds: t,
+  });
+  const hits = attachPointFrames([mkHit('V', tAtK), mkHit('S', tAtK), mkHit('T', tAtK)]);
+  ['V', 'S', 'T'].forEach((suf, i) => {
+    const h = hits[i];
+    chk(h.frame_stream === suf, `命中属于哪一路就判成哪一路（${suf}）`, h.frame_stream);
+    chk(h.frame_no === frames[suf][k], `${suf} 路查到的是**自己**那一路的帧号`,
+      `期望 ${frames[suf][k]} / 实际 ${h.frame_no}`);
+    chk(h.frame_seconds === V.times[k], `${suf} 路的帧号带着它自己的时刻`,
+      String(h.frame_seconds));
+  });
+  chk(new Set(hits.map(h => h.frame_no)).size >= 2,
+    '三路帧号不是同一个数（串路的话就会全一样）',
+    hits.map(h => `${h.frame_stream}:${h.frame_no}`).join(' '));
+  chk(hits[0].frames_at_time && hits[0].frames_at_time.V === frames.V[k]
+      && hits[0].frames_at_time.T === frames.T[k],
+    '同一时刻三路对照一起给出（界面那行就是它）', JSON.stringify(hits[0].frames_at_time));
+  chk(frameLineOf(hits[2]) === `frame V ${frames.V[k]} · S ${frames.S[k]} · T ${frames.T[k]}`,
+    '界面文字固定写成 V / S / T 顺序', JSON.stringify(frameLineOf(hits[2])));
+  chk(A.nearestTimeIndex(V.times, tAtK) === k, '时刻 -> 下标用二分查，命中原点',
+    String(A.nearestTimeIndex(V.times, tAtK)));
+
+  // ---- 优雅退化：查不到就**一个字段都不加**，与改动前完全等价 ----
+  const legacy = attachPointFrames([
+    { video_name: 'DJI_20260924101516_0001_V', relative_path: 'DJI_20260924101516_0001_V.MP4',
+      folder_index: 0, target_seconds: 12.0, player_seek_seconds: 12.0 },   // 别的架次
+    { video_name: 'DJI_Z_0001_V', relative_path: 'DJI_Z_0001_V.MP4',
+      folder_index: 0, target_seconds: 12.0 },                              // 本项目里没这条航迹
+    { video_name: 'DJI_20260924095258_0001', relative_path: 'DJI_20260924095258_0001.OSV',
+      folder_index: 0, target_seconds: 12.0, stream: '360' },               // 360 素材没有 _V/_S/_T
+    { video_name: videoOf(V, 'V').replace(/\.[^.]+$/, ''), relative_path: videoOf(V, 'V'),
+      folder_index: 0, target_seconds: 99999 },                             // 时刻差得远，对不上号
+  ]);
+  chk(legacy.every(h => h.frame_no === undefined),
+    '查不到帧号的命中**不多任何字段**（别的架次 / 无此航迹 / 360 / 时刻对不上）',
+    legacy.map(h => String(h.frame_no)).join(','));
+  chk(legacy.every(h => frameLineOf(h) === ''),
+    '这些命中在界面上不会多出那一行',
+    legacy.map(h => JSON.stringify(frameLineOf(h))).join(','));
+
+  // 「单路素材」（没有 point_frames 的旧 geojson）必须与现在**完全等价**：
+  // 临时塞一条只有 video、没有 point_frames 的航迹，命中它 -> 不加任何字段。
+  loadedTracks.push({
+    coords: [[0, 0, 0], [0.0001, 0.0001, 0]],
+    times: [0, 1],
+    fileInfo: { relative_path: 'DJI_SOLO_0001.geojson', folder_index: 0 },
+    feature: null, color: '#000', name: 'DJI_SOLO_0001.geojson',
+    video: 'DJI_SOLO_0001_V.MP4', videos: null, streams: null,
+    pointFrames: null, referenceStream: null, videoEnd: 1,
+  });
+  const solo = attachPointFrames([{
+    video_name: 'DJI_SOLO_0001_V', relative_path: 'DJI_SOLO_0001_V.MP4',
+    folder_index: 0, target_seconds: 1.0, player_seek_seconds: 1.0,
+  }]);
+  chk(solo[0].frame_no === undefined && solo[0].frames_at_time === undefined
+      && solo[0].frame_seconds === undefined,
+    '单路素材（没有 point_frames）的命中不多任何字段 —— 与现在完全等价');
+  loadedTracks.pop();   // 后面几节还在用这份 loadedTracks，别留脏数据
+}
 
 console.log('\n=== 5) 远处目标（北京）===');
 const far = pickNearestGroup({ lng: 116.4, lat: 39.9 });
