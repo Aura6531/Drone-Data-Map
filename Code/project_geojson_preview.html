@@ -4886,6 +4886,28 @@ function photoThumbUrl(folder,name,w){
   return '/photo/thumb?w='+Number(w||240)+'&path='+encodeURIComponent(p);
 }
 
+// 全景照片的**透视封面**。
+//
+// 为什么不能直接用 photoThumbUrl：全景图是 2:1 等距柱状图，缩成小图就是
+// 一条压扁的弧带，看不出画面里有什么。按某个方向投成透视小图，
+// 才和人点开 360 查看器看到的一样。
+//
+// 参数用默认值（yaw=0, pitch=0, fov=75）—— 与播放器的默认视角**完全一致**，
+// 所以"封面"和"点开后第一眼"是同一个画面
+// （后端 pano360.perspectives_from_equirect 与播放器 draw() 的公式逐行等价）。
+function panoCoverUrl(folder,name,w){
+  const p=String(folder||'')+'\\'+String(name||'');
+  return '/photo/pano?w='+Number(w||720)+'&path='+encodeURIComponent(p);
+}
+
+// 按"是不是全景"选取图地址：全景用透视封面，普通照片用普通缩略图。
+function photoSrcOf(member,w){
+  if(!member)return '';
+  return member.panorama
+    ? panoCoverUrl(member.folder,member.name,w)
+    : photoThumbUrl(member.folder,member.name,w);
+}
+
 // 某条航迹 / 组文件夹的「视频流前缀」：去掉 .JPG 和最后那段 _T / _V / _S，
 // 得到 DJI_20260924095348_0002。同一时刻的 T/V/S 三张会归到同一个前缀。
 function photoStreamPrefix(name,extPattern){
@@ -5578,7 +5600,7 @@ function photoGalleryHtml(group){
     (lead.panorama ? ` data-pano="1"` : '') +
     (lead.panorama ? ` title="Click to look around in this 360 photo"`
                    : ` title="Open the video at this photo\'s time"`) + `>`
-    +`<img src="${esc(photoThumbUrl(lead.folder,lead.name,720))}" alt="${esc(photoCameraLabel(lead.camera))}Photo">`
+    +`<img src="${esc(lead.panorama?panoCoverUrl(lead.folder,lead.name,720):photoThumbUrl(lead.folder,lead.name,720))}" alt="${esc(photoCameraLabel(lead.camera))}Photo">`
     +(lead.panorama ? `<span class="pano-badge">360</span>` : '')
     +leadCaption
     +`</figure>`;
@@ -5590,7 +5612,7 @@ function photoGalleryHtml(group){
       +(m.panorama ? ` data-pano="1"` : '')
       +(m.panorama ? ` title="Click to look around in this 360 photo"`
                    : ` title="Open the video at this photo\'s time"`) + `>`
-      +`<img src="${esc(photoThumbUrl(m.folder,m.name,240))}" alt="${esc(photoCameraLabel(m.camera))}Photo">`
+      +`<img src="${esc(m.panorama?panoCoverUrl(m.folder,m.name,480):photoThumbUrl(m.folder,m.name,240))}" alt="${esc(photoCameraLabel(m.camera))}Photo">`
       +(m.panorama ? `<span class="pano-badge">360</span>` : '')
       +`<figcaption class="photo-cap">`
       +`<span class="${photoCameraClass(m.camera)}">${esc(photoCameraLabel(m.camera))}</span>`

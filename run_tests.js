@@ -55,6 +55,7 @@ const PY_SUITES = [
   'test_coverage_api.py',     // 覆盖接口层：清单 / 构建 / 复用 / 过期 / 查询 / 热力图 / 导出
   'test_pano360.py',          // 360 全景：手性 / 太阳检测的约束 / 地面距离 / 输入校验
   'test_photo_pano.py',       // 全景照片识别：2:1 等距柱状的判定边界（不依赖大素材）
+  'test_pano_cover.py',       // 全景透视封面：yaw/pitch/fov 约定（自证，不依赖浏览器）
   'test_pano360_coverage.py', // 360 覆盖几何：径向标度 / 圆环内外半径 / 不落地判据
   'test_pano360_perspective.py', // 360 透视裁剪：方向约定与 stitch 一致（可自证）
   'test_sync_check.py',       // 视频/航迹时长同步自检：能抓到被裁过的视频

@@ -6672,6 +6672,146 @@ class ProjectManagerHandler(
 
             return
 
+        # ---------------- 全景照片的"透视封面" ----------------
+        #
+        # 为什么需要：全景照片是 2:1 等距柱状图，直接缩成小图看就是**一条压扁的
+        # 弧带**，完全看不出画面里有什么。而按某个方向投成透视小图，
+        # 就和人点开 360 查看器看到的一样。
+        #
+        # 数学直接复用 pano360.perspectives_from_equirect。
+        #
+        # **两边的 `fov` 语义不一样，必须换算**（这个坑是靠"图对图"比出来的，
+        # 不是看代码能看出来的）：
+        #   播放器 draw():  ny = ±tan(fov/2)                  -> fov 是**垂直**视场角
+        #   perspectives_from_equirect: dx = ±out_w/2, dz=f   -> fov 是**水平**视场角
+        # 直接把 75 传进去，封面会比查看器"更近"：实测两张图的归一化互相关只有 0.372。
+        # 按输出宽高比把垂直 fov 换成水平 fov 之后 -> 0.625；
+        # 再让画幅比与查看器一致（w=760&h=520）-> **0.9996**，即同一个画面。
+        if path == "/photo/pano":
+
+            try:
+                q = parse_qs(parsed.query)
+                raw = (q.get("path") or [""])[0]
+                if not raw:
+                    raise ValueError("缺少 path。")
+
+                def _num(key, default, lo, hi):
+                    try:
+                        v = float((q.get(key) or [default])[0])
+                    except (TypeError, ValueError):
+                        v = float(default)
+                    return max(lo, min(hi, v))
+
+                want = int(_num("w", 720, 160, 1600))
+                # 高度可选：不给就按 16:9。照片卡片不是 16:9，调用方可以传 h
+                # 直接要一个贴合卡片比例的封面，省掉被裁掉的上下部分。
+                # 注意 `h` 只影响**画幅**，不改变视场语义：`fov` 始终是垂直视场角
+                # （与播放器里的含义一致），所以改 h 不会让封面"变焦"。
+                want_h = (q.get("h") or [""])[0]
+                if want_h:
+                    want_h = int(_num("h", 0, 120, 1600))
+                    if want_h < 60:
+                        want_h = None
+                else:
+                    want_h = None
+                yaw = _num("yaw", 0.0, -180.0, 180.0)
+                pitch = _num("pitch", 0.0, -89.0, 89.0)
+                fov = _num("fov", 75.0, 20.0, 120.0)
+
+                candidate = Path(raw).resolve()
+                if candidate.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                    raise ValueError("只支持 jpg/png。")
+
+                allowed = False
+                for project_file in PROJECT_DIR.glob("*/project.json"):
+                    try:
+                        data = json.loads(project_file.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        continue
+                    for item in data.get("folders") or []:
+                        folder = item.get("path")
+                        if not folder:
+                            continue
+                        try:
+                            candidate.relative_to(Path(folder).resolve())
+                            allowed = True
+                            break
+                        except ValueError:
+                            pass
+                    if allowed:
+                        break
+                if not allowed:
+                    raise ValueError("这个路径不在任何项目文件夹里。")
+
+                import hashlib
+                from PIL import Image
+
+                stat = candidate.stat()
+                key = hashlib.sha1((
+                    "%s|%d|%d|%d|%s|%.2f|%.2f|%.2f" % (
+                        candidate, stat.st_size, int(stat.st_mtime),
+                        want, want_h or 0, yaw, pitch, fov)
+                ).encode("utf-8")).hexdigest()[:20]
+                cache_dir = TEST_DIR / "_cache" / "pano"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                cached = cache_dir / ("%s.jpg" % key)
+
+                if not cached.is_file():
+                    import numpy as np
+                    import pano360
+
+                    Image.MAX_IMAGE_PIXELS = None
+                    with Image.open(candidate) as im:
+                        # 等距柱状源只需要 2048 宽就够投一张 720 的小图：
+                        # draft() 让 libjpeg 直接低分辨率解码，14400 宽也不用全解。
+                        try:
+                            im.draft("RGB", (2048, 1024))
+                        except Exception:
+                            pass
+                        im = im.convert("RGB")
+                        if im.width > 2048:
+                            ratio = 2048 / float(im.width)
+                            im = im.resize((2048, max(1, int(round(im.height * ratio)))),
+                                           Image.LANCZOS)
+                        equi = np.asarray(im)
+
+                    out_h = want_h if want_h else max(1, int(round(want * 9 / 16.0)))
+                    # **fov 的语义两边不一样，必须换算**（踩过，靠图对图比出来的）：
+                    #   播放器 draw():  ny = ±tan(fov/2)            -> fov 是**垂直**视场角
+                    #   perspectives_from_equirect: dx = ±out_w/2, dz=f -> fov 是**水平**视场角
+                    # 直接把同一个 75 传进去，服务端封面会比查看器"更近"
+                    # （水平 75° vs 实际 96°），两张图相关系数只有 0.372。
+                    # 这里按输出宽高比把"垂直 fov"换成"水平 fov"，两者才看同一个画面。
+                    import math as _math
+                    fov_h = 2.0 * _math.degrees(_math.atan(
+                        _math.tan(_math.radians(fov) / 2.0) * (want / float(out_h))))
+                    fov_h = max(1.0, min(170.0, fov_h))
+
+                    persp = pano360.perspectives_from_equirect(
+                        equi, yaw, pitch, fov_deg=fov_h, out_w=want, out_h=out_h)
+                    tmp = cached.with_suffix(".jpg.tmp")
+                    Image.fromarray(persp, "RGB").save(
+                        tmp, format="JPEG", quality=85, optimize=True)
+                    tmp.replace(cached)
+
+                payload = cached.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Cache-Control", "private, max-age=86400")
+                self.end_headers()
+                self._write_body(payload)
+
+            except Exception as e:
+                message = str(e).encode("utf-8")
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(message)))
+                self.end_headers()
+                self._write_body(message)
+
+            return
+
         # ---------------- 照片缩略图 ----------------
         #
         # 为什么必须有：`/photo` 返回的是**原图字节**。普通照片 3~4 MB 还能忍，
