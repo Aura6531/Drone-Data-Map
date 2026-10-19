@@ -351,6 +351,12 @@ UI_ZH: dict[str, str] = {
     'Category': '类别',
     'Category (optional)': '类别（可不填）',
 
+    # 正射影像叠加层（瓦片金字塔）
+    'Building pyramid…': '正在建立金字塔…',
+    'Pyramid ready': '金字塔已就绪',
+    'Pyramid build failed: ': '建立金字塔失败：',
+    'tiles': '块瓦片',
+
 }
 
 

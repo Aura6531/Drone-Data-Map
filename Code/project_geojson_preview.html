@@ -1279,6 +1279,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                 class="photo-sub"></span>
         </span>
         <div class="map-tools-right">
+          <!-- 正射影像叠加层：把项目里的 GeoTIFF 正射影像当瓦片底图贴在地图上。
+               金字塔在后台建（几分钟），建好之后缩放就是读文件（实测 3 ms / 块）。
+               没有 .tif 时按钮本身不出现，不占位置。 -->
+          <button id="orthoBtn" class="coverage-toggle-btn" type="button"
+                  aria-pressed="false" hidden
+                  title="Overlay this project's orthomosaic (GeoTIFF) on the map">Ortho</button>
+          <span id="orthoStatus" class="photo-sub" hidden></span>
           <button id="coverageToggleBtn" class="coverage-toggle-btn" type="button"
                   aria-pressed="false"
                   title="Show where this project's flights actually observed the ground, and how clearly">Coverage</button>
@@ -1812,6 +1819,10 @@ const colors=['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#0891b2','#db27
 // 级别，航迹和视场框都跑出画面。这两个常量就是用来压住它的，想更远/更近改这里。
 const TRACK_FIT_MAX_ZOOM=15;   // 自动缩放到轨迹时的最高级别（数字越小看得越广）
 const TRACK_FOCUS_ZOOM=16;     // 「地图定位到该点」用的级别
+// 地图允许放大的上限。底图（天地图）只有 18 级，但**正射影像的金字塔建到 21 级**，
+// 所以地图本身要放开到 22，底图用 maxNativeZoom 停在 18（再往上 Leaflet 插值放大）。
+// 否则 map 的 maxZoom 被底图卡在 18，正射影像 4.6 cm 的细节永远看不到。
+const MAP_MAX_ZOOM=22;
 
 let map=null;
 let layerGroup=null;
@@ -2215,7 +2226,13 @@ function setBaseMap(kind){
       `/maptile/${item.source}/{z}/{x}/{y}.png`,
       {
         minZoom:3,
-        maxZoom:item.maxZoom,
+        // 地图本身允许放大到 22，但**底图只有 18 级** ——
+        // 所以把底图的「原生最高级」定在 18，再往上是 Leaflet 放大插值（会糊一点），
+        // 而正射影像（金字塔建到 z21）在那些层级是**真分辨率**。
+        // 不这么分开的话 map 的 maxZoom 会被底图卡在 18，
+        // 用户永远看不到正射影像 4.6 cm 的细节（实测 setView 到 20 会被夹回 18）。
+        maxZoom:MAP_MAX_ZOOM,
+        maxNativeZoom:item.maxZoom,
         // 底图 zIndex 小、注记层 zIndex 大，保证注记压在底图上面
         zIndex:index,
         attribution:index===0?def.attribution:''
@@ -2249,7 +2266,11 @@ function setBaseMap(kind){
     baseLayers.push(layer);
   });
 
-  const maxZoom=def.layers[0].maxZoom;
+  // 地图的 maxZoom 不能取"底图原生最高级" —— 底图（天地图）只有 18 级，
+  // 而正射影像的金字塔建到 21 级。卡在 18 的话用户永远看不到 4.6 cm 的细节
+  // （实测 setView 到 20 会被夹回 18）。
+  // 底图超出原生级的放大由 tileLayer 的 maxNativeZoom 处理（Leaflet 自己插值）。
+  const maxZoom=MAP_MAX_ZOOM;
   map.setMaxZoom(maxZoom);
 
   if(map.getZoom()>maxZoom)map.setZoom(maxZoom);
@@ -2355,6 +2376,10 @@ async function scanGeoJSON(){
     // 顺带算一下「缺哪些」：SRT/GeoJSON 被误删时，列表上看不出来，
     // 但航迹点不进去。这里在列表上方提示一行，点一下就把缺的补齐。
     refreshMissingHint(name);
+
+    // 顺带看看这个项目有没有正射影像（.tif）。有就把叠加层按钮亮出来。
+    // 失败不阻塞 —— 这是附加功能，不能让文件列表跟着报错。
+    try{ loadOrthoList() }catch(e){}
   }catch(e){fileList.innerHTML='';show(fileNotice,e.message,true)}
 }
 
@@ -5233,6 +5258,156 @@ function renderPhotoLayer(){
   photoLayer.addTo(map);
 }
 
+// ============================================================
+// 正射影像叠加层（GeoTIFF -> 瓦片金字塔）
+// ============================================================
+//
+// 用户 2026-10-16 要求参考 ArcGIS 的做法：「分块建立金字塔，下次就能快速缩放访问」。
+// 后端就是这么做的（Code/ortho.py + ortho_api.py）：
+//   · 一次性把各层级切成 256×256 PNG 落盘（实测 3385 块 / 2.7 分钟 / 435 MB）
+//   · 之后缩放平移全是读文件（实测 3 ms / 块）
+//   · 还没建完也能看：tile 接口在磁盘没有时现算并顺手落盘
+// 前端这里只做三件事：发现有哪些影像、挂一个 tileLayer、显示建金字塔的进度。
+
+let orthoLayer=null;
+let orthoList=[];
+let orthoPicked=null;
+let orthoPollTimer=0;
+
+function orthoBtnEl(){return document.getElementById('orthoBtn')}
+function orthoStatusEl(){return document.getElementById('orthoStatus')}
+
+function setOrthoStatus(text){
+  const el=orthoStatusEl();
+  if(!el)return;
+  el.textContent=text||'';
+  el.hidden=!text;
+}
+
+// 读出项目里的正射影像。没有 .tif 就把按钮藏起来，不占位置。
+async function loadOrthoList(){
+  const name=currentProjectName();
+  orthoList=[];
+  if(!name){ if(orthoBtnEl())orthoBtnEl().hidden=true; return [] }
+  try{
+    const d=await api('/api/ortho/list?name='+encodeURIComponent(name));
+    orthoList=(d&&d.orthos)||[];
+  }catch(e){ orthoList=[] }
+
+  // 只有"彩色 8 位、能读投影"的才算可显示；dsm.tif 那类高程序列会被后端标成
+  // kind='unsupported'，这里直接忽略（不是坏了，是不该当底图）。
+  const usable=orthoList.filter(o=>o&&o.kind==='ortho'&&o.source);
+  orthoPicked=usable[0]||null;
+
+  const btn=orthoBtnEl();
+  if(btn){
+    btn.hidden=!orthoPicked;
+    if(orthoPicked){
+      const s=orthoPicked.source||{};
+      btn.title=`Overlay ${orthoPicked.name} (${s.width}×${s.height}, `
+        + `${(Number(s.gsd_m||0)*100).toFixed(1)} cm/px) on the map`;
+    }
+  }
+  return usable;
+}
+
+function orthoBounds(entry){
+  const b=(entry.source||{}).bounds||{};
+  if(b.south==null)return null;
+  return [[b.south,b.west],[b.north,b.east]];
+}
+
+async function toggleOrtho(){
+  const entry=orthoPicked;
+  if(!entry)return;
+
+  // 关掉
+  if(orthoLayer){
+    try{map.removeLayer(orthoLayer)}catch(e){}
+    orthoLayer=null;
+    const btn=orthoBtnEl();
+    if(btn){btn.setAttribute('aria-pressed','false');btn.classList.remove('photo-on')}
+    setOrthoStatus('');
+    if(orthoPollTimer){clearInterval(orthoPollTimer);orthoPollTimer=0}
+    return;
+  }
+
+  const name=currentProjectName();
+  if(!name)return;
+
+  const bounds=orthoBounds(entry);
+  const levels=entry.levels||[12,21];
+
+  // 拼瓦片地址。path 必须是完整的绝对路径（后端会校验它落在项目文件夹里）。
+  const tileUrl='/api/ortho/tile?name='+encodeURIComponent(name)
+    +'&path='+encodeURIComponent(entry.path)
+    +'&z={z}&x={x}&y={y}';
+
+  orthoLayer=L.tileLayer(tileUrl,{
+    minZoom:levels[0], maxZoom:levels[1],
+    maxNativeZoom:levels[1],
+    bounds:bounds?L.latLngBounds(bounds):null,
+    // 影像是 WGS84/UTM 投到 Web Mercator，正好对得上 Leaflet 的网格
+    noWrap:true,
+    keepBuffer:3,
+    // 没数据的地方后端返回 1×1 透明 PNG，Leaflet 直接当透明
+    errorTileUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+  });
+  orthoLayer.addTo(map);
+
+  const btn=orthoBtnEl();
+  if(btn){btn.setAttribute('aria-pressed','true');btn.classList.add('photo-on')}
+
+  if(bounds){
+    try{map.fitBounds(L.latLngBounds(bounds),{padding:[20,20],maxZoom:levels[1]})}catch(e){}
+  }
+
+  // 后台建金字塔（已建好会立刻返回 cached）
+  setOrthoStatus(t('Building pyramid…'));
+  try{
+    const r=await api('/api/ortho/build?name='+encodeURIComponent(name)
+      +'&path='+encodeURIComponent(entry.path));
+    const job=(r&&r.job)||{};
+    if(job.cached||job.state==='ready'){
+      setOrthoStatus(t('Pyramid ready')+' · '+(job.tiles||0)+' ' + t('tiles'));
+      return;
+    }
+    pollOrthoJob(name,entry.path);
+  }catch(e){
+    setOrthoStatus(t('Pyramid build failed: ')+e.message);
+  }
+}
+
+// 轮询建金字塔的进度。建完就停。
+function pollOrthoJob(name,path){
+  if(orthoPollTimer)clearInterval(orthoPollTimer);
+  const q='/api/ortho/job?name='+encodeURIComponent(name)
+    +'&path='+encodeURIComponent(path);
+  const tick=async()=>{
+    try{
+      const r=await api(q);
+      const job=(r&&r.job)||{};
+      if(job.state==='running'||job.state==='queued'){
+        const pct=Math.round(Number(job.progress||0)*100);
+        setOrthoStatus(t('Building pyramid…')+' '+pct+'%'
+          +(job.current_z?'  z'+job.current_z:''));
+        return;
+      }
+      if(orthoPollTimer){clearInterval(orthoPollTimer);orthoPollTimer=0}
+      if(job.state==='done'){
+        setOrthoStatus(t('Pyramid ready')+' · '+(job.tiles||0)+' '+t('tiles')
+          +(job.size_mb?' · '+job.size_mb+' MB':''));
+      }else if(job.state==='failed'){
+        setOrthoStatus(t('Pyramid build failed: ')+(job.error||''));
+      }
+    }catch(e){
+      if(orthoPollTimer){clearInterval(orthoPollTimer);orthoPollTimer=0}
+    }
+  };
+  tick();
+  orthoPollTimer=setInterval(tick,2000);
+}
+
 // 图层开关 + 计数文字的同步
 function updatePhotoLayerUI(){
   if(photoLayerBtn){
@@ -5811,6 +5986,10 @@ if(photoLayerBtn)photoLayerBtn.addEventListener('click',()=>{
 // 但不能因为这个可选项把整块功能拖崩（曾经就这么崩过一次）。
 if(photoCloseBtn)photoCloseBtn.addEventListener('click',event=>{event?.stopPropagation?.();closePhotoCard()});
 if(photoMapBtn)photoMapBtn.addEventListener('click',event=>{event?.stopPropagation?.();flyToPhotoGroup()});
+
+// 正射影像叠加层
+const orthoBtn=document.getElementById('orthoBtn');
+if(orthoBtn)orthoBtn.addEventListener('click',()=>{toggleOrtho()});
 
 // 导出文件名：标记点_<项目名>_<日期>.kml
 function markerKmlFileName(){

@@ -1134,11 +1134,18 @@ console.log('\n=== 轨迹地图的缩放上限 ===');
   const fits = [...code.matchAll(/fitBounds\(/g)];
   const bad = fits.filter(m => {
     const after = code.slice(m.index, m.index + 300);
-    return !/maxZoom\s*:\s*TRACK_FIT_MAX_ZOOM/.test(after);
+    // 本意是"别让 fitBounds 无上限放大"（一小段轨迹/一小片覆盖区会被放到很高一级）。
+    // 所以判据是**带了 maxZoom**，而不是"必须正好是 TRACK_FIT_MAX_ZOOM"：
+    // 正射影像那处要用金字塔自己的最高层级（z21），拿 15 去截反而看不清细节。
+    return !/maxZoom\s*:\s*[^,}]+/.test(after);
   });
   chk(fits.length >= 4 && bad.length === 0,
     '每一处 fitBounds 都带了 maxZoom 上限（不再有例外）',
     `${fits.length - bad.length}/${fits.length} 处`);
+  // 正射影像那处要用金字塔的最高层级，不是轨迹用的 15 ——
+  // 否则贴上去只能看到很粗的一层，"参考 ArcGIS 分块金字塔"就白做了。
+  chk(/fitBounds\(L\.latLngBounds\(bounds\)[\s\S]{0,140}?maxZoom:levels\[1\]/.test(body),
+    '正射影像的 fitBounds 用金字塔最高层级（levels[1]），不是轨迹的 15');
   chk(/map\.fitBounds\(b,\{padding:\[24,24\],maxZoom:TRACK_FIT_MAX_ZOOM\}\);/.test(body),
     '覆盖区那次也带上了上限（它按覆盖范围定视野，范围小时尤其需要）');
   chk(!/maxZoom\s*:\s*17/.test(code), '不再有写死的 maxZoom:17');

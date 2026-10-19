@@ -6572,6 +6572,106 @@ class ProjectManagerHandler(
         # parse_qs 当成整个 do_GET 的局部名；本函数里位置更靠前的那些分支
         # （/api/project/telemetry、/api/project/geojson…）用到它时就会报
         # UnboundLocalError: cannot access local variable 'parse_qs'（踩过一次）。
+        # ---------------- 正射影像（GeoTIFF）----------------
+        #
+        # 三条接口 + 一条瓦片服务，实现思路是 ArcGIS / gdal2tiles 那套：
+        # 一次性把各层级切成 256×256 PNG 放磁盘（/api/ortho/build），
+        # 之后缩放平移就是读文件（/api/ortho/tile 命中磁盘 0.0~0.2 ms）。
+        #
+        # 还没建完也能看：tile 接口在磁盘没有时现算并顺手落盘。
+        if path in ("/api/ortho/list", "/api/ortho/build", "/api/ortho/job",
+                    "/api/ortho/tile"):
+
+            import ortho
+            import ortho_api
+
+            def _ortho_project():
+                q = parse_qs(parsed.query)
+                name = (q.get("name") or [""])[0]
+                if not name:
+                    raise ValueError("缺少项目名。")
+                project = load_project(name)
+                folders = [item.get("path") for item in (project.get("folders") or [])
+                           if item.get("path")]
+                return name, project, folders
+
+            try:
+                if path == "/api/ortho/list":
+                    name, project, folders = _ortho_project()
+                    items = ortho_api.discover(PROJECT_DIR / name, folders, name)
+                    json_response(self, {"success": True, "orthos": items,
+                                         "count": len(items)})
+                    return
+
+                if path == "/api/ortho/build":
+                    name, project, folders = _ortho_project()
+                    q = parse_qs(parsed.query)
+                    raw = (q.get("path") or [""])[0]
+                    force = (q.get("force") or ["0"])[0] in ("1", "true", "yes")
+                    if not raw:
+                        raise ValueError("缺少 path。")
+                    real = ortho_api.find_by_path(PROJECT_DIR / name, folders, raw)
+                    if not real:
+                        raise ValueError("这个文件不在项目的任何数据文件夹里，或者不是 .tif。")
+                    job = ortho_api.start_build(PROJECT_DIR / name, real, force=force)
+                    json_response(self, {"success": True, "job": job})
+                    return
+
+                if path == "/api/ortho/job":
+                    name, project, folders = _ortho_project()
+                    q = parse_qs(parsed.query)
+                    raw = (q.get("path") or [""])[0]
+                    if raw:
+                        real = ortho_api.find_by_path(PROJECT_DIR / name, folders, raw)
+                        if not real:
+                            raise ValueError("这个文件不在项目的任何数据文件夹里。")
+                        job = ortho_api.job_snapshot(
+                            ortho_api._key(PROJECT_DIR / name, real))
+                        json_response(self, {"success": True, "job": job})
+                    else:
+                        with ortho_api._JOB_LOCK:
+                            jobs = [dict(j) for j in ortho_api._JOBS.values()]
+                        json_response(self, {"success": True, "jobs": jobs})
+                    return
+
+                # ---- 瓦片 ----
+                name, project, folders = _ortho_project()
+                q = parse_qs(parsed.query)
+                raw = (q.get("path") or [""])[0]
+                if not raw:
+                    raise ValueError("缺少 path。")
+                real = ortho_api.find_by_path(PROJECT_DIR / name, folders, raw)
+                if not real:
+                    raise ValueError("这个文件不在项目的任何数据文件夹里，或者不是 .tif。")
+                try:
+                    z = int((q.get("z") or [""])[0])
+                    x = int((q.get("x") or [""])[0])
+                    y = int((q.get("y") or [""])[0])
+                except (TypeError, ValueError):
+                    raise ValueError("z/x/y 必须是整数。")
+
+                data, source = ortho_api.tile_bytes(PROJECT_DIR / name, real, z, x, y)
+
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                # 已经落盘的可以长缓存；现算的短缓存，避免建完金字塔后还看旧的
+                self.send_header("Cache-Control",
+                                 "private, max-age=%s" % ("86400" if source == "cache" else "60"))
+                self.send_header("X-Ortho-Source", source)
+                self.end_headers()
+                self._write_body(data)
+
+            except Exception as e:
+                message = str(e).encode("utf-8")
+                self.send_response(400)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(message)))
+                self.end_headers()
+                self._write_body(message)
+
+            return
+
         if path == "/photo":
 
             try:
