@@ -57,12 +57,29 @@ def read_jpeg_meta(path):
         "flight_yaw": None, "flight_pitch": None,
         "lens_position": None, "lens_infinite": None,
         "model": None, "serial": None, "camera": None,
+        # 像素尺寸与"是不是全景"。
+        #
+        # 为什么要记：DJI 的全景照片是 **2:1 等距柱状**（实测 15520×7760）。
+        # 以前它们被当成普通照片塞进照片图层，缩略图就是一张**被拉扁的球面展开图**，
+        # 完全看不懂。知道它是全景之后，前端可以改用 360 播放器那条路去看
+        # （等距柱状 -> 透视取景的代码已经写好了）。
+        "width": None, "height": None,
+        "panorama": False,
         "lrf": {},
         "source": "",
     }
 
     # ---- EXIF：GPS（度分秒）与机型 ----
     image = Image.open(path)
+    # 尺寸从同一个 PIL 句柄顺手拿，不额外读一次文件。
+    # 全景判定：宽高比接近 2:1 且足够大（普通照片是 16:9 / 4:3，不会命中）。
+    try:
+        meta["width"], meta["height"] = image.size
+        w, h = image.size
+        meta["panorama"] = bool(
+            h > 0 and w >= 4000 and 1.90 <= (w / float(h)) <= 2.10)
+    except Exception:
+        pass
     exif = image.getexif()
     gps = exif.get_ifd(ExifTags.IFD.GPSInfo)
 
@@ -439,6 +456,11 @@ def group_photos(metas, max_gap_m=8.0):
                     "relative_alt": meta.get("alt_relative"),
                     "drone_lat": meta["lat"],
                     "drone_lon": meta["lon"],
+                    # 全景照片（2:1 等距柱状）要单独标出来 —— 前端拿去开 360 播放器，
+                    # 而不是当普通照片显示一张被拉扁的展开图。
+                    "panorama": bool(meta.get("panorama")),
+                    "width": meta.get("width"),
+                    "height": meta.get("height"),
                 }
                 for meta, target in members
             ],

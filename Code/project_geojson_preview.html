@@ -746,6 +746,17 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    也不定高 + object-fit:contain（那样 16:9 的图缩窄后两侧会露黑底 = 黑框）。
    max-height 兜底：万一遇到竖幅照片，不至于把画廊撑爆。 */
 .photo-shot img{display:block;max-width:100%;height:auto;max-height:420px}
+/* 全景照片角标。
+   为什么要标：全景照片是 2:1 等距柱状图，缩成缩略图就是一张被拉扁的球面展开图 ——
+   和普通照片放一起，用户根本分辨不出来，也想不到"这个能拖拽着看"。
+   角标 + 悬停提示（在 HTML 里）说明它是可以四处看的 360。 */
+.photo-shot{position:relative}
+.pano-badge{position:absolute;top:6px;left:6px;z-index:2;
+            padding:2px 7px;border-radius:999px;
+            background:rgba(15,23,42,.72);color:#fff;
+            font-size:11px;font-weight:700;letter-spacing:.04em;
+            pointer-events:none}
+.photo-shot[data-pano="1"]{cursor:zoom-in}
 .photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
 .photo-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
            background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
@@ -5130,17 +5141,28 @@ function photoGalleryHtml(group){
     // 就没法按 _T/_V/_S 配对，只能退回「候选第一条」（可能是别的流）。
     // 热成像照片经常就是那一组的大图，所以这个漏掉时表现就是
     // 「点热成像照片，跳出来的是可见光/变焦视频」。
-    `<figure class="photo-shot photo-lead-shot" data-photo-name="${esc(lead.name)}"
-             title="Open the video at this photo\'s time">`
+    // 全景照片（2:1 等距柱状）：标 360 角标，点击开 360 查看器。
+    // 为什么不能当普通照片：15520×7760 的等距柱状图直接缩成缩略图，
+    // 就是一张被拉扁的球面展开图，根本看不出拍的是什么（实测就是这样）。
+    // 判定来自后端 photo_meta：宽高比 2:1 且宽度 >= 4000。
+    `<figure class="photo-shot photo-lead-shot" data-photo-name="${esc(lead.name)}"` +
+    (lead.panorama ? ` data-pano="1"` : '') +
+    (lead.panorama ? ` title="Click to look around in this 360 photo"`
+                   : ` title="Open the video at this photo\'s time"`) + `>`
     +`<img src="${esc(photoThumbUrl(lead.folder,lead.name))}" alt="${esc(photoCameraLabel(lead.camera))}Photo">`
+    +(lead.panorama ? `<span class="pano-badge">360</span>` : '')
     +leadCaption
     +`</figure>`;
 
   const thumbs=rest.map(m=>{
     const warn=String(m.accuracy||'')!=='measured';
 
-    return `<figure class="photo-shot photo-thumb" data-photo-name="${esc(m.name)}" title="Open the video at this photo\'s time">`
+    return `<figure class="photo-shot photo-thumb" data-photo-name="${esc(m.name)}"`
+      +(m.panorama ? ` data-pano="1"` : '')
+      +(m.panorama ? ` title="Click to look around in this 360 photo"`
+                   : ` title="Open the video at this photo\'s time"`) + `>`
       +`<img src="${esc(photoThumbUrl(m.folder,m.name))}" alt="${esc(photoCameraLabel(m.camera))}Photo">`
+      +(m.panorama ? `<span class="pano-badge">360</span>` : '')
       +`<figcaption class="photo-cap">`
       +`<span class="${photoCameraClass(m.camera)}">${esc(photoCameraLabel(m.camera))}</span>`
       +`<b>${esc(m.name)}</b>`
@@ -5270,9 +5292,17 @@ async function selectPhotoGroup(index){
     photoChips.innerHTML=photoCardChips(group);
     photoGallery.innerHTML=photoGalleryHtml(group);
 
-    // 大图 / 小图统一：点一下就按这张照片的时刻跳视频
+    // 大图 / 小图统一：普通照片 -> 按时刻跳视频；**全景照片 -> 看 360**
+    // 全景图当普通照片看没有意义（就是一张被拉扁的球面展开图），
+    // 所以它走 pano360_player.html 的 photo 模式（?path=...，不转码、直接取原图）。
     photoGallery.querySelectorAll('.photo-shot').forEach(fig=>{
-      fig.addEventListener('click',()=>openPhotoVideo(group,fig.dataset.photoName||''));
+      fig.addEventListener('click',()=>{
+        if(fig.dataset.pano==='1'){
+          openPanoPhoto(group,fig.dataset.photoName||'');
+          return;
+        }
+        openPhotoVideo(group,fig.dataset.photoName||'');
+      });
     });
 
     photoJump.innerHTML='<div class="photo-jump-title">Looking for the matching video…</div>';
@@ -5497,6 +5527,27 @@ function openPhotoVideo(group,name){
   }catch(e){}
 
   if(videoInfo)videoInfo.textContent='No matching video clip found for this photo.';
+}
+
+// 打开**全景照片**的 360 查看器。
+//
+// 走 pano360_player.html 的 photo 模式（`?path=`）：直接取原图，**不转码**
+// （照片没有转码这回事，只是把等距柱状图取过来做透视取景）。
+//
+// 为什么不复用 openPhotoVideo：那条路的语义是"按这张照片的时刻跳到对应视频"，
+// 全景照片要的是"在这张照片里四处看"，两件事。
+function openPanoPhoto(group,name){
+  try{
+    const members=Array.isArray(group&&group.members)?group.members:[];
+    const m=members.find(x=>x&&x.name===name)||members[0]||{};
+    const folder=String(m.folder||(group&&group.folder)||'');
+    const file=String(m.name||name||'');
+    if(!folder||!file)return;
+    // 后端 /photo?path= 接的是「文件夹 + 反斜杠 + 文件名」
+    const p=folder.replace(/[\\/]+$/,'')+'\\'+file;
+    const url='/pano360_player.html?path='+encodeURIComponent(p);
+    window.open(url,'_blank','noopener');
+  }catch(e){}
 }
 
 // 「加载全部照片」：点亮照片图层，并把视野缩放到所有照片都看得见 ——

@@ -112,6 +112,19 @@ let dragging = false, lastX = 0, lastY = 0;
 let ready = false;
 let rafId = 0;
 
+// ---------------- 两种模式 ----------------
+//   video 模式（默认）：`.OSV` -> 转码 -> <video> 播放（可拖拽转向）
+//   photo 模式（?path=...）：**全景照片**（2:1 等距柱状 JPEG）-> <img> + 同一套透视取景
+//
+// 为什么要 photo 模式：DJI 的全景照片是 15520×7760 的等距柱状图。
+// 以前它们被当成普通照片塞进照片图层，缩略图就是一张**被拉扁的球面展开图**，
+// 根本看不出是什么。加了这条之后就能像看 360 视频一样拖拽着看。
+//
+// 复用同一份透视代码：源从 video 换成 img，其余（拖拽/滚轮/键盘/取景）完全一致。
+let PHOTO_MODE = false;
+let img = null;
+const PHOTO_MAX_W = 4096;   // 源图先缩到这个宽度再逐像素取，避免 480 MB 的 canvas
+
 document.getElementById('title').textContent =
   (REL.split(/[\\/]/).pop() || '360').replace(/\.osv$/i, '');
 
@@ -142,8 +155,21 @@ fit();
 // 再用 yaw/pitch 转到世界方向，最后落到等距柱状图的 (u,v) 采样。
 function draw(){
   rafId = 0;
-  if (!ready || !src.videoWidth) return;
-  const W = src.videoWidth, H = src.videoHeight;
+  // 源可以是 <video>（360 视频）或 <img>（360 全景照片）。
+  //
+  // 照片模式下源图是 15520×7760 = 1.2 亿像素，直接建这个尺寸的 canvas 要 ~480 MB，
+  // 所以先缩到 PHOTO_MAX_W 再逐像素取 —— 与视频那条路完全同一套透视代码。
+  let W, H, srcEl;
+  if (PHOTO_MODE){
+    if (!ready || !img.naturalWidth) return;
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    W = Math.min(PHOTO_MAX_W, nw);
+    H = Math.max(1, Math.round(nh * W / nw));
+    srcEl = img;
+  }else{
+    if (!ready || !src.videoWidth) return;
+    W = src.videoWidth; H = src.videoHeight; srcEl = src;
+  }
   const cw = view.width, ch = view.height;
 
   // 用 drawImage 逐列采样太慢，所以：把源一次性缩放到一个中间 ImageBitmap，
@@ -155,7 +181,7 @@ function draw(){
     draw._sctx = srcCanvas.getContext('2d', { willReadFrequently: true });
   }
   const sctx = draw._sctx;
-  sctx.drawImage(src, 0, 0, W, H);
+  sctx.drawImage(srcEl, 0, 0, W, H);
   const sd = sctx.getImageData(0, 0, W, H).data;
 
   const out = ctx.createImageData(cw, ch);
@@ -286,10 +312,33 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
-// ---------------- 启动：先确保已转码，再播放 ----------------
+// ---------------- 启动 ----------------
 async function boot(){
+  // ---- 全景照片模式：直接拿原图，不转码 ----
+  // `/photo?path=` 已经是现成的接口（会校验路径在项目文件夹内）。
+  const PHOTO_PATH = Q.get('path') || '';
+  if (PHOTO_PATH){
+    PHOTO_MODE = true;
+    // 视频控件对照片没意义（播放/进度条/时间）
+    [btnPlay, seek, timeEl].forEach(el=>{ if(el) el.style.display='none'; });
+    document.getElementById('title').textContent =
+      (PHOTO_PATH.split(/[\\/]/).pop() || '360 photo');
+    say('加载全景照片…', '全景照片是 2:1 等距柱状图，加载后可以拖拽转向。');
+    img = new Image();
+    img.onload = () => {
+      ready = true;
+      planes.textContent = img.naturalWidth + '×' + img.naturalHeight +
+        '  ·  ' + Math.round(img.naturalWidth / img.naturalHeight) + ':1 等距柱状';
+      hideMsg();
+      requestDraw();
+    };
+    img.onerror = () => say('照片加载失败', '取不到这张图：' + PHOTO_PATH, true);
+    img.src = '/photo?path=' + encodeURIComponent(PHOTO_PATH);
+    return;
+  }
+
   if (!NAME || !REL){
-    say('缺少参数', '需要 ?name=<项目>&rel=<素材路径>', true);
+    say('缺少参数', '需要 ?name=<项目>&rel=<素材路径>，或者 ?path=<全景照片路径>', true);
     return;
   }
   // ---- 第一步：确保已转码 ----
