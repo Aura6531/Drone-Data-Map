@@ -339,6 +339,13 @@ UI_ZH: dict[str, str] = {
     'Delete failed:': '删除失败：',
     'Cannot find the data folder this file belongs to.': '找不到这个文件所属的数据文件夹。',
 
+    # 导入时的提示（含"导入后顺手把 360 素材排进转码队列"那条）
+    'Updated data folder: ': '已更新数据文件夹：',
+    'Imported data folder: ': '已导入数据文件夹：',
+    '360 clip(s) are transcoding in the background': '个 360 素材正在后台转码',
+    'they will open instantly once done.': '转完之后点开就是秒开。',
+    '360 background transcode did not start:': '360 后台转码没能启动：',
+
 }
 
 

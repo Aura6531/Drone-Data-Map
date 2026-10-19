@@ -7508,15 +7508,39 @@ async function importScannedFolder(folder,quiet){
   // 否则照片跳视频时算出来的视频路径会指到别的文件夹去。
   projectFolderPaths=null;
 
+  // 导入提示的文案要先攒好，但**必须等流程跑完再显示**。
+  //
+  // 踩过：一开始在这里直接 `show(projectNotice, impMsg)`，然后 `await runAutoPipeline()` ——
+  // 实测提示是生成了、但 `shown:false`，用户根本看不见。
+  // 原因：`runAutoPipeline()` 内部还会调 `scanGeoJSON()`，而它开头有
+  // `hide(projectNotice)`（那里是为了清掉上一次的旧消息）。
+  // 所以消息现在**最后**才显示。
+  let impMsg=null;
   if(!quiet){
     await scanGeoJSON();
 
     // 同一个文件夹再次导入时后端返回 updated=true（就地更新，不报错）
-    show(projectNotice,(r&&r.updated?'Updated data folder: ':'Imported data folder: ')+(folder.path||''));
+    impMsg=(r&&r.updated?t('Updated data folder: '):t('Imported data folder: '))
+      +(folder.path||'');
+    // 后端在导入时会把 360 素材**顺手排进转码队列**（转码是分钟级，
+    // 等用户点开才转就要干等好几分钟）。
+    // 这里必须把"后台在转几个"说清楚 —— 否则用户点开那些 360 素材发现打不开，
+    // 会以为是坏了。
+    const pc=r&&r.pano_precache;
+    if(pc&&pc.queued){
+      impMsg+=`  ·  ${pc.queued} ${t('360 clip(s) are transcoding in the background')}`
+        +` — ${t('they will open instantly once done.')}`;
+    }
+    if(pc&&pc.error){
+      impMsg+=`  ·  ${t('360 background transcode did not start:')} ${pc.error}`;
+    }
   }
 
   // 导入完直接跑完整流程（缺的 SRT/GeoJSON 会在这里补齐）
   await runAutoPipeline();
+
+  // 流程跑完再显示（见上面 impMsg 的说明）
+  if(impMsg)show(projectNotice,impMsg);
 }
 
 if(addFolderBtn)addFolderBtn.addEventListener('click',()=>{
