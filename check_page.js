@@ -1182,8 +1182,20 @@ chk(/id="videoSlot"/.test(html), '右栏有未播放时的占位说明');
   chk(/display:grid/.test(grid), '三栏用 grid 布局');
   chk(/grid-template-rows:minmax\(0,1fr\)/.test(grid),
     '显式栅格行高 1fr —— 三栏严格等高，底部才会对齐', grid.slice(0, 130));
-  chk(/clamp\(300px,22vw,380px\)\) minmax\(0,1fr\) minmax\(0,1\.12fr\)/.test(grid),
-    '列宽：左栏自适应（300~380px，原来是写死 380px），中/右按比例（地图略窄、视频略宽）', grid.slice(0, 90));
+  // 2026-10-16：右栏改成 `var(--right-col, minmax(0,1.12fr))` ——
+  // 这样它能在"没有内容可显示"时收成 0（用户要的「选文件阶段右侧全是地图」）。
+  chk(/clamp\(300px,22vw,380px\)\) minmax\(0,1fr\) var\(--right-col,minmax\(0,1\.12fr\)\)/.test(grid),
+    '列宽：左栏自适应（300~380px），中栏 1fr，右栏走 --right-col（默认 1.12fr，可收成 0）',
+    grid.slice(0, 110));
+  chk(/\.layout\.right-empty\{--right-col:0px\}/.test(html)
+    && /\.layout\.right-empty \.col-right\{display:none\}/.test(html),
+    '右栏空时用 --right-col:0 收起并把宽度让给地图（否则只藏元素仍会占着一列）');
+  chk(/function syncRightCol\(/.test(body) && /function initRightCol\(/.test(body),
+    '有 syncRightCol()/initRightCol() 负责"空就收起、有内容就回来"');
+  // MutationObserver 在测试沙箱里不存在，initRightCol 必须先判存在性 ——
+  // 否则 boot() 抛错会连锁打红 6~7 套前端测试（踩过）。
+  chk(/typeof MutationObserver==='undefined'/.test(body),
+    'initRightCol 先判 MutationObserver 是否存在（沙箱里没有）');
   chk(/height:100vh/.test(html) || /height:100vh/.test(grid), '占满整个视口高度（顶栏已删除）');
   // 左栏现在是「项目页 / 标记点页」两页共用同一块地方，宽度不再变化
   chk(!/side-collapsed/.test(html), '左栏不再有「收起成 40px 窄轨」那套（改成标签开关切页）');

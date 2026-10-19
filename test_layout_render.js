@@ -75,13 +75,27 @@ const PROBE = `(() => {
     return el ? w.getComputedStyle(el)[prop] : null;
   };
   const root = d.getElementById('layout');
+  // 右栏现在会**在没有任何内容时自动收起**（.right-empty，见页面的 syncRightCol）。
+  // 所以"地图与视频能不能并排"这件事要在**有内容**的状态下量 ——
+  // 先把 .right-empty 摘掉模拟"有内容"，量完再放回。
+  const nEmpty = (() => { const r = rect('#colRight'); return { w: r ? r.w : -1 }; })();
+  const hadEmpty = root.classList.contains('right-empty');
+  root.classList.remove('right-empty');
+  const nWithContent = (() => { const r = rect('#colRight'); return { w: r ? r.w : -1 }; })();
+  if (hadEmpty) root.classList.add('right-empty');
   return {
     viewport: [w.innerWidth, w.innerHeight],
     layoutDisplay: cs('#layout', 'display'),
     layoutDir: cs('#layout', 'flexDirection'),
     leftW: rect('#colLeft'),
     midW: rect('.col-mid') || rect('.col:nth-of-type(2)'),
-    rightW: rect('#colRight'),
+    // 两种状态各一份：空（应收起）与有内容（应占宽度）。
+    // 都保持 {w,h,x} 对象形状 —— 打印那行是按对象用的（取 .w）。
+    // 注意：这一段在模板字符串里，注释里不能出现反引号，否则会提前结束字符串（踩过）。
+    rightEmptyW: nEmpty,
+    rightContentW: nWithContent,
+    rightW: nWithContent,
+    rightWasEmpty: hadEmpty,
     leftOpen: root.classList.contains('left-open'),
     railVisible: (() => { const r = d.getElementById('leftRail'); if (!r) return null;
       return w.getComputedStyle(r).display !== 'none'; })(),
@@ -204,8 +218,21 @@ let fail = 0;
     const r = at(885);
     chk(r.midW && r.midW.w > 340, '中栏（地图）> 340px',
       r.midW ? String(r.midW.w) : '');
-    chk(r.rightW && r.rightW.w > 340, '右栏（视频+图墙）> 340px',
-      r.rightW ? String(r.rightW.w) : '');
+    // 有内容时右栏要够宽（这才是"并排放得下"）
+    chk(r.rightContentW && r.rightContentW.w > 340, '右栏（视频+图墙）有内容时 > 340px',
+      r.rightContentW ? String(r.rightContentW.w) : '');
+  }
+
+  console.log('\n=== 断言：右栏空时把宽度让给地图 ===');
+  {
+    // 用户 2026-10-16：「选择文件阶段，右侧全是地图」。
+    // 没加载/没播放时右栏只有一个占位提示，应当收起（宽度 0）。
+    for (const W of [1400, 1280, 885]) {
+      const r = at(W);
+      chk(r.rightWasEmpty === true && r.rightEmptyW && r.rightEmptyW.w === 0,
+        W + 'px 右栏空时收起（宽度 0）',
+        'wasEmpty=' + r.rightWasEmpty + ' w=' + (r.rightEmptyW ? r.rightEmptyW.w : '-'));
+    }
   }
 
   console.log('\n=== 断言：堆叠档 ===');

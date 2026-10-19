@@ -33,9 +33,14 @@ body{margin:0;background:#f3f5f7;color:#172033;font-family:"Microsoft YaHei","No
    内容少的那栏会短一截，底部对不齐）。
    minmax(0,1fr) 而不是 1fr：避免内容过高把行撑破。 */
 .layout{display:grid;
-        grid-template-columns:var(--left-w,clamp(300px,22vw,380px)) minmax(0,1fr) minmax(0,1.12fr);
+        grid-template-columns:var(--left-w,clamp(300px,22vw,380px)) minmax(0,1fr) var(--right-col,minmax(0,1.12fr));
         grid-template-rows:minmax(0,1fr);gap:var(--gap,16px);padding:var(--pad,16px);
         height:100vh;box-sizing:border-box;align-items:stretch}
+/* 右栏**没有任何东西要显示**时（选文件阶段就是这种），把它的宽度让给地图。
+   用户的原话：「选择文件阶段，右侧全是地图」。
+   用 `--right-col` 一个变量控制，和左栏折叠同一个思路（见 .left-folded）。 */
+.layout.right-empty{--right-col:0px}
+.layout.right-empty .col-right{display:none}
 .col{min-width:0;min-height:0;display:flex;flex-direction:column;gap:16px;overflow:auto}
 
 /* 滚动条：干掉那条「浅灰直角」。
@@ -3139,6 +3144,63 @@ function initLeftRail(){
   // 窄屏默认折叠（把宽度让给地图和视频），宽屏默认展开。
   const saved=readLeftOpen();
   setLeftOpen(saved===null?window.innerWidth>1280:saved);
+}
+
+// 「右栏空就把宽度让给地图」。
+//
+// 用户的原话：「选择文件阶段，右侧全是地图」——文件还没加载、也没在播放任何东西时，
+// 右栏只有一个 "Video" 占位提示，占着 1.12fr 的宽度纯属浪费。
+// 所以在它**没有任何可显示内容**时把整栏收起，地图铺满右边。
+//
+// 判定方式：看右栏里三个可显示块谁在显示（videoModal / photoCard / frameGallery）。
+// 用 MutationObserver 盯它们的 style 变化，而不是去每个调用点手动调 ——
+// 这三块的显隐散落在十几个函数里（openVideoFromPopup / closeVideo /
+// frameGalleryRender / frameGalleryClear / 照片卡开关…），逐个补必漏。
+function rightColEl(){return document.getElementById('colRight')}
+function isShown(el){
+  if(!el)return false;
+  // **只看元素自己的 computed display**，不要用 offsetParent。
+  // 踩过（死锁）：一给 `#colRight` 设 `display:none`，里面所有子元素的
+  // offsetParent 都变成 null，于是 syncRightCol 永远判定"没东西要显示"，
+  // 右栏再也回不来 —— 自己把自己锁死了。
+  // computed display 不受祖先影响，所以能正确反映"这一块自己是不是被设成显示了"。
+  return getComputedStyle(el).display!=='none';
+}
+function syncRightCol(){
+  const root=layoutRoot();
+  if(!root)return;
+  const vm=document.getElementById('videoModal');
+  const pc=document.getElementById('photoCard');
+  const fg=document.getElementById('frameGallery');
+  const anyShown=isShown(vm)||isShown(pc)||isShown(fg);
+  const was=root.classList.contains('right-empty');
+  root.classList.toggle('right-empty',!anyShown);
+  if(was!==!anyShown){
+    // 地图宽度变了，Leaflet 要重算，否则瓦片错位/留灰边
+    setTimeout(()=>{try{if(map)map.invalidateSize()}catch(e){}},60);
+  }
+}
+
+function initRightCol(){
+  // 整体 try/catch：这里是 boot() 里调用的，任何一处抛错都会打断整个启动，
+  // 连带打红一堆前端测试（踩过好几次）。右栏收起来只是"锦上添花"，
+  // 绝不能因为它失败就让页面起不来。
+  try{
+    syncRightCol();
+    // MutationObserver 在**测试沙箱里不存在**（ReferenceError: MutationObserver
+    // is not defined），而 boot() 里抛错会连锁打红 6~7 套前端测试。
+    // 所以先判存在性。
+    if(typeof MutationObserver==='undefined')return;
+    const obs=new MutationObserver(()=>{try{syncRightCol()}catch(e){}});
+    ['videoModal','photoCard','frameGallery'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el)try{obs.observe(el,{attributes:true,attributeFilter:['style','class']})}catch(e){}
+    });
+    // 换项目之后也可能变空
+    if(projectSelect)projectSelect.addEventListener('change',()=>setTimeout(()=>{
+      try{syncRightCol()}catch(e){}
+    },120));
+  }catch(e){}
 }
 
 // ============================================================
@@ -9900,6 +9962,8 @@ function boot(){
   initLeftRail();
   // 文件列表 / 标记点列表各自的收起状态（记住选择）
   initCardCollapse();
+  // 右栏空时把宽度让给地图（"选文件阶段右侧全是地图"）
+  initRightCol();
   // 搜索+操作卡的折叠状态（记住选择）
   setProbeFold(readProbeFold());
   // 覆盖面板现在也浮在地图里（左下角），要接上折叠钮与高度联动
