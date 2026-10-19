@@ -8940,8 +8940,20 @@ class ProjectManagerHandler(
                     "lng": float(lng),
                     "video": str(item.get("video") or ""),
                     "time": float(item.get("time") or 0),
-                    "created": str(item.get("created") or "")
+                    "created": str(item.get("created") or ""),
+                    # 类别：用户可以自由输入，作用相当于"文件夹"（用户 2026-10-16：
+                    # 「第一次输入是建立类别，就是对应文件夹，第二次就可以选择新建
+                    # 新的类别或者直接复用上次的类别」）。
+                    # 所以**不做枚举校验** —— 新值出现即视为新建类别。
+                    "category": str(item.get("category") or "").strip(),
                 }
+
+                # 备注：一样是自由文本，先留着（分类体系还没定，但"这个点是什么"
+                # 迟早要记；加一个字段几乎零成本，见 docs 里的讨论）。
+                note = str(item.get("note") or "").strip()
+
+                if note:
+                    entry["note"] = note
 
                 # 画面落点：有且合法才带上。
                 # 这里曾经按固定字段重建、把它悄悄丢了 —— 表现是「页面刷新后报告里的

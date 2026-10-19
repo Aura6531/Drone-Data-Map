@@ -346,6 +346,11 @@ UI_ZH: dict[str, str] = {
     'they will open instantly once done.': '转完之后点开就是秒开。',
     '360 background transcode did not start:': '360 后台转码没能启动：',
 
+    # 标记点类别（用户 2026-10-16 要求：建标记点时有"名字 + 类别"两项，
+    # 类别第一次输入即新建，之后可复用）
+    'Category': '类别',
+    'Category (optional)': '类别（可不填）',
+
 }
 
 

@@ -487,12 +487,16 @@ console.log('\n=== 12) 标记点名字不能跟已有的重复 ===');
   let closed = 0;
   let saved = 0;
   const input = { value: '' };
+  // 类别输入框（用户 2026-10-16：建标记点有"名字 + 类别"两项）
+  const catInput = { value: '' };
+  // 记住"上次用过的类别"
+  const catStored = [];
 
   const buildConfirm = new Function(
     'projectMarkers', 'pendingMark', 'videoMarkName', 'addVideoMark',
     'saveProjectMarkers', 'renderMarkerList', 'closeVideoMarkDialog',
     'showVideoMarkError', 'projectSelect', 'clip', 'videoPlayer',
-    'pendingMarkSpot',
+    'pendingMarkSpot', 'videoMarkCategory', 'storeMarkerCategory',
     `${extractFn('nextMarkerName')}
 ${extractFn('normalizeMarkerName')}
 ${extractFn('markerNameTaken')}
@@ -502,12 +506,14 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
 
   const make = (name) => ({ id: name, name, lat: 23, lng: 112, video: 'a.mp4', time: 1, created: '' });
 
-  function run(existing, typed, spot) {
+  function run(existing, typed, spot, category) {
     errors.length = 0;
     added.length = 0;
     closed = 0;
     saved = 0;
     input.value = typed;
+    catInput.value = category === undefined ? '' : category;
+    catStored.length = 0;
 
     const markers = existing.slice();
 
@@ -521,7 +527,9 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
       { value: '东莞2' },
       { path: 'a.mp4' },
       { currentTime: 42 },
-      spot === undefined ? null : spot
+      spot === undefined ? null : spot,
+      catInput,
+      (c) => catStored.push(c)
     );
 
     api.confirmVideoMark();
@@ -582,6 +590,31 @@ return {confirmVideoMark, normalizeMarkerName, markerNameTaken, getPending: () =
   chk(api.markerNameTaken('东莞2-1', '东莞2-1') === false,
     '查重：排除自己时不算（给以后改名留着）');
   chk(api.markerNameTaken('') === false, '空名字不算重名');
+
+  // ---- 类别字段（用户 2026-10-16：建标记点是"名字 + 类别"两项）----
+  // 语义：类别是自由文本，作用相当于文件夹 —— 输入新词就是新建类别，
+  //       输入已有的词就是复用；空着则不分类。
+  result = run(base, '有类别', undefined, '裂缝');
+  {
+    const mark = result.markers[result.markers.length - 1];
+    chk(mark && mark.category === '裂缝', '类别写进标记点', JSON.stringify(mark && mark.category));
+    chk(catStored.length === 1 && catStored[0] === '裂缝',
+      '记住了"上次用过的类别"（下次预填用）', JSON.stringify(catStored));
+  }
+
+  result = run(base, '无类别', undefined, '   ');
+  {
+    const mark = result.markers[result.markers.length - 1];
+    chk(mark && !('category' in mark), '类别留空就不写这个字段（不是空字符串）',
+      JSON.stringify(mark));
+    chk(catStored.length === 0, '类别留空不覆盖"上次用过的类别"', JSON.stringify(catStored));
+  }
+
+  result = run(base, '类别去空格', undefined, '  裂缝  ');
+  {
+    const mark = result.markers[result.markers.length - 1];
+    chk(mark && mark.category === '裂缝', '类别首尾空格被去掉', JSON.stringify(mark && mark.category));
+  }
 }
 
 console.log('\n=== 13) 报告地图取景：目标点居中 + 18 级，飞机快出画才降级 ===');

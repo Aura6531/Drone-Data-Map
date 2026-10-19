@@ -263,6 +263,12 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .mini-modal-box input{width:100%;height:40px;border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:14px;box-sizing:border-box}
 .mini-modal-box input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.15)}
 .mini-modal-error{margin-top:9px;font-size:12px;color:#b91c1c}
+/* 带标签的输入项（建标记点的"类别"用的）。
+   名字那一栏保持原样（预填 + 整段选中，直接打字即替换），
+   类别这一栏要有个显式标签，否则两个输入框挨着会分不清哪个是哪个。 */
+.mini-modal-field{display:block;margin-top:12px}
+.mini-modal-field-label{display:block;font-size:12px;font-weight:600;color:#334155;margin-bottom:6px}
+.mini-modal-hint-small{margin:6px 0 0;font-size:11px;color:#94a3b8}
 .mini-modal-actions{margin-top:16px;gap:8px;justify-content:flex-end}
 .mini-modal-actions button{height:38px;padding:0 18px;font-size:14px}
 /* 底图瓦片之类的次要提示：小字、灰底，放地图下面，不抢地图的位置 */
@@ -587,6 +593,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .marker-del{flex:0 0 auto;width:22px;height:22px;padding:0;line-height:1;border-radius:6px;
             background:#f1f5f9;color:#64748b;font-size:13px}
 .marker-del:hover{background:#fee2e2;color:#b91c1c}
+/* 类别小标签：跟在标记点名字后面。
+   做成 chip 而不是纯文字，是因为它和名字要能一眼分开 ——
+   两类信息挤在同一行、同样的字重，会看成"名字里带了个后缀"。 */
+.marker-cat{margin-left:6px;padding:1px 6px;border-radius:999px;
+            background:#e0e7ff;color:#3730a3;font-size:10px;font-weight:600;
+            vertical-align:middle;white-space:nowrap}
+.marker-list.marker-compact .marker-cat{font-size:9px;padding:0 4px}
 /* 密集模式：只保留名称列（栏能更窄，于是能分出更多栏） */
 .marker-list.marker-compact .marker-num{display:none}
 .marker-list.marker-compact .marker-name{max-width:78%}
@@ -1541,6 +1554,20 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       The name stays visible on the map.
     </div>
     <input id="videoMarkName" type="text">
+
+    <!-- 类别（用户 2026-10-16 要求）：两项待填 —— 名字 + 类别。
+         类别**不是**枚举，作用相当于"文件夹"：
+           第一次输入某个词 = 建立这个类别；
+           之后既可以从下拉里选已有的，也可以输入新词建立新类别。
+         所以用 <input list=...> 而不是 <select>：select 只能选不能建。 -->
+    <label class="mini-modal-field">
+      <span class="mini-modal-field-label">Category</span>
+      <input id="videoMarkCategory" type="text" list="videoMarkCategoryList"
+             autocomplete="off" placeholder="e.g. crack / 裂缝 —— pick one below or type a new one">
+      <datalist id="videoMarkCategoryList"></datalist>
+    </label>
+    <div class="mini-modal-hint mini-modal-hint-small" id="videoMarkCategoryHint"></div>
+
     <div id="videoMarkError" class="mini-modal-error" style="display:none"></div>
     <div class="row mini-modal-actions">
       <button id="videoMarkCancel" class="secondary">Cancel</button>
@@ -4021,7 +4048,58 @@ function openVideoMarkDialog(latlng,spot){
 
   if(videoMarkError)videoMarkError.style.display='none';
 
+  // ---- 类别：把已有类别填进下拉，并预填上次用过的那个 ----
+  //
+  // 用户 2026-10-16 说明的用法：「类别里面第一次输入是建立类别，就是对应文件夹，
+  // 第二次就可以选择新建新的类别或者直接复用上次的类别」。
+  // 所以：
+  //   · 下拉里列出**当前项目已有**的类别（先建一个就用得上）
+  //   · 默认预填"上次用过的类别"（localStorage，跨项目也行 —— 常用类别就那么几个）
+  //   · 用户输入新词 = 自动建立新类别（后端不校验枚举，见 save_markers）
+  if(videoMarkCategory){
+    const cats=markerCategories();
+    if(videoMarkCategoryList){
+      videoMarkCategoryList.innerHTML=cats.map(c=>`<option value="${esc(c)}"></option>`).join('');
+    }
+    videoMarkCategory.value=lastMarkerCategory()||(cats[0]||'');
+    updateMarkerCategoryHint();
+  }
+
   videoMarkModal.style.display='flex';
+}
+
+// 当前项目里已经用过的类别（去重、按名字排序）
+function markerCategories(){
+  const seen=new Set();
+  for(const m of projectMarkers){
+    const c=String(m&&m.category||'').trim();
+    if(c)seen.add(c);
+  }
+  return [...seen].sort((a,b)=>a.localeCompare(b,'zh'));
+}
+
+// 「上次用过的类别」：预填用。存 localStorage 是因为它属于**偏好**，
+// 而且用户连续标一批点时，绝大多数情况下是同一个类别。
+const MARK_CAT_KEY='droneMap.lastMarkerCategory';
+function lastMarkerCategory(){
+  try{return localStorage.getItem(MARK_CAT_KEY)||''}catch(e){return ''}
+}
+function storeMarkerCategory(c){
+  try{if(c)localStorage.setItem(MARK_CAT_KEY,c)}catch(e){}
+}
+
+// 提示这一栏会发生什么：复用已有类别 / 新建类别 / 不分类
+function updateMarkerCategoryHint(){
+  if(!videoMarkCategoryHint||!videoMarkCategory)return;
+  const v=String(videoMarkCategory.value||'').trim();
+  if(!v){
+    videoMarkCategoryHint.textContent='Leave blank to file this marker without a category.';
+    return;
+  }
+  const exists=markerCategories().some(c=>c===v);
+  videoMarkCategoryHint.textContent=exists
+    ? `Reuses the existing category “${v}”.`
+    : `“${v}” will be created as a new category.`;
 }
 
 // 当前项目的标记点（从 project.json 的 markers 读进来 / 保存回去）
@@ -4071,7 +4149,11 @@ async function loadProjectMarkers(){
         lng:Number(m.lng),
         video:String(m.video||''),
         time:Number(m.time||0),
-        created:String(m.created||'')
+        created:String(m.created||''),
+        // 类别与备注：读回来时必须带上，否则"刷新一次就丢了"
+        // （fx/fy 就在这里被悄悄丢过，见后端 save_markers 里的注释）。
+        category:String(m.category||''),
+        note:String(m.note||'')
       };
 
       // 画面上的落点（老标记点没有这两个字段）
@@ -4112,6 +4194,14 @@ function confirmVideoMark(){
     time:videoPlayer?Number(videoPlayer.currentTime||0):0,
     created:new Date().toISOString()
   };
+
+  // 类别：输入新词就等于新建类别（后端不校验枚举，原样存下来）。
+  // 空着也可以 —— 不分类的标记点仍然合法表。
+  const category=videoMarkCategory?String(videoMarkCategory.value||'').trim():'';
+  if(category){
+    mark.category=category;
+    storeMarkerCategory(category);
+  }
 
   // 画面上点的那一处（归一化 0..1）：报告的视频截图会在这里叠一个目标点标志。
   // 老标记点没有这两个字段，报告里就不叠 —— 不编造位置。
@@ -4277,6 +4367,16 @@ function renderMarkerList(){
     const name=document.createElement('span');
     name.className='marker-name';
     name.textContent=m.name;
+
+    // 类别：小标签跟在名字后面。空类别不加，免得留一块空白。
+    // 这是"类别"唯一的可视反馈 —— 没有它，用户分不清标点到底归到哪一类了。
+    if(m.category){
+      const cat=document.createElement('span');
+      cat.className='marker-cat';
+      cat.textContent=m.category;
+      cat.title=t('Category')+': '+m.category;
+      name.appendChild(cat);
+    }
 
     const lat=document.createElement('span');
     lat.className='marker-num';
@@ -7614,6 +7714,9 @@ const importModal=document.getElementById('importModal');
 const videoMarkModal=document.getElementById('videoMarkModal');
 const videoMarkName=document.getElementById('videoMarkName');
 const videoMarkError=document.getElementById('videoMarkError');
+const videoMarkCategory=document.getElementById('videoMarkCategory');
+const videoMarkCategoryList=document.getElementById('videoMarkCategoryList');
+const videoMarkCategoryHint=document.getElementById('videoMarkCategoryHint');
 const videoMarkOk=document.getElementById('videoMarkOk');
 const videoMarkCancel=document.getElementById('videoMarkCancel');
 const pickFolderBtn=document.getElementById('pickFolderBtn');
@@ -7711,6 +7814,14 @@ if(videoMarkCancel)videoMarkCancel.addEventListener('click',()=>{
 if(videoMarkName)videoMarkName.addEventListener('keydown',e=>{
   if(e.key==='Enter'){e.preventDefault();confirmVideoMark()}
 });
+// 类别这一栏：边打字边提示"复用已有类别 / 将新建类别"，回车同样确认。
+// 提示是必要的 —— 用户看不出输入的词到底是"选了已有"还是"建了新的"。
+if(videoMarkCategory){
+  videoMarkCategory.addEventListener('input',updateMarkerCategoryHint);
+  videoMarkCategory.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();confirmVideoMark()}
+  });
+}
 if(videoMarkModal)videoMarkModal.addEventListener('click',e=>{
   if(e.target===videoMarkModal){closeVideoMarkDialog();pendingMark=null}
 });
