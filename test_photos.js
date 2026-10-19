@@ -1218,6 +1218,151 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
 })().then(() => {
   // 最后一节是异步的（要问一次真实服务），收尾放进 then ——
   // 否则 process.exit 会先跑，异步断言还没来得及判定。
+  runClusterTests();
   console.log(`\n结果: ${ok ? '全部通过' : '有失败项'}`);
   process.exit(ok ? 0 : 1);
 });
+
+// ------------------------------------------------------------
+// 照片点按缩放级别聚合
+// ------------------------------------------------------------
+//
+// 用户 2026-10-19 选的方案 A：z<17 合并成带数字的圆圈，z>=17 一律不合并
+// （保证放大到 17 级就一定能点到单个点，行为可预测）。
+//
+// clusterPhotoGroups / photoPixelAt 是**纯函数**，所以这里不起浏览器、不碰 DOM，
+// 直接抠出来跑。这是刻意的设计：聚合的逻辑错误（比如半径算错、层级判断反了）
+// 在界面上很难看出来，只会表现为"点不准"。
+function runClusterTests() {
+  console.log('\n=== 照片点聚合（纯函数）===');
+
+  const build = new Function(
+    'PHOTO_CLUSTER_MAX_ZOOM', 'PHOTO_CLUSTER_RADIUS_PX',
+    `${extractFn('photoCoord')}
+${extractFn('photoPixelAt')}
+${extractFn('clusterPhotoGroups')}
+return {clusterPhotoGroups, photoPixelAt, photoCoord, PHOTO_CLUSTER_MAX_ZOOM, PHOTO_CLUSTER_RADIUS_PX};`
+  );
+
+  let api;
+  try {
+    api = build(Number(extractConst('PHOTO_CLUSTER_MAX_ZOOM')),
+                Number(extractConst('PHOTO_CLUSTER_RADIUS_PX')));
+  } catch (e) {
+    chk(false, '能从页面里抠出聚合函数', e.message);
+    return;
+  }
+  chk(true, '抠出 clusterPhotoGroups / photoPixelAt');
+  chk(api.PHOTO_CLUSTER_MAX_ZOOM === 17, '不聚合的起始层级是 17',
+    String(api.PHOTO_CLUSTER_MAX_ZOOM));
+
+  // ---- photoCoord：`Number(null) === 0` 这个坑 ----
+  // 直接用 Number.isFinite(Number(v)) 会把 lat:null 当成"有效坐标 0"，
+  // 于是那个组被画到赤道上而不是被跳过（旧代码就是这么写的，写这组测试时才发现）。
+  chk(Number.isNaN(api.photoCoord(null)), 'photoCoord(null) 是 NaN（不是 0）',
+    String(api.photoCoord(null)));
+  chk(Number.isNaN(api.photoCoord(undefined)), 'photoCoord(undefined) 是 NaN');
+  chk(Number.isNaN(api.photoCoord('')), 'photoCoord("") 是 NaN');
+  chk(api.photoCoord('23.5') === 23.5, 'photoCoord 认得字符串数字',
+    String(api.photoCoord('23.5')));
+  chk(api.photoCoord(0) === 0, 'photoCoord(0) 就是 0（0 是合法纬度）');
+
+  // ---- Web Mercator 像素坐标：对几个已知值 ----
+  {
+    const [x0, y0] = api.photoPixelAt(0, 0, 0);
+    chk(Math.abs(x0 - 128) < 0.01 && Math.abs(y0 - 128) < 0.01,
+      'z0 时 (0,0) 在 128,128（Slippy Map 公式）', `${x0.toFixed(2)},${y0.toFixed(2)}`);
+    const [x1, y1] = api.photoPixelAt(0, -180, 1);
+    chk(Math.abs(x1 - 0) < 0.01 && Math.abs(y1 - 256) < 0.01,
+      'z1 时 (0,-180) 在左上角', `${x1.toFixed(2)},${y1.toFixed(2)}`);
+    // 北纬 85.0511 是 Web Mercator 的顶点
+    const [, yTop] = api.photoPixelAt(85.0511, 0, 10);
+    chk(yTop < 1, 'z10 时北纬 85.0511 贴近顶边', yTop.toFixed(2));
+  }
+
+  // ---- 空输入 / 坏坐标 ----
+  chk(Array.isArray(api.clusterPhotoGroups([], 10)) &&
+      api.clusterPhotoGroups([], 10).length === 0, '空输入返回空数组');
+  {
+    const r = api.clusterPhotoGroups(
+      [{ lat: null, lon: 1 }, { lat: 1, lon: undefined }, { lat: NaN, lon: 2 }], 10);
+    chk(r.length === 0, '没有坐标的组全部跳过（照旧不画坏数据）', String(r.length));
+  }
+
+  // ---- z>=17：一律不合并（方案 A 的核心）----
+  {
+    // 两点相距 0.0001°（约 11 m）。z17 下约 9.3 px，仍在 60px 半径内，
+    // 但因为"到了不聚合的层级"，必须**不合并**。
+    const pts = [{ lat: 23.0, lon: 113.0 }, { lat: 23.0001, lon: 113.0 }];
+    const r17 = api.clusterPhotoGroups(pts, 17);
+    chk(r17.length === 2, 'z17 时挨得再近也不合并（每个组一个点）', String(r17.length));
+    chk(r17.every(c => c.count === 1), 'z17 时每个点 count 都是 1');
+    const r18 = api.clusterPhotoGroups(pts, 18);
+    chk(r18.length === 2, 'z18 同理', String(r18.length));
+  }
+
+  // ---- z<17：半径内合并 ----
+  {
+    // 0.0001° 在 z11 下约 0.15 px，必然合并
+    const pts = [{ lat: 23.0, lon: 113.0 }, { lat: 23.0001, lon: 113.0 },
+                 { lat: 23.0002, lon: 113.0001 }];
+    const r = api.clusterPhotoGroups(pts, 11);
+    chk(r.length === 1, 'z11 时挤在一起的三点合并成一个', String(r.length));
+    chk(r[0].count === 3, '合并后的 count 是 3', String(r[0].count));
+    chk(r[0].idxs.length === 3, 'idxs 记下了成员下标', JSON.stringify(r[0].idxs));
+    // 位置是成员的均值
+    const expLat = (23.0 + 23.0001 + 23.0002) / 3;
+    chk(Math.abs(r[0].lat - expLat) < 1e-9, '聚合点位置是成员均值',
+      String(r[0].lat));
+  }
+
+  // ---- 半径之外不合并 ----
+  {
+    // z11 下 0.000686° ≈ 1 px，所以 0.1° ≈ 146 px > 60 px 半径
+    const pts = [{ lat: 23.0, lon: 113.0 }, { lat: 23.0, lon: 113.1 }];
+    const far = api.clusterPhotoGroups(pts, 11);
+    chk(far.length === 2, 'z11 下相距约 146px 的两点不合并', String(far.length));
+    // 0.02° ≈ 29 px < 60 px，应合并
+    const near = api.clusterPhotoGroups(
+      [{ lat: 23.0, lon: 113.0 }, { lat: 23.0, lon: 113.02 }], 11);
+    chk(near.length === 1, 'z11 下相距约 29px 的两点合并', String(near.length));
+  }
+
+  // ---- 半径可配（测试时能收紧/放松）----
+  {
+    const pts = [{ lat: 23.0, lon: 113.0 }, { lat: 23.0, lon: 113.02 }];
+    const loose = api.clusterPhotoGroups(pts, 11, 60);
+    const tight = api.clusterPhotoGroups(pts, 11, 10);
+    chk(loose.length === 1 && tight.length === 2,
+      '半径参数真的起作用（60px 合并 / 10px 分开）',
+      `loose=${loose.length} tight=${tight.length}`);
+  }
+
+  // ---- 不丢点：所有有效点都被收进某个聚合 ----
+  {
+    const pts = [];
+    for (let i = 0; i < 39; i++) {
+      pts.push({ lat: 22.9 + i * 0.002, lon: 113.8 + i * 0.002 });
+    }
+    for (const z of [11, 13, 15, 16, 17]) {
+      const r = api.clusterPhotoGroups(pts, z);
+      const total = r.reduce((s, c) => s + c.count, 0);
+      const uniq = new Set(r.flatMap(c => c.idxs));
+      chk(total === pts.length && uniq.size === pts.length,
+        `z${z}：39 个点一个不丢（count 合计 ${total}，下标去重 ${uniq.size}）`);
+    }
+  }
+
+  // ---- 真实规模：150 张 -> 39 组，在低层级应该显著减少 ----
+  {
+    const pts = [];
+    for (let i = 0; i < 39; i++) {
+      // 模拟那批全景：分布在一片约 25 km 的范围里
+      pts.push({ lat: 22.81 + (i % 7) * 0.03, lon: 113.64 + Math.floor(i / 7) * 0.06 });
+    }
+    const z11 = api.clusterPhotoGroups(pts, 11).length;
+    const z17 = api.clusterPhotoGroups(pts, 17).length;
+    chk(z11 < z17, '低层级画出的点比高层级少（聚合生效）', `z11=${z11} z17=${z17}`);
+    chk(z17 === 39, 'z17 时恢复成 39 个（每个组一个点）', String(z17));
+  }
+}

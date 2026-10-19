@@ -357,6 +357,10 @@ UI_ZH: dict[str, str] = {
     'Pyramid build failed: ': '建立金字塔失败：',
     'tiles': '块瓦片',
 
+    # 照片点聚合
+    'photo groups': '个照片点',
+    'click to zoom in': '点击放大',
+
 }
 
 

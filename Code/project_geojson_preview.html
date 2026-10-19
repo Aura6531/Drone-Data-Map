@@ -767,6 +767,19 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    和普通照片放一起，用户根本分辨不出来，也想不到"这个能拖拽着看"。
    角标 + 悬停提示（在 HTML 里）说明它是可以四处看的 360。 */
 .photo-shot{position:relative}
+/* 聚合点：一个实心圆里写数字（组数）。
+   为什么不用 Leaflet.markercluster：项目里没有这个库，而且我们要的行为很窄 ——
+   只对照片组、只在 z<17 聚合、点它只放大。自己写 40 行比引一个插件更可控
+   （也省得和现有 .photo-dot 的图标样式打架）。 */
+.photo-cluster{background:none;border:none}
+.photo-cluster-num{display:flex;align-items:center;justify-content:center;
+                   width:34px;height:34px;border-radius:50%;
+                   background:#2563eb;color:#fff;
+                   border:2px solid #fff;
+                   box-shadow:0 2px 8px rgba(37,99,235,.45);
+                   font-size:12px;font-weight:700;line-height:1;
+                   font-variant-numeric:tabular-nums}
+.photo-cluster:hover .photo-cluster-num{background:#1d4ed8}
 .pano-badge{position:absolute;top:6px;left:6px;z-index:2;
             padding:2px 7px;border-radius:999px;
             background:rgba(15,23,42,.72);color:#fff;
@@ -5248,8 +5261,111 @@ function photoTooltip(group){
   return lines.join('\n');
 }
 
+// ============================================================
+// 照片点的聚合（按缩放级别）
+// ============================================================
+//
+// 为什么需要：一个项目里可能有一两百张全景照片（实测一批 150 张 -> 39 组）。
+// 缩到 z11 时这 39 个点会挤在几十像素内互相盖住，点不中任何一个。
+//
+// 行为约定（用户 2026-10-19 选的方案 A）：
+//   z <  PHOTO_CLUSTER_MAX_ZOOM  按屏幕像素半径合并成一个带数字的圆圈
+//   z >= PHOTO_CLUSTER_MAX_ZOOM  **一律不合并**，每个组一个点，保证一定点得到
+// 为什么选 A 而不是"一直聚合到全部分开"：A 的行为可预测（放到 17 级就一定能点到），
+// 而动态聚合会逼用户放到 21 级才点得到，来回缩放很烦。
+//
+// 聚合半径用**像素**不用米：「挤在一起」是屏幕上的现象 ——
+// z11 时 50 米也算同一点，z18 时 50 米已经是两块地。
+const PHOTO_CLUSTER_MAX_ZOOM=17;
+const PHOTO_CLUSTER_RADIUS_PX=60;
+
+// Web Mercator 像素坐标（与 Leaflet 的 project() 同一套公式）。
+// 不依赖 map 实例 —— 抽成纯函数才能直接单测。
+function photoPixelAt(lat,lng,zoom){
+  const scale=256*Math.pow(2,zoom);
+  const x=(Number(lng)+180)/360*scale;
+  const s=Math.sin(Number(lat)*Math.PI/180);
+  const y=(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*scale;
+  return [x,y];
+}
+
+// 把一个"可能是坐标"的值转成数字；不是有效坐标就给 NaN。
+//
+// 为什么要单独一个函数：`Number(null) === 0` —— 直接 `Number.isFinite(Number(v))`
+// 会把 `lat: null` 判成"有效坐标 0"，于是那个组被画到**赤道上**而不是被跳过。
+// 这个坑旧代码里也有，是写聚合单测时被发现的（`{lat: null}` 那条断言红了）。
+function photoCoord(v){
+  if(v===null||v===undefined||v==='')return NaN;
+  const n=Number(v);
+  return Number.isFinite(n)?n:NaN;
+}
+
+// 把照片组聚成"可点击单元"。
+//   groups: [{lat, lon}, ...]（照片组，不是单张照片）
+//   返回:   [{lat, lng, count, idxs}]，idxs 是原数组下标
+// count===1 的就是单点（按原来的图标画），count>1 的画成数字圆圈。
+function clusterPhotoGroups(groups,zoom,radiusPx,maxZoom){
+  const zmax=Number.isFinite(maxZoom)?maxZoom:PHOTO_CLUSTER_MAX_ZOOM;
+  const r=Number.isFinite(radiusPx)?radiusPx:PHOTO_CLUSTER_RADIUS_PX;
+  const list=Array.isArray(groups)?groups:[];
+  const z=Number.isFinite(zoom)?zoom:0;
+
+  // 先筛出有坐标的（坏数据照旧不画）
+  const pts=[];
+  for(let i=0;i<list.length;i++){
+    const g=list[i];
+    const lat=photoCoord(g&&g.lat), lng=photoCoord(g&&g.lon);
+    if(!Number.isFinite(lat)||!Number.isFinite(lng))continue;
+    pts.push({i,lat,lng,xy:photoPixelAt(lat,lng,z)});
+  }
+
+  // 到了最高聚合层级：一律不合并
+  if(z>=zmax){
+    return pts.map(p=>({lat:p.lat,lng:p.lng,count:1,idxs:[p.i]}));
+  }
+
+  // 贪心：以未分配的每一点为锚，把半径内的吞进来。
+  // n 是"照片组"的数量（通常是几十），O(n^2) 完全够用；
+  // 锚点不重算质心 —— 结果可预测，也不会因为中心漂移导致抖动。
+  const used=new Array(pts.length).fill(false);
+  const r2=r*r;
+  const out=[];
+  for(let a=0;a<pts.length;a++){
+    if(used[a])continue;
+    used[a]=true;
+    const idxs=[pts[a].i];
+    let sLat=pts[a].lat, sLng=pts[a].lng;
+    for(let b=a+1;b<pts.length;b++){
+      if(used[b])continue;
+      const dx=pts[b].xy[0]-pts[a].xy[0];
+      const dy=pts[b].xy[1]-pts[a].xy[1];
+      if(dx*dx+dy*dy<=r2){
+        used[b]=true;
+        idxs.push(pts[b].i);
+        sLat+=pts[b].lat; sLng+=pts[b].lng;
+      }
+    }
+    out.push({lat:sLat/idxs.length, lng:sLng/idxs.length, count:idxs.length, idxs});
+  }
+  return out;
+}
+
+// 聚合点的图标：一个实心圆里写数字
+function photoClusterIcon(count){
+  return L.divIcon({
+    className:'photo-cluster',
+    html:`<span class="photo-cluster-num">${count}</span>`,
+    iconSize:[34,34],
+    iconAnchor:[17,17]
+  });
+}
+
 // 重建照片图层。全部推倒重来（而不是逐个 remove）：
 // 分组是按「同架次 + 同一秒」，重扫之后分组本身可能变，增量更新反而更容易错。
+// 聚合也一样每次重算 —— 数量在几十的量级，重建比增量维护简单且不易错。
+let photoZoomHooked=false;
+let photoClusterStats=null;   // {clusters, singles} 供状态文字用
+
 function renderPhotoLayer(){
   if(!map||!leafletReady())return;
 
@@ -5259,34 +5375,75 @@ function renderPhotoLayer(){
   }
 
   photoActiveMarker=null;
+  photoClusterStats=null;
 
   if(!photoLayerOn)return;
 
+  // 缩放变了要重算聚合。只挂一次，避免重复监听。
+  if(!photoZoomHooked){
+    photoZoomHooked=true;
+    map.on('zoomend',()=>{
+      if(photoLayerOn)renderPhotoLayer();
+    });
+  }
+
   photoLayer=L.layerGroup();
 
-  photoGroups.forEach((group,index)=>{
-    if(!Number.isFinite(Number(group.lat))||!Number.isFinite(Number(group.lon)))return;
+  const zoom=map.getZoom();
+  const clusters=clusterPhotoGroups(photoGroups,zoom);
+  let singles=0;
 
-    const marker=L.marker([Number(group.lat),Number(group.lon)],{
-      icon:photoIcon(group),
-      // 照片点比航迹小一些，zIndexOffset 为负 -> 压在航迹下面，
-      // 免得一片照片点把航迹线全盖住（照片是要和航迹对照着看的）
-      zIndexOffset:-200
+  clusters.forEach(cl=>{
+    if(cl.count===1){
+      singles++;
+      const index=cl.idxs[0];
+      const group=photoGroups[index];
+      const marker=L.marker([cl.lat,cl.lng],{
+        icon:photoIcon(group),
+        // 照片点比航迹小一些，zIndexOffset 为负 -> 压在航迹下面，
+        // 免得一片照片点把航迹线全盖住（照片是要和航迹对照着看的）
+        zIndexOffset:-200
+      });
+      // 照片点的点击不要冒泡到地图 —— 地图的 click 是「选点检索」，
+      // 点照片点不该顺手改掉用户的选点。
+      marker.on('click',e=>{
+        if(e&&e.originalEvent&&typeof L!=='undefined'&&L.DomEvent)L.DomEvent.stopPropagation(e);
+        selectPhotoGroup(index);
+      });
+      marker.bindTooltip(photoTooltip(group),{direction:'top',offset:[0,-10]});
+      marker.photoGroupIndex=index;
+      marker.addTo(photoLayer);
+      return;
+    }
+
+    // 聚合点：点它是"我想看里面有什么"，所以放大；不是打开某一张照片。
+    const marker=L.marker([cl.lat,cl.lng],{
+      icon:photoClusterIcon(cl.count),
+      zIndexOffset:-150
     });
-
-    // 照片点的点击不要冒泡到地图 —— 地图的 click 是「选点检索」，
-    // 点照片点不该顺手改掉用户的选点。
     marker.on('click',e=>{
       if(e&&e.originalEvent&&typeof L!=='undefined'&&L.DomEvent)L.DomEvent.stopPropagation(e);
-      selectPhotoGroup(index);
+      const pts=cl.idxs.map(i=>photoGroups[i])
+        .filter(g=>g&&Number.isFinite(Number(g.lat))&&Number.isFinite(Number(g.lon)))
+        .map(g=>[Number(g.lat),Number(g.lon)]);
+      if(!pts.length)return;
+      // +3 级保证一定"有进展"（否则一簇点可能放大一级还挤在一起），
+      // 但不超过"不再聚合"的层级 —— 到那一级就必然能点到单个点。
+      map.fitBounds(L.latLngBounds(pts),{
+        padding:[60,60],
+        maxZoom:Math.min(zoom+3,PHOTO_CLUSTER_MAX_ZOOM)
+      });
     });
-
-    marker.bindTooltip(photoTooltip(group),{direction:'top',offset:[0,-10]});
-    marker.photoGroupIndex=index;
+    marker.bindTooltip(
+      `${cl.count} ${t('photo groups')} — ${t('click to zoom in')}`,
+      {direction:'top',offset:[0,-16]}
+    );
     marker.addTo(photoLayer);
   });
 
+  photoClusterStats={clusters:clusters.length, singles:singles};
   photoLayer.addTo(map);
+  try{updatePhotoLayerUI()}catch(e){}
 }
 
 // ============================================================
@@ -5465,8 +5622,14 @@ function updatePhotoLayerUI(){
   // 做成鼠标放到 Load all photos 按钮上悬停时才出现」）——
   // 它只是"加载完了多少"的说明，占着一行反而挤掉真正要看的按钮。
   // 改成按钮的原生 tooltip（title），平时不占位、悬停即见。
+  //
+  // 2026-10-19：再加上"当前画了几个点" —— 聚合生效时点数会比组数少，
+  // 用户看到"39 组"却只数到 12 个圆圈会以为漏了。缩到 17 级以上点数与组数相等，
+  // 此时不加这段（免得说一句废话）。
+  const cl=photoClusterStats;
+  const clusterText=(cl&&cl.clusters<groups)?` · ${cl.clusters} shown`:'';
   const summary=total
-    ? `${total} photos → ${groups} targets`+(merged?` · ${merged} merged`:'')
+    ? `${total} photos → ${groups} targets`+(merged?` · ${merged} merged`:'')+clusterText
     : '';
   if(photoLayerBtn&&summary)photoLayerBtn.title=summary;
   else if(photoLayerBtn)photoLayerBtn.removeAttribute('title');

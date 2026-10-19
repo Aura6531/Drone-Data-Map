@@ -79,8 +79,32 @@ function makeLStub(calls) {
     _isMap: true,
     _layers: [],
     addLayer(l) { this._layers.push(l); return this },
-    setView() { return this }, on() { return this }, off() { return this },
-    setMaxZoom() {}, getZoom() { return 9 }, setZoom() {}, zoomIn() {}, zoomOut() {},
+    setView() { return this },
+    // 事件要真的**存下来**：页面的照片聚合靠 map.on('zoomend') 重新聚类，
+    // 原来 on() 是空函数，处理器被丢掉，测试里根本触发不到缩放重算。
+    // 存下来之后测试可以 fire('zoomend') 复现真实行为。
+    _handlers: {},
+    on(ev, fn) {
+      if (fn) (this._handlers[ev] = this._handlers[ev] || []).push(fn);
+      return this;
+    },
+    off(ev, fn) {
+      if (fn && this._handlers[ev]) {
+        this._handlers[ev] = this._handlers[ev].filter((f) => f !== fn);
+      }
+      return this;
+    },
+    fire(ev, arg) {
+      (this._handlers[ev] || []).forEach((f) => f(arg));
+      return this;
+    },
+    setMaxZoom() {},
+    // 缩放要**可变**：照片点现在按缩放级别聚合，测试需要在
+    // 「聚合中」和「不聚合（z>=PHOTO_CLUSTER_MAX_ZOOM）」两种状态下各验一遍。
+    // 原来 getZoom() 恒返回 9，setZoom() 是空函数 —— 于是永远停在聚合状态。
+    getZoom() { return (this._zoom === undefined) ? 9 : this._zoom },
+    setZoom(z) { this._zoom = Number(z); return this },
+    zoomIn() {}, zoomOut() {},
     removeLayer() {}, hasLayer() { return false },
     invalidateSize() {}, panTo() {}, getBoundsZoom() { return 12 },
     // 记录每次 fitBounds（视野缩放）的调用：点「加载全部照片」时要验它
@@ -532,15 +556,54 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   chk(btn && !btn._classes.has('photo-on'), '照片图层默认关（不挡航迹）');
   chk(btn && String(btn.textContent || '') === '', '开关按钮取得到');
 
-  // 点一下「加载全部照片」：应该建出两个照片点，并把视野缩放到全部照片
-  const before = svgHolder.length;
+  // 点一下「加载全部照片」：应该把照片点画出来，并把视野缩放到全部照片
+  //
+  // 2026-10-19：照片点现在**按缩放级别聚合**（用户选的方案 A：
+  // z<17 合并成带数字的圆圈，z>=17 一律不合并）。
+  // 桩里的地图默认在低层级，所以不能再断言"每个组一个图标" —— 那时会合并成一个圆圈。
+  // 要验的是两件事：
+  //   ① 低层级画出聚合圆圈
+  //   ② 放到 z>=17 后恢复成每个组一个照片点（保证一定点得到，这是方案 A 的核心）
+  let before = svgHolder.length;
+  let markerBase = sb.calls.markers.length;
   let toggleErr = null;
   if (btn) { try { btn._fire('click') } catch (e) { toggleErr = e } }
   const made = svgHolder.length - before;
   chk(!toggleErr, '点「加载全部照片」不抛异常', toggleErr ? toggleErr.message : '');
-  chk(made >= 2, '打开后为每个照片点建了图标', made + ' 个');
+  chk(made >= 1, '低层级至少画出一个聚合点', made + ' 个');
   chk(btn && btn._classes.has('photo-on'), '打开后按钮带 photo-on（主色实心）');
   chk(btn && String(btn.getAttribute('aria-pressed')) !== 'false' || !btn, 'aria-pressed 跟着变');
+
+  // 照片聚合靠 map.on('zoomend') 重算，先确认这个处理器真的注册上了
+  const mapStub = sb.calls && sb.calls.mapStub;
+  const handlers = (mapStub && mapStub._handlers) || {};
+  chk((handlers.zoomend || []).length >= 1,
+    '页面在 map 上注册了 zoomend（缩放后重算聚合）',
+    JSON.stringify(Object.keys(handlers)));
+
+  // 放到"不再聚合"的层级：每个组都要有自己的照片点。
+  // 之后所有断言都以这一刻为基准（`before` / `markerBase` 一起前移）——
+  // 否则 slice 会把低层级那个聚合圆圈也扫进来（它没有 photo-dot，会误判）。
+  let atMax = 0;
+  {
+    const maxZ = (typeof PHOTO_CLUSTER_MAX_ZOOM === 'number') ? PHOTO_CLUSTER_MAX_ZOOM : 17;
+    const before2 = svgHolder.length;
+    const markerBase2 = sb.calls.markers.length;
+    let err2 = null;
+    try {
+      if (sb.calls.mapStub && sb.calls.mapStub.setZoom) sb.calls.mapStub.setZoom(maxZ);
+      // 用**真实路径**重画：页面自己注册的 zoomend 处理器会调 renderPhotoLayer()。
+      // 直接调 renderPhotoLayer 做不到 —— 它在页面脚本的作用域里，测试文件看不到。
+      if (sb.calls.mapStub && sb.calls.mapStub.fire) sb.calls.mapStub.fire('zoomend');
+    } catch (e) { err2 = e }
+    atMax = svgHolder.length - before2;
+    chk(!err2, `放到 z${maxZ} 不抛异常`, err2 ? err2.message : '');
+    chk(atMax >= 2, `放到 z${maxZ} 后每个组各一个照片点（不再聚合）`, atMax + ' 个');
+    chk(atMax >= made, '不聚合时的点数不少于聚合时的点数',
+      `聚合 ${made} / 不聚合 ${atMax}`);
+    before = before2;
+    markerBase = markerBase2;
+  }
 
   // 视野缩放：桩里记下 fitBounds 的调用，验证「一次把全部照片摆进画面」
   chk(sb.calls.fitBounds.length === 1, '点按钮时调了一次 fitBounds（自动缩放到全部照片）',
@@ -554,6 +617,9 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     chk(call && Array.isArray(call.padding) && call.padding.length === 2, '带 padding（点不会贴边）');
   }
 
+  // 上图那段已经把地图放到"不再聚合"的层级并重画过，所以下面检查的图标
+  // 是**每个组一个照片点**的那一批。`before` 要跟着挪到重画之后的下标，
+  // 否则 slice 会混进聚合圆圈的 html（它里面没有 photo-dot）。
   const iconHtml = svgHolder.slice(before).join('\n');
   const iconCls = iconOpts.slice(before).map((o) => String(o.className || '')).join('\n');
   chk(/photo-dot/.test(iconHtml), '照片点用 SVG 圆点画');
@@ -570,12 +636,15 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   const card = sb.els.get('photoCard');
   const gallery = sb.els.get('photoGallery');
 
-  // 开关那一下新建的图标个数，就是照片点的个数（每个点一个 divIcon）
-  chk(made === 2, '两个照片点 = 两次 divIcon（一组一个点）', made + ' 个');
+  // 上图那段已经在「不聚合」的层级重画过，`before`/`markerBase` 都挪到了那一刻。
+  // 所以这里数到的就是"每个组一个照片点"那一批。
+  chk(atMax === 2, '两个照片点 = 两次 divIcon（一组一个点）', atMax + ' 个');
 
   // 照片点：从 calls.markers 里按「挂没挂点击处理」筛出来。
   // 不依赖图层桩的内部结构 —— 数「建了几个、上面挂了什么」最可靠。
-  const markers = sb.calls.markers.filter((m) => m._listeners && m._listeners.click);
+  // 只取重画之后新建的：低层级那个聚合点也挂了 click，不能混进来。
+  const markers = sb.calls.markers.slice(markerBase)
+    .filter((m) => m._listeners && m._listeners.click);
   chk(markers.length === 2, '两个照片点都挂了点击处理', markers.length + ' 个');
 
   const marker = markers[0];
