@@ -5996,7 +5996,12 @@ function openPanoPhoto(group,name){
     if(!folder||!file)return;
     // 后端 /photo?path= 接的是「文件夹 + 反斜杠 + 文件名」
     const p=folder.replace(/[\\/]+$/,'')+'\\'+file;
-    const url='/pano360_player.html?path='+encodeURIComponent(p);
+    // 打开 360 查看器时带上**与封面相同的俯仰角**（pitch=-10, fov=75）。
+    // 封面（服务端 /photo/pano）默认就是这两个值，这里必须一致 ——
+    // 否则"封面"和"点开第一眼"不是同一个画面，那正是加透视封面的意义所在。
+    // `-10` 这个数在 Code/pano360.py 的 DEFAULT_COVER_PITCH 里，
+    // Code/test_pano_cover.py 有一条断言核对两边相等。
+    const url='/pano360_player.html?pitch=-10&fov=75&path='+encodeURIComponent(p);
     window.open(url,'_blank','noopener');
   }catch(e){}
 }

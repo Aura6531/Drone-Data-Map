@@ -146,5 +146,22 @@ p2 = pano360.perspectives_from_equirect(equi, 0.0, 0.0, fov_deg=75, out_w=480)
 chk(p2.shape == (270, 480, 3), "不给 out_h 时按 16:9 推", str(p2.shape))
 
 print()
+print("=== 7) 封面默认俯仰角：两端必须一致 ===")
+# 这条是**跨语言契约**：服务端封面的默认 pitch 在 pano360.DEFAULT_COVER_PITCH，
+# 前端打开 360 查看器时要带同一个值。不一致的话"封面"和"点开第一眼"就不同画面，
+# 而且两边各自看都正常 —— 只有并排比图才发现（这个坑真的踩过：fov 语义差）。
+chk(abs(pano360.DEFAULT_COVER_PITCH - (-10.0)) < 1e-9,
+    "pano360.DEFAULT_COVER_PITCH == -10", str(pano360.DEFAULT_COVER_PITCH))
+
+html = (CODE / "project_geojson_preview.html").read_text(encoding="utf-8")
+import re as _re
+m = _re.search(r"pano360_player\.html\?pitch=(-?\d+(?:\.\d+)?)&fov=", html)
+chk(m is not None, "前端 openPanoPhoto() 打开查看器时带了 pitch=", str(m and m.group(0)))
+if m:
+    chk(abs(float(m.group(1)) - pano360.DEFAULT_COVER_PITCH) < 1e-9,
+        "前端带的 pitch 与 pano360.DEFAULT_COVER_PITCH 相等",
+        "前端 %s / 后端 %s" % (m.group(1), pano360.DEFAULT_COVER_PITCH))
+
+print()
 print("结果:", "全部通过" if ok else "有失败项")
 raise SystemExit(0 if ok else 1)

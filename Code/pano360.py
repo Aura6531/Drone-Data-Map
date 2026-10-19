@@ -42,6 +42,19 @@ DEFAULT_FOV = 200.0
 # 等距柱状的宽高比恒为 2:1
 EQUI_ASPECT = 2
 
+# 全景照片"透视封面"的默认俯仰角（度，正=抬头）。
+#
+# 为什么不是 0：pitch=0 时地平线正好在画面正中，天空占掉上方三分之一 ——
+# 而巡查场景真正要看的是地面。实测三张不同场景（公园/山谷/城区）按
+# 0 / -10 / -20 并排比对：-10 天空收成合理留白、地面细节明显增加、
+# 什么都不丢；-20 开始"俯视"，有的画面天空被削光、发闷。
+#
+# **这个值必须与前端一致**：Code/project_geojson_preview.html 的
+# `openPanoPhoto()` 打开 360 查看器时要带同样的 `pitch=`，
+# 否则"封面"和"点开第一眼"就不是同一个画面了。
+# `Code/test_pano_cover.py` 有一条断言专门核对两边相等。
+DEFAULT_COVER_PITCH = -10.0
+
 
 def _sample_bilinear(img: np.ndarray, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
     """在 img 上按浮点坐标双线性采样。越界处返回 0（黑）。"""

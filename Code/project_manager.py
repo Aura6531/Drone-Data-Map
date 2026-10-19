@@ -6690,6 +6690,10 @@ class ProjectManagerHandler(
         if path == "/photo/pano":
 
             try:
+                # 在参数解析之前就 import：下面 _num("pitch", pano360.DEFAULT_COVER_PITCH)
+                # 要用这个常量，放晚了会 NameError。
+                import pano360
+
                 q = parse_qs(parsed.query)
                 raw = (q.get("path") or [""])[0]
                 if not raw:
@@ -6715,7 +6719,8 @@ class ProjectManagerHandler(
                 else:
                     want_h = None
                 yaw = _num("yaw", 0.0, -180.0, 180.0)
-                pitch = _num("pitch", 0.0, -89.0, 89.0)
+                # 默认俯仰角来自 pano360 的常量，必须与前端 openPanoPhoto() 一致
+                pitch = _num("pitch", pano360.DEFAULT_COVER_PITCH, -89.0, 89.0)
                 fov = _num("fov", 75.0, 20.0, 120.0)
 
                 candidate = Path(raw).resolve()
@@ -6758,7 +6763,6 @@ class ProjectManagerHandler(
 
                 if not cached.is_file():
                     import numpy as np
-                    import pano360
 
                     Image.MAX_IMAGE_PIXELS = None
                     with Image.open(candidate) as im:
