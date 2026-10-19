@@ -1033,7 +1033,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
   .frame-gallery{max-height:none}
   .col-right .frame-gallery{min-height:0}
 }
-/* 折叠轨（只有窄屏用得到）：一个竖条按钮，点了展开左栏 */
+/* 折叠轨：一个竖条按钮，点了展开左栏。
+   **原来只有窄屏（≤1280px）能用**，现在任意宽度都能折叠 ——
+   见下面 `.layout.left-folded` 那一组规则与 `left-folded` 类的说明。 */
 .left-rail{display:none;flex-direction:column;align-items:center;gap:10px;
            padding:10px 0;border:1px solid #e2e8f0;border-radius:10px;
            background:#fff;cursor:pointer;height:100%;box-sizing:border-box}
@@ -1041,6 +1043,36 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .left-rail .lr-icon{font-size:17px;line-height:1;color:#2563eb}
 .left-rail .lr-text{writing-mode:vertical-rl;font-size:11px;font-weight:700;
                     color:#475569;letter-spacing:.14em}
+
+/* ============================================================
+   任意宽度都能折叠左栏
+   ============================================================
+   为什么用 `.left-folded` 这个**显式类**，而不是继续靠 `@media (max-width)`：
+   用户要的是"选好文件之后收起侧边栏，把宽度让给地图和结果" ——
+   这是**工作流**决定的，不是屏幕宽度决定的。14 寸笔记本上想收、
+   27 寸上也想收。所以折叠必须能在任意视口触发。
+
+   断点里那句 `--left-w:46px` 保留，但含义变了：
+   **窄屏默认折叠**（没记忆时的初始状态），而不是"窄屏强制折叠、宽屏永远展不开"。
+   两者由 JS 的 `left-open` / `left-folded` 决定，CSS 只负责表现。
+   ============================================================ */
+.layout.left-folded{--left-w:46px}
+.layout.left-folded .col-left .col-body{display:none}
+.layout.left-folded .col-left .side-toggle{display:none}
+.layout.left-folded .left-rail{display:flex}
+.layout:not(.left-folded) .left-rail{display:none}
+
+/* 每块列表的收起/展开（文件列表、标记点列表各一个开关）。
+   收起后只留标题行 —— 目的是"在看地图时不让长列表把高度吃掉"。
+   用 `:not()` 而不是给内容加一层包装 div：**不改 DOM 结构**，
+   所以不受别处选择器（`.card-fill`、`flex:1`、`:has()` 那些）影响。 */
+.card.collapsed > *:not(.card-head):not(h2){display:none}
+.card.collapsed{flex:0 0 auto!important;min-height:0!important}
+.card-head .hdr-caret{transition:transform .18s ease;font-size:11px;color:#64748b;
+                      margin-left:auto;cursor:pointer;padding:2px 6px;border-radius:6px;
+                      background:none;border:none;line-height:1}
+.card-head .hdr-caret:hover{background:#f1f5f9}
+.card.collapsed .card-head .hdr-caret{transform:rotate(-90deg)}
 </style>
 </head>
 <body>
@@ -1073,8 +1105,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 <div class="layout" id="layout">
 
   <aside class="col col-left view-project" id="colLeft">
-    <!-- 窄屏折叠轨：左栏收起时露出来，点它展开。
-         只有 ≤1280px 才显示（CSS 控制），宽屏下这块根本不占位。 -->
+    <!-- 折叠轨：左栏收起时露出来，点它展开。
+         原来是"只有 ≤1280px 才显示"，现在**任意宽度**都能折叠
+         （见 CSS 里 `.layout.left-folded` 那组）；宽屏下也用得上。 -->
     <button id="leftRail" class="left-rail" type="button"
             title="Expand the left panel" aria-label="Expand the left panel">
       <span class="lr-icon">›</span>
@@ -1092,6 +1125,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <!-- 标签开关与标题同一行：文字在左、按钮在右，不再单独占一行 -->
         <div class="card-head">
           <h2>Project</h2>
+          <!-- 收起左栏。原来**没有**这个按钮：`‹ Markers` 那个开关只是在
+               "项目页/标记点页"之间翻，折叠整栏只能靠 rail 展开、却没有反方向的路
+               （实测全页只有 `setLeftOpen(true)`，没有 false）。
+               用户要的是"选好文件后收起侧边栏把宽度让给地图"，所以补上。 -->
+          <button id="foldLeftBtn" class="side-toggle fold-left" type="button"
+                  title="Collapse the left panel (give the width to the map)"
+                  aria-label="Collapse the left panel">«</button>
           <button id="sideToggle" class="side-toggle" type="button"
                   aria-pressed="false"
                   title="Switch to markers (list and export)"
@@ -1121,8 +1161,14 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 
       <!-- card-fill：让这张卡撑满左列剩余高度，底边与中/右列对齐
            （文件少的时候也不会短一截） -->
-      <section class="card card-fill">
-        <h2>Tracks</h2>
+      <section class="card card-fill" id="tracksCard">
+        <!-- 标题行带一个收起箭头：文件多时把它收起来，把高度让给下面的标记点列表；
+             收起状态记在 localStorage 里，下次打开还是那样。 -->
+        <div class="card-head">
+          <h2>Tracks</h2>
+          <button class="hdr-caret" type="button" data-collapse="tracksCard"
+                  title="Collapse / expand this list" aria-label="Collapse this list">▾</button>
+        </div>
         <!-- 三个按钮合并成一个：检测 -> 生成 SRT -> 生成 GeoJSON。
              为什么合并：GeoJSON 必须读同名 .srt（后端 generate_geojson_for_video
              找不到就直接报错），没有任何路径会现读 MP4 里的字幕流 ——
@@ -1162,6 +1208,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <button id="sideToggleBack" class="side-toggle" type="button"
                   title="Back to project / tracks" aria-label="Back to project">Project ›</button>
           <h2>Markers<span id="markerCount" class="marker-count">(empty)</span></h2>
+          <button class="hdr-caret" type="button" data-collapse="markerCard"
+                  title="Collapse / expand this list" aria-label="Collapse this list">▾</button>
         </div>
         <div class="marker-head">
           <label class="marker-all"><input type="checkbox" id="markerSelectAll">Select all</label>
@@ -3046,11 +3094,18 @@ function followViewport(){
 function layoutRoot(){return document.getElementById('layout')}
 function leftRailEl(){return document.getElementById('leftRail')}
 
-function setLeftOpen(open){
+function setLeftOpen(open,persist){
   const root=layoutRoot();
   if(!root)return;
+  // `left-open`（旧，窄屏媒体查询用）与 `left-folded`（新，任意宽度都生效）
+  // 必须始终互补，否则窄屏与宽屏的表现会打架。
   root.classList.toggle('left-open',!!open);
-  try{localStorage.setItem('droneMap.leftOpen',open?'1':'0')}catch(e){}
+  root.classList.toggle('left-folded',!open);
+  // **只有用户操作才记住**。初始化时不能写：
+  // 踩过 —— 初始化也写的话，宽屏一加载就把"展开"记下来，
+  // 之后窄屏（含测试里的 885px 那档）读到的都是"展开"，
+  // 左栏该折的没折，地图被挤到 258px。
+  if(persist)try{localStorage.setItem('droneMap.leftOpen',open?'1':'0')}catch(e){}
   // 地图容器尺寸变了，Leaflet 要重算，否则瓦片错位/出现灰边
   setTimeout(()=>{try{if(map)map.invalidateSize()}catch(e){}},60);
 }
@@ -3068,13 +3123,51 @@ function initLeftRail(){
   const root=layoutRoot();
   if(!root)return;
   const rail=leftRailEl();
-  if(rail)rail.addEventListener('click',()=>setLeftOpen(true));
+  if(rail)rail.addEventListener('click',()=>setLeftOpen(true,true));
+  // 收起按钮（展开时的出口）。原来没有它，展开后就收不回去了。
+  const fold=document.getElementById('foldLeftBtn');
+  if(fold)fold.addEventListener('click',()=>setLeftOpen(false,true));
+  // Esc 也能收 —— 看完一个点、想回到"整屏地图"时最顺手
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&!document.querySelector('.video-dialog[style*="display: flex"],.video-dialog[style*="display:flex"]')){
+      const r=layoutRoot();
+      if(r&&!r.classList.contains('left-folded'))setLeftOpen(false,true);
+    }
+  });
 
   // 记住的选择优先；没记过就按视口宽窄定默认 ——
   // 窄屏默认折叠（把宽度让给地图和视频），宽屏默认展开。
   const saved=readLeftOpen();
-  if(saved===null)root.classList.toggle('left-open',window.innerWidth>1280);
-  else root.classList.toggle('left-open',saved);
+  setLeftOpen(saved===null?window.innerWidth>1280:saved);
+}
+
+// ============================================================
+// 列表卡片的收起/展开（文件列表 / 标记点列表各一个）
+// ============================================================
+//
+// 为什么要这个：左栏里 Tracks 和 Markers 两块都要占高度，
+// 而用户经常"只想看地图 + 一块列表"。能各自收起就不必在两者之间二选一。
+//
+// 状态存 localStorage：这是**偏好**不是数据，刷新页面应当保持。
+function initCardCollapse(){
+  const KEY='droneMap.collapsedCards';
+  let saved={};
+  try{saved=JSON.parse(localStorage.getItem(KEY)||'{}')||{}}catch(e){saved={}}
+  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(saved))}catch(e){}};
+
+  document.querySelectorAll('[data-collapse]').forEach(btn=>{
+    const card=document.getElementById(btn.dataset.collapse);
+    if(!card)return;
+    // 恢复上次状态
+    if(saved[btn.dataset.collapse])card.classList.add('collapsed');
+    btn.addEventListener('click',()=>{
+      const on=card.classList.toggle('collapsed');
+      saved[btn.dataset.collapse]=on;
+      save();
+      // 载体尺寸变了，地图要重算（和折叠整栏同一个理由）
+      setTimeout(()=>{try{if(map)map.invalidateSize()}catch(e){}},60);
+    });
+  });
 }
 
 function applyVideoPanelLayout(){  if(!videoDialog)return;
@@ -7100,6 +7193,9 @@ async function loadOne(i){
   try{
     const f=geoFiles[i];const d=await fetchGeo(f);addGeo(d,0,f.file_name,f);updateStats([d]);const bounds=layerGroup.getBounds();if(bounds.isValid())map.fitBounds(bounds,{padding:[35,35],maxZoom:TRACK_FIT_MAX_ZOOM});
     document.querySelectorAll('.file-item').forEach(x=>x.classList.remove('active'));document.querySelector(`.file-item[data-index="${i}"]`)?.classList.add('active');
+    // 选好文件、画到地图上之后，把左栏收起来 —— 用户要的是
+    // 「选好加载的文件之后，收起侧边栏，然后在地图上点哪里检索/播放哪里」。
+    foldLeftForWork();
   }catch(e){show(mapNotice,e.message,true)}
 }
 
@@ -7132,6 +7228,21 @@ async function loadAll(){
   const ok=await ensureAllLoaded();
   if(!ok)return;
   const bounds=layerGroup.getBounds();if(bounds.isValid())map.fitBounds(bounds,{padding:[35,35],maxZoom:TRACK_FIT_MAX_ZOOM});
+  foldLeftForWork();
+}
+
+// 「选好文件之后把左栏收起来」。
+//
+// 用户的流程是：选文件 → 收起侧栏 → 只在地图与结果之间来回。
+// 所以加载完成之后自动收，把宽度让给地图（14 寸上这一步很实在：
+// 实测 1600px 视口下左栏占 352px，收起后地图从 502 → 647px）。
+//
+// 注意：**不持久化**。这是"进入工作态"的自动动作，
+// 不该覆盖用户自己设的偏好（所以他下次打开页面还是按上次手动设的那样）。
+function foldLeftForWork(){
+  const root=layoutRoot();
+  if(!root||root.classList.contains('left-folded'))return;
+  setLeftOpen(false,false);
 }
 
 clearBtn.addEventListener('click',()=>{
@@ -9785,8 +9896,10 @@ function boot(){
   applyTargetMarkerVisibility();
   // 左栏默认显示「项目数据 / 轨迹文件」那一页（标记点页由标签开关切换）
   applyLeftView('project');
-  // 窄屏左栏的折叠状态（记住选择；没记过就按视口宽窄定默认）
+  // 左栏的折叠状态（记住选择；没记过就按视口宽窄定默认）
   initLeftRail();
+  // 文件列表 / 标记点列表各自的收起状态（记住选择）
+  initCardCollapse();
   // 搜索+操作卡的折叠状态（记住选择）
   setProbeFold(readProbeFold());
   // 覆盖面板现在也浮在地图里（左下角），要接上折叠钮与高度联动

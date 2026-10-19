@@ -750,8 +750,14 @@ console.log('\n=== 单按钮「Build tracks」：跑完变绿 ===');
   chk(!/<h2>数据准备<\/h2>/.test(noComment), '「数据准备」标题已删除');
   chk(!/3 · 检测与生成/.test(noComment), '「3 · 检测与生成」小标题已删除');
   const cardStart = noComment.indexOf('class="row flow-actions"');
-  chk(/<h2>Tracks<\/h2>/.test(noComment.slice(Math.max(0, cardStart - 200), cardStart)),
+  // 2026-10-16：这张卡的标题行改成了 `.card-head`（为了塞一个"收起列表"的箭头），
+  // 所以标题到步骤按钮之间多了几十个字符 —— 原来是 200 字符窗口，太窄会误报。
+  // 顺便把新加的收起箭头也断言上（不然它可以被悄悄删掉）。
+  const beforeFlow = noComment.slice(Math.max(0, cardStart - 400), cardStart);
+  chk(/<h2>Tracks<\/h2>/.test(beforeFlow),
     '合并后这张卡以「轨迹文件」标题开头（标题在步骤按钮上方）');
+  chk(/id="tracksCard"/.test(noComment) && /data-collapse="tracksCard"/.test(noComment),
+    '「轨迹文件」这张卡有 id，且标题行带着"收起列表"的开关');
 
   // markDone() / resetFlowButtons() 是「三个按钮」时代的产物，随合并一起删除：
   // 现在只有这一个按钮，直接摘/加 'done' 类即可，不需要中间层。
@@ -1483,10 +1489,18 @@ chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
 {
   // 标签开关放在标题行里（文字左、按钮右），不再绝对定位单独占一行
   const headStart = html.indexOf('id="sideToggle"');
-  const head = html.slice(Math.max(0, headStart - 320), headStart + 260);
+  // 2026-10-16：标题行里多了「收起左栏」那个按钮（以及一段解释注释），
+  // 所以从 sideToggle 往回找 `card-head` 的距离变长了 —— 窗口从 320 放宽到 900。
+  const head = html.slice(Math.max(0, headStart - 900), headStart + 260);
   chk(/class="card-head"/.test(head), '标签开关在 .card-head 标题行里');
   chk(head.indexOf('<h2>Project</h2>') < head.indexOf('id="sideToggle"'),
     '标题在左、按钮在右');
+  // 新加的「收起左栏」按钮：没有它的话，展开之后就再也收不回去了
+  // （原来全页只有 setLeftOpen(true)，没有 false）。
+  chk(/id="foldLeftBtn"/.test(html), '标题行里有「收起左栏」按钮');
+  chk(/foldLeftBtn[\s\S]{0,200}setLeftOpen\(false/.test(body)
+    || /getElementById\('foldLeftBtn'\)[\s\S]{0,160}setLeftOpen\(false/.test(body),
+    '收起按钮真的调了 setLeftOpen(false)');
   const st = (html.match(/\.side-toggle\{[^}]*\}/) || [''])[0];
   chk(!/position:absolute/.test(st), '不再是绝对定位（那会让它单独占一行）');
   // 左栏所有按钮要一致：切换按钮和 .card-tools button 用同一套尺寸/字号
