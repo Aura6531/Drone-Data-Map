@@ -208,9 +208,14 @@ console.log('\n=== 3) 列表渲染 ===');
   const rows = el.markerList.children;
   chk(rows.length === 3, '三条标记点渲染三行', String(rows.length));
   chk(rows[0].className.indexOf('marker-row') === 0, '每行是 .marker-row');
-  chk(rows[0].children.length === 5, '每行 5 个元素：[✓] 名称 纬度 经度 [×]', String(rows[0].children.length));
+  // 2026-10-16：行里多了「✎ 编辑」按钮（改名 / 移到别的类别），
+  // 所以从 5 格变 6 格：[✓] 名称 纬度 经度 [✎] [×]
+  chk(rows[0].children.length === 6,
+    '每行 6 个元素：[✓] 名称 纬度 经度 [✎] [×]', String(rows[0].children.length));
   chk(rows[0].children[0].type === 'checkbox', '第 1 格是复选框');
-  chk(rows[0].children[4].textContent === '×', '最后一格是单个删除的 ×');
+  chk(rows[0].children[4].textContent === '✎', '倒数第 2 格是编辑（改名 / 移组）');
+  chk(rows[0].children[4].className === 'marker-edit', '编辑按钮用 .marker-edit 样式');
+  chk(rows[0].children[5].textContent === '×', '最后一格是单个删除的 ×');
   chk(rows[0].children[1].textContent === B.name, '第 2 格是名称（最新的排最前）', rows[0].children[1].textContent);
   chk(rows[0].children[2].textContent === '23.040001' && rows[0].children[3].textContent === '112.470002',
     '纬度 / 经度各占一格，6 位小数', rows[0].children[2].textContent + ',' + rows[0].children[3].textContent);
