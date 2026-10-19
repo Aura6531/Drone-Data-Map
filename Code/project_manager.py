@@ -6681,6 +6681,10 @@ class ProjectManagerHandler(
         # 这里按宽度降采样并**落盘缓存**，第一次 0.1~0.4 s，之后就是读文件。
         # JPEG 解码用 PIL 的 draft()：它能让 libjpeg 直接按 1/2、1/4、1/8 解码，
         # 对 14400×7200 这种大图比"解码整幅再缩"快一个数量级。
+        #
+        # 缓存目录**不能放 Project/ 下** —— 项目列表是扫 Project/*/project.json，
+        # 放进去会多出一个把缓存目录当项目的空条目（我一开始就放错了）。
+        # 放 TEST_DIR/_cache/thumbs，`.gitignore` 已有 `_*` 与 `**/.thumbs/` 覆盖。
         if path == "/photo/thumb":
 
             try:
@@ -6728,7 +6732,7 @@ class ProjectManagerHandler(
                 key = hashlib.sha1(
                     ("%s|%d|%d|%d" % (candidate, stat.st_size, int(stat.st_mtime), want)).encode("utf-8")
                 ).hexdigest()[:20]
-                cache_dir = PROJECT_DIR / "_thumbs"
+                cache_dir = TEST_DIR / "_cache" / "thumbs"
                 cache_dir.mkdir(parents=True, exist_ok=True)
                 cached = cache_dir / ("%s_%d.jpg" % (key, want))
 
