@@ -7,11 +7,12 @@
 所以两者对得上才算一致。
 """
 import math
+import os
 import sys
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pano360
 
 ok = True

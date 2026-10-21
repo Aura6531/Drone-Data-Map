@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """验证 360 圆环 footprint 的几何：手算对照 + 边界情形。"""
 import math
+import os
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pano360_coverage as pc
 
 ok = True
