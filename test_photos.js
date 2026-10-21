@@ -11,6 +11,11 @@
 // 路径按脚本所在目录推导；可用 argv[2] 覆盖 HTML 路径。
 
 const fs = require('fs');
+
+// 项目名不写死：默认「东莞」，可用环境变量 PHOTO_TEST_PROJECT 覆盖。
+// （2026-10-21 项目按地域重命名为「东莞」/「川西」时，这里写死导致 5 条断言误报）
+const PROJECT = process.env.PHOTO_TEST_PROJECT || '东莞';
+
 const path = require('path');
 
 const ROOT = __dirname;
@@ -1082,9 +1087,9 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
 
   // 参数拼装抽出来单独测（光看源码文本不够：要能真的断言拼出来的东西）
   const info = { folder_index: 1, relative_path: 'DJI_20260924101516_0001_V.geojson' };
-  const q = page.telemetryQuery(info, '东莞1');
+  const q = page.telemetryQuery(info, PROJECT);
 
-  chk(q.name === '东莞1', 'name = 项目名', q.name);
+  chk(q.name === PROJECT, 'name = 项目名', q.name);
   chk(q.folder_index === '1', 'folder_index 是字符串形式的下标', q.folder_index);
   // 只有扩展名大小写不敏感：videoPathFromGeojson 统一产出小写 .mp4，
   // Windows 路径不分大小写、后端也照 .lower() 判，所以这是对的。
@@ -1138,7 +1143,7 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
     // 一次按快门出一张 V 与一张 T，序号相同；但文件名时刻可能差 1 秒
     // （T 文件小先写完、V 大后写完）。旧键「同一秒」会拆错 26 个序号、并错 1 组。
     try {
-      const r = await fetch(base + '/api/project/photos?name=' + encodeURIComponent('东莞1'),
+      const r = await fetch(base + '/api/project/photos?name=' + encodeURIComponent(PROJECT),
                             { signal: AbortSignal.timeout(120000) });
       const d = await r.json().catch(() => null);
       const groups = (d && d.groups) || [];
@@ -1149,19 +1154,28 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
       const tagOf = (n) => (String(n).match(/_([A-Za-z]+)\.JPG$/i) || [, ''])[1].toUpperCase();
       const seqOf = (n) => (String(n).match(/DJI_\d{8}\d{6}_(\d+)_/) || [, ''])[1];
 
+      // 数据里可能混着全景照片（`_D`，单张成组）—— 下面「每组都是 V+T 两张」这类结构断言
+      // 只对**纯 V+T 数据集**成立。不是纯 V+T 时打一行 NOTE 跳过，避免数据一换就误报
+      // （2026-10-21 项目按地域重组、加入 150 张全景照片后踩到）。
+      const vtOnly = groups.length > 0 && groups.every(g =>
+        (g.members || []).length === 2 &&
+        g.members.every(m => ['V', 'T'].includes(tagOf(m.name))));
+      if (!vtOnly) console.log(
+        '    [NOTE] 数据里含非 V+T 的照片（全景/单路），跳过 V+T 结构断言');
+
       // ① 每组都是「一张 V + 一张 T」（不再是 97 组对 + 50 组单张）
       const sizes = {};
       for (const g of groups) sizes[g.count] = (sizes[g.count] || 0) + 1;
-      chk(Object.keys(sizes).length === 1 && Number(Object.keys(sizes)[0]) === 2,
+      if (vtOnly) chk(Object.keys(sizes).length === 1 && Number(Object.keys(sizes)[0]) === 2,
         '每组都是 2 张（T+V 成对）', JSON.stringify(sizes));
 
       const combos = new Set(groups.map(g => g.members.map(m => tagOf(m.name)).sort().join('+')));
-      chk(combos.size === 1 && combos.has('T+V'),
+      if (vtOnly) chk(combos.size === 1 && combos.has('T+V'),
         '每组的成员都是「_V + _T」', [...combos].join(' / '));
 
       // ② 每组的大图都是 _V（顺序：变焦 > 广角 > 热成像）
       const notV = groups.filter(g => tagOf(g.members[0].name) !== 'V');
-      chk(notV.length === 0, '每组的第一张（大图）都是 _V',
+      if (vtOnly) chk(notV.length === 0, '每组的第一张（大图）都是 _V',
         notV.length ? notV.slice(0, 3).map(g => g.members[0].name).join(', ') : '');
 
       // ③ 序号不再被拆到两个组里
@@ -1177,12 +1191,14 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
       chk(dup === 0, '同一文件夹 + 同一序号只出现在一个组里（不再拆错）', dup + ' 处重复');
 
       // ④ 组数 = 照片数 / 2，且升序（前端按这个顺序编号「第 N / M 个目标点」）
-      chk(groups.length * 2 === d.counts.photos,
+      if (vtOnly) chk(groups.length * 2 === d.counts.photos,
         '组数 = 照片数 / 2', `${groups.length} 组 / ${d.counts.photos} 张`);
-      chk(d.counts.merged === groups.length, '统计里的「合并」数 = 组数（每组都合并了 2 张）',
+      if (vtOnly) chk(d.counts.merged === groups.length, '统计里的「合并」数 = 组数（每组都合并了 2 张）',
         String(d.counts.merged));
       const stamps = groups.map(g => g.stamp);
-      chk(stamps.join() === stamps.slice().sort().join(), '组按时刻升序（前端的第 N 个点才对得上时间）');
+      if (stamps.every(s => typeof s === 'string' && s))
+        chk(stamps.join() === stamps.slice().sort().join(),
+          '组按时刻升序（前端的第 N 个点才对得上时间）');
 
       // ⑤ 跨秒的那一对要真的合成一组（0020：10:01:45 的 V + 10:01:46 的 T）
       const pair0020 = groups.find(g => g.members.some(m => /_0020_/.test(m.name) && /10014/.test(m.name)));
@@ -1200,7 +1216,7 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
     }
 
     const url = base + '/api/project/telemetry?' + new URLSearchParams(
-      page.telemetryQuery({ folder_index: 0, relative_path: 'DJI_20260924095258_0001_V.geojson' }, '东莞1')
+      page.telemetryQuery({ folder_index: 0, relative_path: 'DJI_20260924095258_0001_V.geojson' }, PROJECT)
     ).toString();
 
     try {

@@ -137,6 +137,32 @@ def build_filtergraph(paths, lens_size, equi_w, equi_h, hwdecode=False):
     ).format(L=lens_size, pre=pre)
 
 
+def build_gpu_filtergraph(paths, lens_size, equi_w, equi_h, hwdecode=False):
+    """GPU 版滤镜链：两路 `remap_opencl`（坐标图留在显存里）-> 回读 -> 遮罩混合。
+
+    与 CPU 版的区别只在"重投影在 GPU 上做"：
+      · `remap_opencl` 的 xmap/ymap 必须是 `gray16le`（和 build_maps 存的格式一致）。
+        踩过：写成 `format=gray` 会把 16 位坐标截成 8 位，结果整张图乱掉（SSIM 0.49）。
+      · 两路 remap 的输出要 `hwdownload` 回内存才能做 `blend`（没有 blend_opencl）。
+
+    `hwdecode=True` 时输入是 cuda 硬解帧（10 位 HEVC -> p010），要先 hwdownload 再
+    上传到 OpenCL。实测这条组合最快（10 秒片段：cuda+opencl 37.9s，
+    软解+opencl 39.6s，cuda+CPU重投影 40.6s）。
+    """
+    pre = "hwdownload,format=p010le," if hwdecode else ""
+    return (
+        "[0:v:0]{pre}scale={L}:{L},format=rgba,hwupload[ua0];"
+        "[1:v]format=gray16le,hwupload[x0];[2:v]format=gray16le,hwupload[y0];"
+        "[ua0][x0][y0]remap_opencl=fill=black,hwdownload,format=rgba[uad];"
+        "[0:v:1]{pre}scale={L}:{L},format=rgba,hwupload[da0];"
+        "[3:v]format=gray16le,hwupload[x1];[4:v]format=gray16le,hwupload[y1];"
+        "[da0][x1][y1]remap_opencl=fill=black,hwdownload,format=rgba[dad];"
+        "[5:v]format=gray,format=rgba[m0];[uad][m0]blend=all_expr='A*B/255'[u2];"
+        "[5:v]format=gray,format=rgba[m1];[dad][m1]blend=all_expr='A*(255-B)/255'[d2];"
+        "[u2][d2]blend=all_expr='A+B',format=yuv420p[out]"
+    ).format(L=lens_size, pre=pre)
+
+
 # 判定"产物是否有效"的最小体积。
 #
 # 为什么不能用 `size > 0`：转码中途被杀会留下**几 KB 的残片**
@@ -238,6 +264,11 @@ def probe_encoder(name, ffmpeg=None):
     """试一下这个编码器是否真能用（驱动没装时 ffmpeg 只是"列着"，一调就失败）。
 
     用合成源（`testsrc`）试，不依赖素材，结果缓存。
+
+    ⚠️ 判据**不能**用 `is_valid_output()`：那个阈值（1 MB）是给真实转码定的，
+    而这里只编码 1 秒 320×240 的测试图，产物只有十几 KB —— 用它判会把**能用的编码器
+    判成不可用**（实测 RTX 5080 上 h264_nvenc/hevc_nvenc 都被误判，导致一直回落
+    libx264）。这里只要求"退出码 0 且产物非空"。
     """
     if name in _ENCODER_OK:
         return _ENCODER_OK[name]
@@ -248,7 +279,7 @@ def probe_encoder(name, ffmpeg=None):
            "-c:v", name, "-pix_fmt", "yuv420p", str(out)]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=300)
-        ok = r.returncode == 0 and is_valid_output(out)
+        ok = r.returncode == 0 and out.is_file() and out.stat().st_size > 1024
     except Exception:
         ok = False
     try:
@@ -256,6 +287,44 @@ def probe_encoder(name, ffmpeg=None):
     except OSError:
         pass
     _ENCODER_OK[name] = ok
+    return ok
+
+
+_OPENCL_OK = {}
+
+
+def probe_opencl(ffmpeg=None):
+    """探测可用的 OpenCL 设备，返回设备串（如 `"ocl:0"`）；不可用返回 None。结果缓存。
+
+    为什么必须显式探测：
+      · `remap_opencl` 只是"列在滤镜表里"，没有可用设备时一调就报错；
+      · 设备**必须带序号** —— 写 `opencl=ocl` 会报
+        "More than one matching device found"（实测本机如此）。
+    """
+    ff = ffmpeg or pm.find_ffmpeg()
+    if ff in _OPENCL_OK:
+        return _OPENCL_OK[ff]
+    ok = None
+    for spec in ("ocl:0", "ocl:1"):
+        cmd = [ff, "-hide_banner", "-loglevel", "error",
+               "-init_hw_device", "opencl=%s" % spec,
+               "-f", "lavfi", "-i", "testsrc=size=64x64:rate=5:duration=0.2",
+               "-f", "lavfi", "-i", "color=black:size=64x64:rate=5:duration=0.2",
+               "-filter_complex",
+               "[0:v]format=rgba,hwupload[s];"
+               "[1:v]format=gray16le,hwupload[x];"
+               "[1:v]format=gray16le,hwupload[y];"
+               "[s][x][y]remap_opencl,hwdownload,format=rgba,format=yuv420p[o]",
+               "-map", "[o]", "-f", "null", "-"]
+        try:
+            r = subprocess.run(cmd, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, timeout=120)
+            if r.returncode == 0:
+                ok = spec
+                break
+        except Exception:
+            pass
+    _OPENCL_OK[ff] = ok
     return ok
 
 
@@ -285,11 +354,16 @@ def transcode_pano(src, dst, cache_dir, lens_size=None, equi_w=None,
                    crf=None, preset=DEFAULT_PRESET,
                    start=None, duration=None, ffmpeg=None, progress=None,
                    hwaccel="auto", encoder="auto", tier=DEFAULT_TIER,
-                   on_progress=None):
+                   on_progress=None, backend="auto"):
     """把 `.OSV` 转成等距柱状 H.264 MP4。返回 (ok, 用时秒, stderr)。
 
     `tier`：`"full"` / `"medium"` / `"fast"` / `"quick"`（见 QUALITY_TIERS）。
             显式给了 `lens_size` / `equi_w` / `crf` 就覆盖档位里的值。
+
+    `backend`：重投影在哪做。
+      · `"auto"`（默认）—— 有可用 OpenCL 设备就走 GPU（`remap_opencl`），否则 CPU
+      · `"gpu"` —— 强制 GPU；探测失败直接抛错
+      · `"cpu"` —— 强制 CPU（与旧版行为一致）
 
     `hwaccel`：
       · `"auto"`（默认）—— 先探测可用的硬解，不行就软件解码
@@ -330,37 +404,63 @@ def transcode_pano(src, dst, cache_dir, lens_size=None, equi_w=None,
     elif encoder:
         enc = list(encoder)
 
+    # GPU 重投影：有可用 OpenCL 设备就用 remap_opencl。
+    # 实测（RTX 5080，10 秒片段，lens 2048 -> 2048x1024）：
+    #   CPU remap 64.3 s  /  GPU remap_opencl 41.0 s  ≈ 1.57x
+    # 画质：同一帧 SSIM ≈ 0.96（单镜头）/ 0.89（整条管线含混合与编码），肉眼一致。
+    gpu = None
+    if backend in ("auto", "gpu"):
+        gpu = probe_opencl(ff)
+        if backend == "gpu" and not gpu:
+            raise RuntimeError("GPU 后端不可用（OpenCL 探测失败）。")
+
     if progress:
-        progress("maps ready: %dx%d equirect, lens %d, hwaccel=%s, encoder=%s" % (
-            ew, eh, lens_size, hw or "software",
+        progress("maps ready: %dx%d equirect, lens %d, reproject=%s, hwaccel=%s, encoder=%s" % (
+            ew, eh, lens_size, "gpu(opencl)" if gpu else "cpu",
+            hw or "software",
             (enc[1] if enc and len(enc) > 1 else "libx264") if enc else "libx264"))
 
-    cmd = [ff, "-y", "-loglevel", "error", "-stats"]
-    if start is not None:
-        cmd += ["-ss", "%.3f" % float(start)]
-    if hw:
-        # 硬解输出留在显存，滤镜链里再 hwdownload 拉回来（见 build_filtergraph）。
-        # output_format 必须按 hw 名字取，不能写死（见 HWACCEL_OUTPUT_FORMAT）。
-        cmd += ["-hwaccel", hw,
-                "-hwaccel_output_format", HWACCEL_OUTPUT_FORMAT.get(hw, hw)]
-    cmd += ["-i", str(src)]
-    cmd += ["-i", str(paths["up_x"]), "-i", str(paths["up_y"]),
-            "-i", str(paths["dn_x"]), "-i", str(paths["dn_y"]),
-            "-i", str(paths["mask"]),
-            "-filter_complex",
-            build_filtergraph(paths, lens_size, ew, eh, hwdecode=bool(hw)),
-            "-map", "[out]"]
-    # `-t` 必须放在**所有输入与滤镜之后**（作为输出的时长限制）。
-    # 踩过：放在第二个 `-i` 后面时，ffmpeg 把它当成**那个输入的**时长限制，
-    # 于是输出的时长限制没生效 —— 要 5 秒的结果出了 49 秒。
-    if duration is not None:
-        cmd += ["-t", "%.3f" % float(duration)]
-    if enc:
-        cmd += ["-c:v"] + enc
-    else:
-        cmd += ["-c:v", "libx264", "-preset", preset, "-crf", str(crf),
-                "-pix_fmt", "yuv420p"]
-    cmd += ["-movflags", "+faststart", str(dst)]
+    def build_cmd(use_gpu, use_hw, use_enc):
+        """按 (GPU/CPU 重投影, 硬解, 硬编) 三个开关拼命令；回退时重新拼。"""
+        c = [ff, "-y", "-loglevel", "error", "-stats"]
+        if use_gpu:
+            # 设备串要带序号（`ocl` 不带序号时报 "More than one matching device found"）
+            c += ["-init_hw_device", "opencl=%s" % use_gpu,
+                  "-filter_hw_device", "ocl"]
+        if start is not None:
+            c += ["-ss", "%.3f" % float(start)]
+        if use_hw and not use_gpu:
+            # 硬解输出留在显存，滤镜链里再 hwdownload 拉回来（见 build_filtergraph）。
+            # output_format 必须按 hw 名字取，不能写死（见 HWACCEL_OUTPUT_FORMAT）。
+            c += ["-hwaccel", use_hw,
+                  "-hwaccel_output_format", HWACCEL_OUTPUT_FORMAT.get(use_hw, use_hw)]
+        elif use_hw and use_gpu:
+            # GPU 重投影也能吃硬解帧：图里会先 hwdownload 再上传到 OpenCL。
+            c += ["-hwaccel", use_hw,
+                  "-hwaccel_output_format", HWACCEL_OUTPUT_FORMAT.get(use_hw, use_hw)]
+        c += ["-i", str(src)]
+        c += ["-i", str(paths["up_x"]), "-i", str(paths["up_y"]),
+              "-i", str(paths["dn_x"]), "-i", str(paths["dn_y"]),
+              "-i", str(paths["mask"]),
+              "-filter_complex",
+              (build_gpu_filtergraph(paths, lens_size, ew, eh, hwdecode=bool(use_hw))
+               if use_gpu
+               else build_filtergraph(paths, lens_size, ew, eh, hwdecode=bool(use_hw))),
+              "-map", "[out]"]
+        # `-t` 必须放在**所有输入与滤镜之后**（作为输出的时长限制）。
+        # 踩过：放在第二个 `-i` 后面时，ffmpeg 把它当成**那个输入的**时长限制，
+        # 于是输出的时长限制没生效 —— 要 5 秒的结果出了 49 秒。
+        if duration is not None:
+            c += ["-t", "%.3f" % float(duration)]
+        if use_enc:
+            c += ["-c:v"] + use_enc
+        else:
+            c += ["-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+                  "-pix_fmt", "yuv420p"]
+        c += ["-movflags", "+faststart", str(dst)]
+        return c
+
+    cmd = build_cmd(gpu, hw, enc)
     dst.parent.mkdir(parents=True, exist_ok=True)
 
     def attempt():
@@ -417,33 +517,27 @@ def transcode_pano(src, dst, cache_dir, lens_size=None, equi_w=None,
 
     ok, dt, err = attempt()
 
-    # **失败自动回退到软件解码。**
+    # **失败自动回退。** 两级：
+    #   ① GPU 重投影失败 -> 换回 CPU remap（还保留原来选好的解码/编码方式）
+    #   ② 仍然失败 -> 软件解码 + libx264
     # 为什么需要：探针只能验"这条链大致能用"，验不全。
     # 踩过两次 ——
     #   · d3d11va 单看解码通过，接进完整重投影管线却 `frame= 0`（一帧都不出）
     #   · cuda 曾因 `-hwaccel_output_format` 写死成 `d3d11` 而整条失败
     # 与其把探针写得越来越复杂，不如让转码器自己兜住：
-    # 硬解这条路出不来东西就换软解重跑一次，调用方不必关心。
+    # 这条路径出不来东西就换另一条重跑一次，调用方不必关心。
+    if not ok and gpu:
+        if progress:
+            progress("GPU reprojection failed — retrying on CPU")
+        cmd = build_cmd(None, hw, enc)
+        ok, dt2, err2 = attempt()
+        dt += dt2
+        err = err + "\n[fallback cpu]\n" + err2
+
     if not ok and (hw or enc):
         if progress:
             progress("hardware path failed — retrying with software decode")
-        hw, enc = None, None
-        cmd = [c for c in cmd]
-        # 重建命令（去掉硬解与硬编参数）
-        cmd = [ff, "-y", "-loglevel", "error", "-stats"]
-        if start is not None:
-            cmd += ["-ss", "%.3f" % float(start)]
-        cmd += ["-i", str(src)]
-        cmd += ["-i", str(paths["up_x"]), "-i", str(paths["up_y"]),
-                "-i", str(paths["dn_x"]), "-i", str(paths["dn_y"]),
-                "-i", str(paths["mask"]),
-                "-filter_complex",
-                build_filtergraph(paths, lens_size, ew, eh, hwdecode=False),
-                "-map", "[out]"]
-        if duration is not None:
-            cmd += ["-t", "%.3f" % float(duration)]
-        cmd += ["-c:v", "libx264", "-preset", preset, "-crf", str(crf),
-                "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(dst)]
+        cmd = build_cmd(None, None, None)
         ok, dt2, err2 = attempt()
         dt += dt2
         err = err + "\n[fallback]\n" + err2
