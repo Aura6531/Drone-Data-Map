@@ -72,7 +72,7 @@ python -B test_coverage_http.py      # 服务没在跑会明确 [SKIP]，不算�
   Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
   Start-Sleep 4
   Start-Process -FilePath $py -ArgumentList '-B','project_manager.py' -PassThru `
-      -WindowStyle Hidden -RedirectStandardError '<仓库根>\_srv.err'
+      -WindowStyle Hidden -RedirectStandardError '_srv.err'
   Start-Sleep 12
   (Get-Process python).Count          # 必须是 1
   ```

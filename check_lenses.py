@@ -2,8 +2,9 @@ import re, sys, io
 from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
-SERVED = Path(r"<仓库根>\Data\DJI_202609240950_001")     # 项目里记录的路径（服务实际读的）
-LOCAL  = Path(r"<仓库根>\Data\DJI_202609240950_001")
+_DATA  = Path(__file__).resolve().parent / "Data"
+SERVED = _DATA / "DJI_202609240950_001"     # 项目里记录的路径（服务实际读的）
+LOCAL  = _DATA / "DJI_202609240950_001"
 
 print("=== 服务实际读取的目录里有什么 ===")
 print(f"{SERVED}  存在={SERVED.exists()}")

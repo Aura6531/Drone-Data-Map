@@ -6,12 +6,13 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, r"<仓库根>\Code")
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE))
 import coverage as cov
 import pano360_coverage as pc
 import project_manager as pm
 
-ROOT = Path(r"<仓库根>\Data\360视频")
+ROOT = _HERE.parent / "Data" / "360视频"
 
 CASES = [
     ("贡嘎 0004（真悬停延时）", ROOT / "贡嘎" / "DJI_001" / "DJI_20261015071803_0004_D", "hover"),

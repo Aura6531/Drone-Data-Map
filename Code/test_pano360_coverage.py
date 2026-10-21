@@ -3,7 +3,7 @@
 import math
 import sys
 
-sys.path.insert(0, r"<仓库根>\Code")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pano360_coverage as pc
 
 ok = True

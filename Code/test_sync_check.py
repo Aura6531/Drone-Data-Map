@@ -11,10 +11,11 @@ import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(0, r"<仓库根>\Code")
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE))
 import project_manager as pm
 
-ROOT = Path(r"<仓库根>")
+ROOT = _HERE.parent
 TMP = ROOT / "Project" / "_synctest"
 ok = True
 

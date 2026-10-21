@@ -14,6 +14,7 @@ Code/tianditu_key.txt
 Data/
 media/
 video_proxy/
+video_clip/                  # 「导出前后10秒」的片段缓存（含用户视频）
 tile_cache/
 lens_probe/
 _backup/

@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, r"<仓库根>\Code")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import i18n
 import project_manager as pm
 

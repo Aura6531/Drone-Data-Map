@@ -11,7 +11,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, r"<仓库根>\Code")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pano360
 
 ok = True

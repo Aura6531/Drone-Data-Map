@@ -17,11 +17,12 @@ import statistics
 import sys
 from pathlib import Path
 
-sys.path.insert(0, r"<仓库根>\Code")
+_HERE = Path(__file__).resolve().parent          # 本文件所在目录（Code/）
+sys.path.insert(0, str(_HERE))
 import coverage as cov
 import project_manager as pm
 
-ROOT = Path(r"<仓库根>\Data\360视频")
+ROOT = _HERE.parent / "Data" / "360视频"
 ok = True
 
 
@@ -96,7 +97,7 @@ if one is not None:
     chk(skipped > 0, "这个局限真的会出现（不是理论问题）")
 
 # 覆盖代码里确实是 alt <= 0 就跳过
-src = (Path(r"<仓库根>\Code") / "coverage.py").read_text(encoding="utf-8")
+src = (_HERE / "coverage.py").read_text(encoding="utf-8")
 chk("alt <= 0" in src, "coverage.py 里确实是 alt <= 0 就跳过（记录在案）")
 
 print()
