@@ -70,8 +70,13 @@ QUALITY_TIERS = {
     # lens 取 3840（等于原片鱼眼的边长，不再降采样），equi 4096×2048（像素数是 full 的 4 倍）。
     # 代价：转码时间与体积都明显上升（实测数据见 README/提交说明），按需对个别片段用。
     "sharp": {"lens_size": 3840, "equi_w": 4096, "crf": 20},
+    # 原图级：**不做任何降采样**。
+    # 推导：OSV 每只镜头 3840px 覆盖 200° 视场 = 19.2 px/度；等距柱状要同密度，
+    # 宽度 = 360 × 19.2 = 6912（高 3456）—— 再往上只是插值，不会多出信息。
+    # 用户 2026-10-22 明确要求「只保留原图的清晰度」，所以它成了默认档。
+    "native": {"lens_size": 3840, "equi_w": 6912, "crf": 21},
 }
-DEFAULT_TIER = "full"
+DEFAULT_TIER = "native"
 
 
 def _map_dir(cache_dir):
@@ -641,10 +646,33 @@ def _run_job(job):
             job["error"] = (err or "")[-800:]
 
 
+def _probe_duration(src):
+    """用 ffprobe 取素材时长（秒）；失败返回 None。
+
+    为什么需要：进度条百分比 = 已处理秒数 / 总时长，而 /api/pano360/transcode
+    原来没传 duration，于是 percent 永远是 None —— 界面上进度条一直 0%
+    （实测：2 秒素材转到一半仍显示 0%）。
+    """
+    try:
+        ffprobe = pm.find_ffprobe()
+        if not ffprobe:
+            return None
+        out = subprocess.run(
+            [str(ffprobe), "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(src)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        val = out.stdout.decode("utf-8", "replace").strip()
+        return float(val) if val else None
+    except Exception:
+        return None
+
+
 def submit(src, dst, tier=DEFAULT_TIER, force=False, duration=None, label=None):
     """提交一个转码任务，返回 job_id。重复提交同一目标会复用未完成的那个。"""
     _ensure_workers()
     src, dst = Path(src), Path(dst)
+    if duration is None:
+        duration = _probe_duration(src)
     with _jobs_lock:
         for jid, j in _jobs.items():
             if (j.get("dst") == str(dst) and j.get("state") in ("queued", "running")):

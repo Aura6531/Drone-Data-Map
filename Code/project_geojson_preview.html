@@ -7871,7 +7871,7 @@ function fallbackToProxy(reason){
 // 为什么需要这个函数：视频列表里点 `.OSV` 是被**刻意跳过**的（浏览器解不了双鱼眼 HEVC），
 // 于是用户只能靠「图墙里的 360 项」或手拼 URL 才能看 —— 2026-10-22 用户反馈太绕。
 // 现在给了两个明确入口：列表行的「360」按钮、以及 360 航迹气泡里的「360 view from here」。
-function openPano360(rel,t=0,tier='full'){
+function openPano360(rel,t=0,tier='native'){
   const q=new URLSearchParams({
     name:projectSelect.value||'',
     rel:String(rel||'').replace(/\\/g,'/'),

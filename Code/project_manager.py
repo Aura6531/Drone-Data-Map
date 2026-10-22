@@ -433,7 +433,7 @@ def get_project_directories():
 # 读取项目
 # ============================================================
 
-def queue_pano_precache(project_name, tier="full", force=False, scan_root=None):
+def queue_pano_precache(project_name, tier="native", force=False, scan_root=None):
     """把一个项目里所有 `.OSV` 排进转码队列。返回 (queued_list, already_done_count)。
 
     为什么要抽成函数：**导入数据时和手动调用时都要用**。
@@ -7262,7 +7262,7 @@ class ProjectManagerHandler(
                 params = parse_qs(parsed.query)
                 name = (params.get("name") or [""])[0]
                 rel = (params.get("rel") or [""])[0]
-                tier = (params.get("tier") or ["full"])[0]
+                tier = (params.get("tier") or ["native"])[0]
                 if not name or not rel:
                     raise ValueError("Missing name/rel.")
                 import pano360_transcode
@@ -7292,7 +7292,7 @@ class ProjectManagerHandler(
                 params = parse_qs(parsed.query)
                 name = (params.get("name") or [""])[0]
                 rel = (params.get("rel") or [""])[0]
-                tier = (params.get("tier") or ["full"])[0]
+                tier = (params.get("tier") or ["native"])[0]
                 force = (params.get("force") or ["0"])[0] in ("1", "true", "yes")
                 if not name or not rel:
                     raise ValueError("Missing name/rel.")
@@ -7311,6 +7311,16 @@ class ProjectManagerHandler(
                     json_response(self, {
                         "success": True, "cached": True, "job": None,
                         "path": rel_out, "size": out.stat().st_size, "tier": tier,
+                    })
+                    return
+
+                # `probe=1`：**只问缓存状态，不起任务**。
+                # 播放器要用它挑"已缓存的最好档位"先播，同时后台转原图级；
+                # 没有这个开关的话，问一个档位就等于排一个转码任务（一次会排 5 个）。
+                if (params.get("probe") or ["0"])[0] in ("1", "true", "yes"):
+                    json_response(self, {
+                        "success": True, "cached": False, "job": None,
+                        "path": rel_out, "tier": tier,
                     })
                     return
 
@@ -7351,7 +7361,7 @@ class ProjectManagerHandler(
             try:
                 params = parse_qs(parsed.query)
                 name = (params.get("name") or [""])[0]
-                tier = (params.get("tier") or ["full"])[0]
+                tier = (params.get("tier") or ["native"])[0]
                 force = (params.get("force") or ["0"])[0] in ("1", "true", "yes")
                 if not name:
                     raise ValueError("Missing name.")
