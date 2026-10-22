@@ -9152,7 +9152,7 @@ function renderLoadedPanel(){
       icon:(function(){ const k=streamKindOf(tr.video||''); return k==='thermal'?'🔥':k==='pano'?'🌐':'🎬'; })(),
       shown, key,
       onGo:()=>{ try{ map.fitBounds(tr.group.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
-      onRemove:(async()=>{
+      onRemove:async()=>{
         const pick=await askRemoveOptions(tr.name||tr.video||'');
         if(!pick.ok)return;
         if(pick.deleteDisk){
@@ -9176,7 +9176,7 @@ function renderLoadedPanel(){
         try{ rebuildLegend(); }catch(e){}
         try{ scheduleTrackArrows(); }catch(e){}
         taskLog(t('Removed from the project.'),'ok');
-      })(),
+      },
       onToggle:(on)=>{ loadedUiState.videos[key]=on; loadedUiSave(); renderLoadedPanel(); scheduleTrackArrows(); },
     };
   });
