@@ -5090,9 +5090,16 @@ function photoLeadName(g){
   return (lead&&lead.name)||'';
 }
 
-// 组的标题：时间 + 该目标点的「变焦/广角/热成像」构成
+// 一张照片的标签：**全景优先** —— 全景图的 EXIF 里 camera 也是 WideCamera，
+// 直接翻会显示成「广角」，但它是 DJI 自动合成的 360 全景（用户 2026-10-22 指出）。
+function photoMemberLabel(m){
+  if(m&&m.panorama)return t('360 panorama');
+  return photoCameraLabel(m&&m.camera);
+}
+
+// 组的标题：时间 + 该目标点的「360 全景 / 变焦 / 广角 / 热成像」构成
 function photoShotText(g){
-  const names=(g&&g.members||[]).map(m=>photoCameraLabel(m.camera));
+  const names=(g&&g.members||[]).map(m=>photoMemberLabel(m));
   return names.join(' + ')||'Photo';
 }
 
@@ -5989,7 +5996,7 @@ function photoGalleryHtml(group){
   const leadCaption=
     `<figcaption class="photo-cap">`
     +`<span class="big">${t('Large')}</span>`
-    +`<span class="${photoCameraClass(lead.camera)}">${esc(photoCameraLabel(lead.camera))}</span>`
+    +`<span class="${photoCameraClass(lead.camera)}">${esc(photoMemberLabel(lead))}</span>`
     +`<b>${esc(lead.name)}</b>`
     +(leadWarn?`<span class="warn">⚠ ${esc(lead.accuracy)}</span>`:'')
     +`</figcaption>`;
@@ -6007,7 +6014,7 @@ function photoGalleryHtml(group){
     (lead.panorama ? ` data-pano="1" style="background-image:url('${esc(photoThumbUrl(lead.folder,lead.name,320))}')"` : '') +
     (lead.panorama ? ` title="Click to look around in this 360 photo"`
                    : ` title="Open the video at this photo\'s time"`) + `>`
-    +`<img src="${esc(lead.panorama?panoCoverUrl(lead.folder,lead.name,720):photoThumbUrl(lead.folder,lead.name,720))}" alt="${esc(photoCameraLabel(lead.camera))}Photo">`
+    +`<img src="${esc(lead.panorama?panoCoverUrl(lead.folder,lead.name,720):photoThumbUrl(lead.folder,lead.name,720))}" alt="${esc(photoMemberLabel(lead))}Photo">`
     // 360 封面：把「等距柱状缩略图」先铺成背景（几十 KB，毫秒级），
     // 服务端透视封面到了再淡入 —— 否则 figure 会塌成一条细黑条（用户 2026-10-22）
     +(lead.panorama ? `<span class="pano-badge">360</span>` : '')
@@ -6021,10 +6028,10 @@ function photoGalleryHtml(group){
       +(m.panorama ? ` data-pano="1"` : '')
       +(m.panorama ? ` title="Click to look around in this 360 photo"`
                    : ` title="Open the video at this photo\'s time"`) + `>`
-      +`<img src="${esc(m.panorama?panoCoverUrl(m.folder,m.name,480):photoThumbUrl(m.folder,m.name,240))}" alt="${esc(photoCameraLabel(m.camera))}Photo">`
+      +`<img src="${esc(m.panorama?panoCoverUrl(m.folder,m.name,480):photoThumbUrl(m.folder,m.name,240))}" alt="${esc(photoMemberLabel(m))}Photo">`
       +(m.panorama ? `<span class="pano-badge">360</span>` : '')
       +`<figcaption class="photo-cap">`
-      +`<span class="${photoCameraClass(m.camera)}">${esc(photoCameraLabel(m.camera))}</span>`
+      +`<span class="${photoCameraClass(m.camera)}">${esc(photoMemberLabel(m))}</span>`
       +`<b>${esc(m.name)}</b>`
       +(warn?`<span class="warn">⚠</span>`:'')
       +`</figcaption>`

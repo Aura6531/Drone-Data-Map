@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "360 panorama": "360 全景",
     "Track": "航迹",
     "Segments:": "航段：",
     "Points:": "点数：",
