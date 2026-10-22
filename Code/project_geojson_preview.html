@@ -337,8 +337,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    而画布只有 16:9 那一条，下半截就空着 —— 用户 2026-10-22 反馈的"空这么大" */
 /* 特异性要压过后面那条 .photo-card{flex:1 1 auto}（同权重、后者在后） */
 .photo-card.pano-card{flex:0 0 auto;min-height:0}
-/* 画布保持 16:9，但高度不超过视口的 52%（宽窗口时别把整栏吃掉） */
-.pano-card .pano-view-wrap{max-height:min(52vh,620px)}
+/* 画布保持 16:9；高度上限要**连宽度一起限**，否则宽 1660×高 550≈3:1，
+   画面会被横向拉扁（用户 2026-10-22：看着糊，就是这么来的） */
+.pano-card .pano-view-wrap{max-height:min(52vh,620px);
+    max-width:calc(min(52vh,620px) * 16 / 9);margin:0 auto}
 
 /* 右侧控件：不受全局 .row 的 flex-wrap:wrap 影响，强制单行 */
 .row.video-head-tools{flex:0 0 auto;flex-wrap:nowrap;gap:6px}
@@ -6509,7 +6511,7 @@ function openPanoPhoto(group,name){
 // 采样分辨率：源图缩到 max 4096 宽再逐像素取（ImageData 会缓存，
 // 只在换源时重取一次）—— 75° 窗口在 4096 宽的等距柱状上约 850 px，
 // 和右栏实际显示宽度接近，够清晰又不至于每帧拷 33 MB。
-const PANO_INLINE_MAX_W = 8192;
+const PANO_INLINE_MAX_W = 9216;
 
 const panoInline = {
   el:null, canvas:null, ctx:null, msg:null, title:null, sub:null, fovSel:null,
@@ -6550,7 +6552,11 @@ function panoInlineDraw(){
 
   // 源缩到 max 4096 宽，ImageData 缓存（换源才重取）
   const nw=img.naturalWidth, nh=img.naturalHeight;
-  const W=Math.min(PANO_INLINE_MAX_W,nw);
+  // 这个窗口真正需要多少源像素：画布宽 ÷ (FOV/360)。
+  // 需要多少就取多少（上限 PANO_INLINE_MAX_W），别一律降到 4096/8192 再放大。
+  const fovDeg=Math.max(20,Math.min(150,Number(panoInline.fov)||75));
+  const need=Math.round(cw*360/fovDeg*1.15);
+  const W=Math.min(nw,PANO_INLINE_MAX_W,Math.max(2048,need));
   const H=Math.max(1,Math.round(nh*W/nw));
   const key=W+'x'+H+'|'+img.src;
   if(panoInline._srcKey!==key||!panoInline._sd){
@@ -6603,7 +6609,7 @@ function panoInlineRequestDraw(){
   panoInline.raf=requestAnimationFrame(panoInlineDraw);
 }
 
-function panoInlineLoad(urlThumb,urlFull,label){
+function panoInlineLoad(urlThumb,urlMid,urlFull,label){
   if(!panoInlineCtx())return;
   panoInline.urlThumb=urlThumb; panoInline.urlFull=urlFull;
   panoInline.fullLoaded=false;
@@ -6618,17 +6624,41 @@ function panoInlineLoad(urlThumb,urlFull,label){
     if(panoInline.msg)panoInline.msg.style.display='none';
     if(panoInline.sub)panoInline.sub.textContent=thumb.naturalWidth+'×'+thumb.naturalHeight;
     panoInlineRequestDraw();
-    // 原图（1 亿像素）不阻塞交互：到了再换，换完自动重画
     if(panoInline.fullLoaded)return;
-    const full=new Image();
-    full.decoding='async';
-    full.onload=()=>{
-      panoInline.fullLoaded=true;
-      panoInline.img=full;
-      if(panoInline.sub)panoInline.sub.textContent=full.naturalWidth+'×'+full.naturalHeight;
+
+    // 第二段：8192 的缓存副本 —— 1~2 秒就能看得清，先把画面立起来
+    const mid=new Image();
+    mid.decoding='async';
+    mid.onload=()=>{
+      if(panoInline.fullLoaded)return;
+      panoInline.img=mid;
+      if(panoInline.sub)panoInline.sub.textContent=mid.naturalWidth+'×'+mid.naturalHeight;
       panoInlineRequestDraw();
+      // 第三段：**原图**（14400×7200）。解码要几秒，但只有它才是原生分辨率；
+      // 到了就换上去，换完自动重画（用户 2026-10-22：不要压缩过的）。
+      const full=new Image();
+      full.decoding='async';
+      full.onload=()=>{
+        panoInline.fullLoaded=true;
+        panoInline.img=full;
+        if(panoInline.sub)panoInline.sub.textContent=full.naturalWidth+'×'+full.naturalHeight;
+        panoInlineRequestDraw();
+      };
+      full.src=urlFull;
     };
-    full.src=urlFull;
+    mid.onerror=()=>{
+      // 副本拿不到就直奔原图
+      const full=new Image();
+      full.decoding='async';
+      full.onload=()=>{
+        panoInline.fullLoaded=true;
+        panoInline.img=full;
+        if(panoInline.sub)panoInline.sub.textContent=full.naturalWidth+'×'+full.naturalHeight;
+        panoInlineRequestDraw();
+      };
+      full.src=urlFull;
+    };
+    mid.src=urlMid;
   };
   thumb.onerror=()=>{
     if(panoInline.msg)panoInline.msg.textContent=t('360 photo failed to load');
@@ -6646,7 +6676,11 @@ function openPanoInline(path,fileName){
   const enc=encodeURIComponent(path);
   // 第二段用 /photo/hires（8192 宽的缓存副本，2-3 MB）：视觉上等于原图，
   // 但不需要浏览器去解 14400×7200 的 30+ MB 原图（用户 2026-10-22）。
-  panoInlineLoad('/photo/thumb?w=1600&path='+enc,'/photo/hires?w=8192&path='+enc,fileName||'360');
+  // 三段：缩略（秒出）→ 8192 副本（1~2 秒）→ **原图**（原生分辨率，到了再换）
+  panoInlineLoad('/photo/thumb?w=1600&path='+enc,
+                 '/photo/hires?w=8192&path='+enc,
+                 '/photo?path='+enc,
+                 fileName||'360');
   setTimeout(()=>{try{syncRightCol()}catch(e){}},30);
 }
 
