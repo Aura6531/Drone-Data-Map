@@ -171,21 +171,18 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .fatal-notice{display:none;position:sticky;top:0;z-index:9999;margin:0;padding:14px 64px 14px 24px;background:#fef2f2;border-bottom:2px solid #fca5a5;color:#b91c1c;font-size:15px;line-height:1.55;font-weight:600;white-space:pre-wrap;word-break:break-word}
 .fatal-close{position:fixed;top:10px;right:14px;z-index:10000;width:30px;height:30px;padding:0;border:1px solid #fca5a5;border-radius:8px;background:#fff;color:#b91c1c;font-size:17px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .error{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
-/* 语言切换：固定右上角。刻意做小、做轻 —— 它是个“设置项”，
-   不该抢地图/按钮的注意力。观感与地图上那几个悬浮控件同一套（毛玻璃）。 */
+/* 语言切换：**只有一个边框**（select 自己的）。
+   外层原来还有一圈毛玻璃胶囊 —— 两层框套在一起且差 2px 错位（用户 2026-10-22 指出）。
+   它现在住在工具栏里，工具栏本身就是白底，外层不需要再画一遍。 */
 .lang-switch{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
-  padding:0 2px;border-radius:9px;
-  background:rgba(255,255,255,.72);
-  -webkit-backdrop-filter:blur(7px) saturate(1.7);
-  backdrop-filter:blur(7px) saturate(1.7);
-  border:1px solid rgba(148,163,184,.42);
-  box-shadow:0 1px 8px rgba(15,23,42,.12)}
+  padding:0;border:0;background:none;box-shadow:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none}
 /* 嵌进工具栏后不再显示「语言」二字（用 aria-label 保留可访问性），
    否则一行放不下、会横向压到右栏 */
 .lang-switch label{margin:0;font-size:13px;color:#475569;white-space:nowrap;display:none}
-.lang-switch select{height:32px;padding:0 4px;font-size:13px;
-  border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#0f172a;
-  max-width:96px}
+.lang-switch select{height:32px;padding:0 6px;font-size:13px;
+  border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;
+  max-width:96px;box-sizing:border-box}
 .lang-switch select:focus{outline:none;border-color:#2563eb;
   box-shadow:0 0 0 3px rgba(37,99,235,.12)}
 /* 窄屏（≤900px）把“语言”两个字藏掉，只留下拉框，省出右上角空间 */
