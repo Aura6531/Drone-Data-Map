@@ -861,7 +861,17 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:4px 2px;
     font-size:12px;line-height:1.5}
 /* 树卡片要按内容长高（否则 flex-basis:0 会把它压成一条，树溢出到下一张卡下面） */
-#treeCard{flex:1 1 auto;min-height:360px;display:flex;flex-direction:column;overflow:hidden}
+#treeCard{flex:1 1 auto;min-height:140px;display:flex;flex-direction:column;overflow:hidden}
+/* 分隔条：拖动改变「数据文件 / 已加载」两块的高度分配 */
+.left-splitter{flex:0 0 auto;height:7px;margin:2px 0;border-radius:4px;cursor:row-resize;
+    background:linear-gradient(#e2e8f0,#e2e8f0) center/100% 2px no-repeat}
+.left-splitter:hover,.left-splitter.dragging{background:linear-gradient(#93c5fd,#93c5fd) center/100% 3px no-repeat}
+/* 收起时只留标题行（两张卡通用） */
+.card.collapsed .file-tree,.card.collapsed #loadedGroups,.card.collapsed .ld-group,
+.card.collapsed .photo-chips,.card.collapsed .file-filter,.card.collapsed .file-actions,
+.card.collapsed .flow-actions,.card.collapsed .missing-hint,.card.collapsed .detect-result,
+.card.collapsed .tree-actions,.card.collapsed .file-list{display:none!important}
+.card.collapsed{flex:0 0 auto!important;min-height:0!important}
 #fileTree{flex:1 1 auto;min-height:200px}
 /* ===== 「已加载」分组列表 ===== */
 .loaded-groups{flex:1 1 auto;min-height:80px;overflow:auto;margin-top:6px;
@@ -1420,6 +1430,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <button id="treeRefreshBtn" class="hdr-caret" type="button"
                   title="Refresh the file list" data-i18n-title="Refresh the file list"
                   aria-label="Refresh" data-i18n-aria="Refresh">⟳</button>
+          <!-- 随时可以把文件树收起来，把高度让给「已加载」 -->
+          <button class="hdr-caret" type="button" data-collapse="treeCard"
+                  title="Collapse / expand this list" data-i18n-title="Collapse / expand this list"
+                  aria-label="Collapse this list" data-i18n-aria="Collapse this list">▾</button>
         </div>
         <div id="fileTree" class="file-tree"></div>
         <div class="row tree-actions">
@@ -1427,6 +1441,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <span id="treeSelHint" class="tree-hint"></span>
         </div>
       </section>
+
+      <!-- 两块列表之间的分隔条：上下拖动可自由分配高度 -->
+      <div id="leftSplitter" class="left-splitter" role="separator" aria-orientation="horizontal"
+           title="Drag to resize" data-i18n-title="Drag to resize"></div>
 
       <!-- 第三段「已加载」：这一版先沿用原来的轨迹卡内容，
            下一提交再按 视频 / 照片 / 位置点 / 多段线 / 多边形 / 文字标注 分组。 -->
@@ -9378,6 +9396,58 @@ async function importTreeSelection(){
   if(failed.length)taskLog(`${failed.length} ${t('folder(s) failed')}`,'err');
 }
 
+// 两块列表的高度分配：拖动分隔条，记住比例（localStorage）
+const LEFT_SPLIT_KEY='uavmap.leftSplit';
+
+function initLeftSplitter(){
+  const split=document.getElementById('leftSplitter');
+  const tree=document.getElementById('treeCard');
+  const loaded=document.getElementById('tracksCard');
+  if(!split||!tree||!loaded)return;
+
+  const apply=(px)=>{
+    const host=tree.parentElement;
+    const max=Math.max(140,(host?host.clientHeight:600)-180);
+    const h=Math.max(90,Math.min(max,px));
+    tree.style.flex='0 0 '+h+'px';
+    tree.style.minHeight='0';
+    loaded.style.flex='1 1 auto';
+    return h;
+  };
+
+  // 恢复上次的高度
+  try{
+    const saved=Number(localStorage.getItem(LEFT_SPLIT_KEY));
+    if(Number.isFinite(saved)&&saved>80)apply(saved);
+  }catch(e){}
+
+  let startY=0,startH=0,dragging=false;
+
+  split.addEventListener('pointerdown',(e)=>{
+    dragging=true;
+    startY=e.clientY;
+    startH=tree.getBoundingClientRect().height;
+    split.classList.add('dragging');
+    split.setPointerCapture&&split.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  split.addEventListener('pointermove',(e)=>{
+    if(!dragging)return;
+    apply(startH+(e.clientY-startY));
+  });
+
+  const end=()=>{
+    if(!dragging)return;
+    dragging=false;
+    split.classList.remove('dragging');
+    try{ localStorage.setItem(LEFT_SPLIT_KEY,String(Math.round(tree.getBoundingClientRect().height))); }catch(e){}
+    try{ if(map)map.invalidateSize(); }catch(e){}
+  };
+  split.addEventListener('pointerup',end);
+  split.addEventListener('pointercancel',end);
+}
+
 function initFileTree(){
   const refresh=document.getElementById('treeRefreshBtn');
   if(refresh&&!refresh.dataset.bound){
@@ -10220,6 +10290,7 @@ async function importScannedFolder(folder,quiet){
 }
 
 initFileTree();
+  initLeftSplitter();
   (async()=>{
     try{
       const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));

@@ -105,11 +105,10 @@ console.log('\n=== 视频面板固定在右栏，不悬浮、不可拖动 ===');
   // 合法地需要指针事件 —— 所以把检查范围从"整页"收到"视频面板本体"。
   chk(!/videoModal[\s\S]{0,300}?pointerdown/.test(body), '视频面板本体不可拖动（指针事件已删除）');
   chk(!/videoPanel[\s\S]{0,300}?pointerdown/.test(body), '视频面板容器也没有指针处理');
-  chk((body.match(/setPointerCapture/g) || []).length <= 2
-      && /function panoInlineInit/.test(body),
-    '指针捕获只用在 360 内联查看器里');
-
-  // 面板必须在右栏里（不再是覆盖全屏的悬浮层）
+  // 2026-10-22：左栏分隔条也用了一次指针捕获（拖动分配两块列表的高度），上限放到 3
+  chk((body.match(/setPointerCapture/g) || []).length <= 3
+    && /function panoInlineInit/.test(body),
+    '指针捕获只用在 360 内联查看器与左栏分隔条里');
   const col = html.indexOf('id="colRight"');
   const panel = html.indexOf('id="videoModal"');
   chk(col > 0 && panel > col, '视频面板写在右栏内部');
