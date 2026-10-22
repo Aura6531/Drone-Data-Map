@@ -82,6 +82,15 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "The browser blocked automatic copying. Copy this text manually:": "浏览器拦截了自动复制。请手动复制下面这段内容：",
+    "Failed to build the Word report:": "生成 Word 报告失败：",
+    "Generating the report, please wait…": "正在生成报告，请稍候…",
+    "No key entered. Clear the saved Tianditu key?": "没有输入 key。要清空已保存的天地图 key 吗？",
+    "Remove": "确定要从项目列表移除",
+    "from the project list?": "吗？",
+    "Only this project's entry in the list is removed (the project definition)": "只移除它在项目列表里的那一项（项目定义）",
+    "All source videos, SRT and GeoJSON files stay on disk — nothing is deleted": "原始视频、SRT、GeoJSON 都留在磁盘上 —— 一个文件都不会删",
+    "It is up to you which project the data belongs to; you can import it into any project later": "数据归哪个项目由你决定；以后随时可以把它导入到任意项目",
     "Also delete the file on disk": "同步删除磁盘文件",
     "Deleting files from disk cannot be undone. Continue?": "同步删除磁盘文件不可撤销，确定继续？",
     "Deleted from disk:": "已从磁盘删除：",

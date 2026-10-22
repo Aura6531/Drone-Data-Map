@@ -5318,7 +5318,7 @@ async function copyMarkersTsv(list){
     try{ok=document.execCommand('copy')}catch(_){ok=false}
     document.body.removeChild(ta);
     if(!ok){
-      alert('The browser blocked automatic copying. Copy this text manually:\n\n'+text);
+      alert(t('The browser blocked automatic copying. Copy this text manually:')+'\n\n'+text);
       return;
     }
   }
@@ -5329,7 +5329,7 @@ async function copyMarkersTsv(list){
 function pickedForExport(){
   const list=selectedMarkers();
   if(!list.length){
-    alert('Select the markers to export first (use “Select all” in the header).');
+    alert(t('Select the markers to export first (use “Select all” in the header).'));
     return null;
   }
   return list;
@@ -7579,7 +7579,7 @@ async function runWordReport(list,mode,basemapKind){
   if(reportBusy)return;
 
   if(!list.length){
-    alert('Select the markers to export first (use “Select all” in the header).');
+    alert(t('Select the markers to export first (use “Select all” in the header).'));
     return;
   }
 
@@ -7637,7 +7637,7 @@ async function runWordReport(list,mode,basemapKind){
 
   }catch(e){
     setReportStatus('');
-    alert('Failed to build the Word report: '+e.message);
+    alert(t('Failed to build the Word report:')+' '+e.message);
 
   }finally{
     reportBusy=false;
@@ -7647,12 +7647,12 @@ async function runWordReport(list,mode,basemapKind){
 
 function startWordReport(list){
   if(reportBusy){
-    alert('Generating the report, please wait…');
+    alert(t('Generating the report, please wait…'));
     return;
   }
 
   if(!list.length){
-    alert('Select the markers to export first (use “Select all” in the header).');
+    alert(t('Select the markers to export first (use “Select all” in the header).'));
     return;
   }
 
@@ -8385,7 +8385,7 @@ function closeKeyDialog(){
 async function saveKey(){
   const value=(keyInput&&keyInput.value||'').trim();
 
-  if(!value&&!confirm('No key entered. Clear the saved Tianditu key?'))return;
+  if(!value&&!confirm(t('No key entered. Clear the saved Tianditu key?')))return;
 
   if(keySave)keySave.disabled=true;
 
@@ -10427,10 +10427,10 @@ if(deleteProjectBtn)deleteProjectBtn.addEventListener('click',async()=>{
   if(!name)return;
 
   const sure=window.confirm(
-    `Remove “${name}” from the project list?\n\n`
-    +'· Only this project\'s entry in the list is removed (the project definition)\n'
-    +'· All source videos, SRT and GeoJSON files stay on disk — nothing is deleted\n'
-    +'· It is up to you which project the data belongs to; you can import it into any project later'
+    `${t('Remove')} “${name}”${t('from the project list?')}\n\n`
+    +`· ${t('Only this project\'s entry in the list is removed (the project definition)')}\n`
+    +`· ${t('All source videos, SRT and GeoJSON files stay on disk — nothing is deleted')}\n`
+    +`· ${t('It is up to you which project the data belongs to; you can import it into any project later')}`
   );
 
   if(!sure)return;
