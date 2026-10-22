@@ -962,9 +962,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .tree-hint{font-size:11px;color:#64748b}
 
 /* 左下角任务日志：最多 3 行，成功刷新、失败停留 */
-.task-log{position:fixed;left:12px;bottom:12px;z-index:9400;max-width:420px;
+.task-log{position:fixed;left:12px;bottom:12px;z-index:9400;max-width:420px;pointer-events:none;
     display:flex;flex-direction:column;gap:4px}
-.task-log .tline{padding:5px 9px;border-radius:8px;font-size:12px;
+.task-log .tline{pointer-events:none;padding:5px 9px;border-radius:8px;font-size:12px;
     background:rgba(15,23,42,.86);color:#e2e8f0;box-shadow:0 3px 12px rgba(15,23,42,.28);
     display:flex;gap:6px;align-items:flex-start}
 .task-log .tline.err{background:#b91c1c;color:#fff}
@@ -9654,18 +9654,50 @@ function renderLoadedPanel(){
    ============================================================ */
 const taskLogLines=[];
 
-function taskLog(text,kind){
+const TASKLOG_TTL=4000;         // 提示保留 4 秒
+let taskLogTimer=0;
+
+function paintTaskLog(){
   const box=document.getElementById('taskLog');
   if(!box)return;
   box.innerHTML='';
+  for(const line of taskLogLines.slice(0,3)){
+    const div=document.createElement('div');
+    div.className='tline'+(line.kind==='err'?' err':line.kind==='ok'?' ok':'');
+    div.innerHTML=`<span class="t">${line.stamp}</span><span>${esc(line.text)}</span>`;
+    box.appendChild(div);
+  }
+  // 没有需要过期的消息就把定时器停掉，别让它空转
+  const hasExpiring=taskLogLines.some(l=>l.kind!=='err'&&l.at);
+  if(hasExpiring&&!taskLogTimer){
+    taskLogTimer=setInterval(()=>{
+      const now=Date.now();
+      const before=taskLogLines.length;
+      for(let i=taskLogLines.length-1;i>=0;i--){
+        const l=taskLogLines[i];
+        if(l.kind!=='err'&&l.at&&now-l.at>TASKLOG_TTL)taskLogLines.splice(i,1);
+      }
+      if(taskLogLines.length!==before)paintTaskLog();
+      if(!taskLogLines.some(l=>l.kind!=='err'&&l.at)){
+        clearInterval(taskLogTimer);
+        taskLogTimer=0;
+      }
+    },1000);
+  }
+}
+
+function taskLog(text,kind){
+  const box=document.getElementById('taskLog');
+  if(!box)return;
   const now=new Date();
   const stamp=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   // 成功的消息自动过期（保留 3 条），失败的一直留着直到下一次操作
   // 同一句话连着重播就别叠三条了（自动流程会重复触发同一条提示）
   if(taskLogLines.length&&taskLogLines[0].text===text){
     taskLogLines[0].stamp=stamp;
+    taskLogLines[0].at=Date.now();
   }else{
-    taskLogLines.unshift({text,kind:kind||'info',stamp});
+    taskLogLines.unshift({text,kind:kind||'info',stamp,at:Date.now()});
   }
   if(kind!=='err'&&taskLogLines.length>3)taskLogLines.length=3;
   if(kind==='err'){
@@ -9674,12 +9706,7 @@ function taskLog(text,kind){
     taskLogLines.length=0;
     taskLogLines.push(...keep);
   }
-  for(const line of taskLogLines.slice(0,3)){
-    const div=document.createElement('div');
-    div.className='tline'+(line.kind==='err'?' err':line.kind==='ok'?' ok':'');
-    div.innerHTML=`<span class="t">${line.stamp}</span><span>${esc(line.text)}</span>`;
-    box.appendChild(div);
-  }
+  paintTaskLog();
 }
 
 const TREE_ICON={folder:'📁',video:'🎬',thermal:'🔥',osv:'🌐',pano:'🌐',photo:'🖼',kml:'📐',meta:'·',other:'?'};
