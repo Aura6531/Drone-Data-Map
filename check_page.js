@@ -501,7 +501,7 @@ chk(/\.row\.video-head-tools\{flex:0 0 auto;flex-wrap:nowrap;gap:6px\}/.test(htm
 console.log('\n=== 检索结果卡的备选视频排布 ===');
 chk(/class="alt-video-label"/.test(body), '「同一位置还有其他视频」有专门的类');
 chk(/class="row alt-video-row"/.test(body), '备选按钮有自己的行容器');
-chk(/<div class="alt-video-label">Other videos at this position:<\/div>\s*\n\s*<div class="row alt-video-row">/.test(body),
+chk(/<div class="alt-video-label">[^<]*<\/div>\s*\n\s*<div class="row alt-video-row">/.test(body),
   '说明文字单独一行，按钮另起一行（不再是同一行挤着）');
 chk(!/<div class="row"[^>]*>\s*\n\s*<span[^>]*>Other videos at this position/.test(body),
   '旧写法（文字和按钮同一行）已移除');

@@ -11362,11 +11362,11 @@ function renderNearbyResult(group){
       const e=encodeURIComponent(JSON.stringify(payloadFor(o)));
       // 标出这一路到底「看不看得见」目标 —— 这正是 A+B 的结论
       const mark=o.inFrame?` (in frame${o.framePos&&o.framePos!=='center'?' · '+o.framePos:''})`:' (not visible in frame)';
-      return `<button class="secondary" onclick="openVideoFromPopup('${e}')">▶ ${esc(streamLabelOf(o.track.fileInfo.relative_path))} · ${esc(o.track.video||'-')}${esc(mark)}</button>`;
+      return `<button class="secondary" onclick="openVideoFromPopup('${e}')">▶ ${esc(streamLabelOf(o.track.video||o.track.fileInfo.relative_path))} · ${esc(o.track.video||'-')}${esc(mark)}</button>`;
     }).join('');
 
     othersHtml=`<div style="margin-top:6px">
-      <div class="alt-video-label">Other videos at this position:</div>
+      <div class="alt-video-label">${t("Other videos at this position:")}</div>
       <div class="row alt-video-row">${buttons}</div>
     </div>`;
   }
@@ -11393,7 +11393,7 @@ function renderNearbyResult(group){
       <span class="hit-chip"><span class="k">${esc(t('Ground distance'))}</span><span class="v">${distText}${hit.inFrame?' '+esc(t('(frame center)')):''}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('Match'))}</span><span class="v">${esc(hit.inFrame?t('Visible in frame'):t('Nearest drone position'))}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('In frame'))}</span><span class="v">${hit.inFrame?esc(t(hit.framePos||'center')):'-'}</span></span>
-      <span class="hit-chip"><span class="k">${esc(t('Video type'))}</span><span class="v">${esc(streamLabelOf(hit.track.fileInfo.relative_path))}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('Video type'))}</span><span class="v">${esc(streamLabelOf(hit.track.video||hit.track.fileInfo.relative_path))}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('segments'))}</span><span class="v">${esc(props.segment_index??'-')}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('Video time'))}</span><span class="v">${formatTime(hit.time)}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('Segment end'))}</span><span class="v">${formatTime(hit.track.videoEnd)}</span></span>

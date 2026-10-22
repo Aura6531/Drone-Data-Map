@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Other videos at this position:": "这个位置的其他视频：",
     "No laser data for this photo": "这张照片没有激光数据",
     "ground position estimated on a flat-earth assumption": "地面位置按平地假设估算",
     "Laser rangefinder failed": "激光测距失败",
