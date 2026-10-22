@@ -1448,7 +1448,8 @@ for (const f of ['fileMatchesFilter', 'filteredGeoFiles', 'buildFileFilters', 'u
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
   chk(/new Set\(geoFiles\.map\(f=>dateOfFile/.test(fn), '日期选项来自实际文件名');
   chk(/new Set\(/.test(fn) && /streamLabelOf\(f\.relative_path\)/.test(fn), '类型选项来自实际文件名');
-  chk(/\.sort\(\(a,b\)=>streamRankOf\(a\)-streamRankOf\(b\)\)/.test(fn),
+  // 2026-10-22：排序调用改成 rankOfPath()（带 typeof 兜底，辅助函数缺失不会整块抛错）
+  chk(/\.sort\(\(a,b\)=>rankOfPath\(a\)-rankOfPath\(b\)\)/.test(fn),
     '类型选项按 4K -> 1080P -> 热成像 排序，与列表一致');
   chk(/if\(fileFilterDate&&!dates\.includes\(fileFilterDate\)\)fileFilterDate='';/.test(fn),
     '选项里没有的选中值要清掉（换项目后不会残留）');

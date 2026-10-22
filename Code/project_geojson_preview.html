@@ -2241,7 +2241,7 @@ function buildFileFilters(){
 
   const types=[...new Set(
     geoFiles.map(f=>streamLabelOf(f.relative_path)).filter(t=>t&&t!=='Other')
-  )].sort((a,b)=>streamRankOf(a)-streamRankOf(b));
+  )].sort((a,b)=>rankOfPath(a)-rankOfPath(b));
 
   if(filterDate){
     filterDate.innerHTML=`<option value="">${esc(t('All dates'))}</option>`
@@ -2587,7 +2587,7 @@ async function scanGeoJSON(){
     // 顺带看看这个项目有没有正射影像（.tif）。有就把叠加层按钮亮出来。
     // 失败不阻塞 —— 这是附加功能，不能让文件列表跟着报错。
     try{ loadOrthoList() }catch(e){}
-  }catch(e){fileList.innerHTML='';show(fileNotice,e.message,true)}
+  }catch(e){fileList.innerHTML='';show(fileNotice,t('Failed to load the file list:')+' '+e.message,true)}
 }
 
 // 检查当前项目有没有缺失的 SRT / GeoJSON，有就在三个按钮下面写一行字。
@@ -2631,7 +2631,7 @@ function renderFiles(){
   }
 
   const order=entries
-    .map(x=>({index:x.index,rank:streamRankOf(x.f.relative_path)}))
+    .map(x=>({index:x.index,rank:rankOfPath(x.f.relative_path)}))
     .sort((a,b)=>a.rank-b.rank||a.index-b.index);
 
   order.forEach(({index})=>{
@@ -11076,6 +11076,14 @@ function streamNoteOf(relativePath){
 
 // 列表排序权重：按镜头类型 —— 广角 > 变焦 > 热成像 > 全彩夜视 > 360 全景 > 其他。
 // 只看后缀判断，不依赖上面的文案（改文案不用同步改这里）。
+// 排序用的安全包装：万一某个辅助函数没定义（历史版本合并出过错），
+// 也不能让「轨迹列表」整块抛错 —— 退回 0，顺序近似但不影响使用。
+function rankOfPath(relativePath){
+  try{
+    return typeof streamRankOf==='function'?streamRankOf(relativePath):0;
+  }catch(e){ return 0; }
+}
+
 function streamRankOf(relativePath){
   const kind=streamKindOf(relativePath);
   // 先按镜头类型（广角 > 变焦 > 热成像 > 全彩夜视 > 360 全景），

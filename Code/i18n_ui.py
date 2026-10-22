@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Failed to load the file list:": "加载轨迹列表失败：",
     "Full screen": "全屏",
     "Exit full screen": "退出全屏",
     "Full screen (native resolution)": "全屏（原生分辨率）",
