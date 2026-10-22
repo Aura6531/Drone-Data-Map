@@ -9524,7 +9524,11 @@ function renderLoadedPanel(){
     if(photoListOpen){
       const list=document.createElement('div');
       list.className='ld-sublist';
-      photoGroups.forEach((g,i)=>{
+      // 先按广角/变焦/全景归类，再逐条渲染
+      const kindIdx={wide:[],zoom:[],pano:[]};
+      photoGroups.forEach((g,i)=>{ kindIdx[photoKindOf(g)].push(i); });
+
+      const makePhotoRow=(g,i)=>{
         const row=document.createElement('div');
         row.className='ld-subrow'+(photoHidden.has(i)?' hidden':'');
 
@@ -9569,8 +9573,59 @@ function renderLoadedPanel(){
           try{ selectPhotoGroup(i); }catch(e){}
         });
         row.appendChild(name);
-        list.appendChild(row);
-      });
+        return row;
+      };
+
+      const KIND_LABEL={wide:t('Wide angle'),zoom:t('Zoom'),pano:t('360 panorama')};
+      for(const k of ['wide','zoom','pano']){
+        const idxs=kindIdx[k];
+        if(!idxs.length)continue;
+
+        const head=document.createElement('div');
+        head.className='ld-chead';
+
+        const kbox=document.createElement('input');
+        kbox.type='checkbox';
+        kbox.className='tree-check';
+        const shownN=idxs.filter(i=>photoLayerOn&&!photoHidden.has(i)).length;
+        kbox.checked=shownN>0&&shownN===idxs.length;
+        kbox.indeterminate=shownN>0&&shownN<idxs.length;
+        kbox.addEventListener('change',()=>{
+          if(kbox.checked){
+            if(!photoLayerOn){
+              photoHidden=new Set();
+              photoGroups.forEach((_,x)=>{ if(idxs.indexOf(x)<0)photoHidden.add(x); });
+              photoLayerOn=true;
+              applyPhotoLayerVisibility();
+            }else{
+              idxs.forEach(i=>photoHidden.delete(i));
+            }
+          }else{
+            idxs.forEach(i=>photoHidden.add(i));
+          }
+          try{ renderPhotoLayer(); }catch(e){}
+          renderLoadedPanel();
+        });
+        head.appendChild(kbox);
+
+        const kico=document.createElement('span');
+        kico.className='ld-ico';
+        kico.innerHTML=PHOTO_KIND_ICON[k];
+        head.appendChild(kico);
+
+        const klab=document.createElement('span');
+        klab.className='ld-cname';
+        klab.textContent=KIND_LABEL[k];
+        head.appendChild(klab);
+
+        const kcount=document.createElement('span');
+        kcount.className='ld-count';
+        kcount.textContent=`(${idxs.length})`;
+        head.appendChild(kcount);
+
+        list.appendChild(head);
+        idxs.forEach(i=>list.appendChild(makePhotoRow(photoGroups[i],i)));
+      }
       grp.appendChild(list);
     }
     box.appendChild(grp);
@@ -9856,6 +9911,24 @@ function taskLog(text,kind){
   paintTaskLog();
 }
 
+// 照片分三类：广角 / 变焦 / 全景（按成员文件名与相机型号判断）
+function photoKindOf(g){
+  const mems=(g&&g.members)||[];
+  const names=mems.map(m=>String((m&&m.name)||''));
+  const cameras=mems.map(m=>String((m&&m.camera)||'')).concat([String((g&&g.lead)||'')]);
+  const isPano=names.some(n=>/_D\.(jpe?g|png)$/i.test(n))||cameras.some(c=>/pano|panorama|insta|全景/i.test(c));
+  if(isPano)return 'pano';
+  const isZoom=names.some(n=>/_Z\.(jpe?g|png)$/i.test(n))||cameras.some(c=>/zoom/i.test(c));
+  if(isZoom)return 'zoom';
+  return 'wide';
+}
+
+const PHOTO_KINDS=[
+  {key:'wide', label:'Wide', icon:'wide'},
+  {key:'zoom', label:'Zoom', icon:'zoom'},
+  {key:'pano', label:'360', icon:'pano'},
+];
+
 // 「照片」组图标：蓝色渐变圆角卡 + 白色太阳 + 白色三角（用户 2026-10-22 指定的样式，
 // 比 emoji 清楚，也不依赖系统字体）
 const ICON_PHOTO='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">'
@@ -9875,6 +9948,20 @@ const ICON_TILE='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="tr
   +'<rect x="8.6" y="8.6" width="6.4" height="6.4" rx="0.6" fill="#7ac887"/>'
   +'<rect x="12.2" y="12.2" width="2.8" height="2.8" rx="0.4" fill="#ffffff" fill-opacity="0.85"/>'
   +'</svg>';
+
+// 广角 / 变焦 / 全景 三个小图标（同一套线条风格）
+const ICON_LENS_WIDE='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">'
+  +'<circle cx="8" cy="8" r="6.2" fill="none" stroke="#2563eb" stroke-width="1.6"/>'
+  +'<circle cx="8" cy="8" r="2.4" fill="#2563eb" fill-opacity="0.85"/></svg>';
+const ICON_LENS_ZOOM='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">'
+  +'<circle cx="7" cy="7" r="4.6" fill="none" stroke="#0d9488" stroke-width="1.6"/>'
+  +'<line x1="10.6" y1="10.6" x2="14" y2="14" stroke="#0d9488" stroke-width="1.8" stroke-linecap="round"/>'
+  +'<circle cx="7" cy="7" r="1.6" fill="#0d9488" fill-opacity="0.85"/></svg>';
+const ICON_PANO='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">'
+  +'<circle cx="8" cy="8" r="6" fill="none" stroke="#7c3aed" stroke-width="1.4"/>'
+  +'<ellipse cx="8" cy="8" rx="2.6" ry="6" fill="none" stroke="#7c3aed" stroke-width="1.1"/>'
+  +'<line x1="2" y1="8" x2="14" y2="8" stroke="#7c3aed" stroke-width="1.1"/></svg>';
+const PHOTO_KIND_ICON={wide:ICON_LENS_WIDE,zoom:ICON_LENS_ZOOM,pano:ICON_PANO};
 
 const TREE_ICON={folder:'📁',video:'🎬',thermal:'🔥',osv:'🌐',pano:'🌐',photo:'🖼',kml:'📐',meta:'·',other:'?'};
 
