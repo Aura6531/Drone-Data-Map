@@ -2682,6 +2682,9 @@ function applyReportCapabilities(caps){
   updateMarkerBar();
 }
 
+// 页面版本标记：控制台里 `window.__BUILD` 可确认浏览器跑的是哪一版
+window.__BUILD='2026-10-22 23:58 onRemove-fix';
+
 async function api(url,options={}){
   // fetch 抛出来的是浏览器的原文（"Failed to fetch"），对用户没有任何信息量。
   // 最常见的真实原因：请求还在跑的时候服务被重启/关掉了（大架次构建要 1~2 分钟，

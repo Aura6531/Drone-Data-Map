@@ -9990,6 +9990,24 @@ class ProjectManagerHandler(
             str(len(content))
         )
 
+        # 页面是单文件、每次改完就要立刻生效：明确告诉浏览器别缓存。
+        # （之前这里什么也没发，浏览器按启发式缓存 HTML，普通刷新会拿到旧页面 ——
+        #  反复出现「明明修好了，用户那边还是旧行为」。）
+        self.send_header(
+            "Cache-Control",
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+
+        self.send_header(
+            "Pragma",
+            "no-cache"
+        )
+
+        self.send_header(
+            "Expires",
+            "0"
+        )
+
         self.end_headers()
 
         self._write_body(
