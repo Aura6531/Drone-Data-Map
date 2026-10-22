@@ -9112,7 +9112,8 @@ function ldRow(opts){
   row.appendChild(box);
   const ico=document.createElement('span');
   ico.className='ld-ico';
-  ico.textContent=opts.icon||'·';
+  if(opts.iconHtml)ico.innerHTML=opts.iconHtml;
+  else ico.textContent=opts.icon||'·';
   row.appendChild(ico);
   const name=document.createElement('span');
   name.className='ld-name';
@@ -9376,7 +9377,7 @@ function renderLoadedPanel(){
     const shown=!!photoLayerOn;
     const grp=ldGroup(t('Photos'),[{
       name:`${pg} ${t('photo points')}`,
-      icon:'🖼', shown,
+      iconHtml:ICON_PHOTO, shown,
       expandable:true,
       expanded:photoListOpen,
       onExpand:()=>{ photoListOpen=!photoListOpen; renderLoadedPanel(); },
@@ -9708,6 +9709,14 @@ function taskLog(text,kind){
   }
   paintTaskLog();
 }
+
+// Windows 图片文件图标的样子：圆角相框 + 蓝天 + 绿山 + 太阳
+const ICON_PHOTO='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">'
+  +'<rect x="1.5" y="2.5" width="13" height="11" rx="1.6" fill="#e8f2fe" stroke="#7ba7d7" stroke-width="1"/>'
+  +'<circle cx="5.2" cy="6" r="1.3" fill="#f6c445"/>'
+  +'<path d="M2.2 12.4 L6.4 7.6 L9.4 11.2 L11.4 9.2 L13.8 12.4 Z" fill="#4ea94e"/>'
+  +'<path d="M9.4 11.2 L11.4 9.2 L13.8 12.4 Z" fill="#3c8c3c"/>'
+  +'</svg>';
 
 const TREE_ICON={folder:'📁',video:'🎬',thermal:'🔥',osv:'🌐',pano:'🌐',photo:'🖼',kml:'📐',meta:'·',other:'?'};
 
