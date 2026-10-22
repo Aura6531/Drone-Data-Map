@@ -5274,8 +5274,15 @@ function openMarkerCreate(latlng){
     const cats=markerCategories();
     selEl.innerHTML=cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')
       +`<option value="__new__">${esc(t('+ New category…'))}</option>`;
-    selEl.value='__new__';
-    if(catEl){catEl.value='';catEl.style.display='';}
+    // 默认沿用「上一次用过的分类」：连续标一批点时不用每次重新选
+    const last=lastMarkerCategory();
+    if(last&&cats.indexOf(last)>=0){
+      selEl.value=last;
+      if(catEl){catEl.value=last;catEl.style.display='none';}
+    }else{
+      selEl.value='__new__';
+      if(catEl){catEl.value='';catEl.style.display='';}
+    }
     if(!selEl.dataset.bound){
       selEl.dataset.bound='1';
       selEl.addEventListener('change',()=>{
