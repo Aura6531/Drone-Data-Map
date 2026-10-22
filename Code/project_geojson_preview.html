@@ -110,6 +110,13 @@ html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width
              background:#fff;color:#475569;font-size:12px;font-weight:600;line-height:1;cursor:pointer;
              display:flex;align-items:center;justify-content:center;white-space:nowrap}
 .side-toggle:hover{border-color:#2563eb;color:#2563eb;background:#f8fbff}
+/* 图钉两态（**放在媒体查询外面**，否则只有窄屏才生效 —— 踩过）：
+   未钉住 = 无填充只留图标；钉住 = 实心蓝底 + 白图标。 */
+.side-toggle.side-pin{display:inline-flex;align-items:center;justify-content:center;
+    background:transparent;color:#475569;transition:background .15s,color .15s}
+.side-toggle.side-pin:hover{background:#e2e8f0;color:#1e293b}
+.side-toggle.side-pin[aria-pressed="true"]{background:#2563eb;color:#fff;border-color:#2563eb}
+.side-toggle.side-pin[aria-pressed="true"]:hover{background:#1d4ed8;border-color:#1d4ed8}
 /* 当前正显示哪一页：没显示的那一页整体隐藏。
    .left-view 只是个外层包裹层，负责「让卡片纵向铺满」；真正显隐的是
    #viewProject / #markerCard —— 两个都写清楚 display，免得被别的规则盖住。 */
@@ -321,10 +328,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .video-panel.collapsed .video-stage,
 .video-panel.collapsed .video-foot{display:none}
 .video-panel.collapsed #videoDialogHead{cursor:pointer}
-.video-pin{border:0;padding:0;background:#f1f5f9;color:#334155;width:36px;height:36px;
-    border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.video-pin:hover{background:#e2e8f0}
-.video-pin[aria-pressed="true"]{background:#dbeafe;color:#1d4ed8}
+/* 图钉两态要一眼分清：未钉住=**无填充**只有图标；钉住=实心蓝底白图标 */
+.video-pin{border:0;padding:0;background:transparent;color:#475569;width:36px;height:36px;
+    border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:background .15s,color .15s}
+.video-pin:hover{background:#e2e8f0;color:#1e293b}
+.video-pin[aria-pressed="true"]{background:#2563eb;color:#fff}
+.video-pin[aria-pressed="true"]:hover{background:#1d4ed8}
 .video-pin svg{display:block}
 
 /* 照片卡里的 360 展开图：原始比例 2:1 撑满整栏太占地方，限高后用缩略图就够看 */
@@ -1188,8 +1198,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 固定侧栏：即使视口 <1280px 也保持这个宽度（媒体查询那条 .layout{--left-w:46px}
    的特异性比这条低，所以这里能盖住） */
 .layout.left-pinned{--left-w:min(300px,74vw)}
-.side-toggle.side-pin{display:inline-flex;align-items:center;justify-content:center}
-.side-toggle.side-pin[aria-pressed="true"]{background:#dbeafe;color:#1d4ed8;border-color:#93c5fd}
   .col-left .col-body{display:none}
   .layout.left-open .col-left .col-body{display:flex}
   /* 折叠时把那个「‹ Markers」按钮收起来（窄条里放不下），改由展开按钮接管 */
