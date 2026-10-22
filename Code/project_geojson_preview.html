@@ -9362,8 +9362,14 @@ function renderLoadedPanel(){
         const shown=loadedUiState.ortho[key]!==false && (orthoLayer!=null || loadedUiState.ortho[key]===true);
         return {
           name:key, icon:'🗺', shown, key, orthoPath:it.path,
-          onGo:()=>{
-            // 优先用后端给的经纬度范围 —— 图层还没打开时也能跳过去
+          onGo:async()=>{
+            // 点了就把它显示出来：没建金字塔会顺带建（进度显示在顶部与这一行）
+            try{
+              if(!orthoLayer||orthoPicked!==it){
+                orthoPicked=it;
+                await toggleOrtho();
+              }
+            }catch(e){}
             const b=(it.source&&it.source.bounds)||null;
             try{
               if(b&&Number.isFinite(b.south)&&Number.isFinite(b.north)){
@@ -10738,6 +10744,8 @@ if(buildTracksBtn)buildTracksBtn.addEventListener('click',()=>{runAutoPipeline()
 projectSelect.addEventListener('change',()=>{
   // 换项目：文件树、已加载面板、标注/矢量全部跟着刷新
   try{ treeState.roots=[]; treeState.children.clear(); treeState.checked.clear(); }catch(e){}
+  // 这个项目里有正射影像的话，切过来就把它显示出来（建好的直接用，没建的开始建）
+  setTimeout(()=>{ try{ autoPrepareOrtho(); }catch(e){} },1200);
   try{ renderFileTree(); }catch(e){}
   try{ renderLoadedPanel(); }catch(e){}
   // 换项目：重读文字标注与 KML 矢量（初始化那次可能还没选项目）
