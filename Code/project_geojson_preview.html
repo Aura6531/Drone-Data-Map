@@ -6680,8 +6680,12 @@ function panoInlineResize(){
   const c=panoInline.canvas;
   if(!c||!c.parentElement)return;
   const r=c.parentElement.getBoundingClientRect();
-  const w=Math.max(160,Math.round(r.width));
-  const h=Math.max(120,Math.round(r.height||(w*9/16)));
+  // **背贴像素要跟着屏幕缩放走**：只按 CSS 像素建画布，浏览器会把整块放大 1.25~1.5 倍
+  // 贴到屏幕上 —— 观感就是"糊 + 拉伸"（用户 2026-10-22 反馈）。
+  // 拖动时用 1 倍保证跟手，松手后再按真实 DPR 重画一次。
+  const dpr=panoInline.dragging?1:Math.min(2,Math.max(1,window.devicePixelRatio||1));
+  const w=Math.max(160,Math.round(r.width*dpr));
+  const h=Math.max(120,Math.round((r.height||(r.width*9/16))*dpr));
   if(c.width!==w||c.height!==h){c.width=w;c.height=h;}
 }
 
@@ -6706,6 +6710,10 @@ function panoInlineDraw(){
     const sc=panoInline._sc||(panoInline._sc=document.createElement('canvas'));
     if(sc.width!==W||sc.height!==H){sc.width=W;sc.height=H;panoInline._sctx=null;}
     const sctx=panoInline._sctx||(panoInline._sctx=sc.getContext('2d',{willReadFrequently:true}));
+    // 14400×7200 一次性缩到 9216 会有锯齿，先开高质量平滑
+    sctx.imageSmoothingEnabled=true;
+    sctx.imageSmoothingQuality='high';
+    sctx.clearRect(0,0,W,H);
     sctx.drawImage(img,0,0,W,H);
     panoInline._sd=sctx.getImageData(0,0,W,H).data;
     panoInline._srcKey=key;
@@ -6859,12 +6867,21 @@ function panoInlineInit(){
     if(!panoInline.dragging)return;
     panoInline.dragging=false; c.classList.remove('dragging');
     try{c.releasePointerCapture(e.pointerId)}catch(_){}
+    // 拖动时是 1 倍背贴，松手后按真实 DPR 重画一次（这才是最终观感）
+    try{
+      const r=c.parentElement.getBoundingClientRect();
+      const dpr=Math.min(2,Math.max(1,window.devicePixelRatio||1));
+      c.width=Math.max(160,Math.round(r.width*dpr));
+      c.height=Math.max(120,Math.round((r.height||(r.width*9/16))*dpr));
+    }catch(_){}
+    panoInlineRequestDraw();
   };
   c.addEventListener('pointerup',end);
   c.addEventListener('pointercancel',end);
   c.addEventListener('wheel',e=>{
     e.preventDefault();
     panoInline.fov=Math.max(25,Math.min(140,panoInline.fov*(e.deltaY>0?1.08:1/1.08)));
+    panoInline.dragging=false;   // 缩放结束按高清重画
     panoInlineRequestDraw();
   },{passive:false});
 
