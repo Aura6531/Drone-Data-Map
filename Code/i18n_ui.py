@@ -85,6 +85,16 @@ UI_ZH: dict[str, str] = {
     "Ortho": "正射影像",
     "OpenStreetMap": "开放街图（OSM）",
     "Tianditu key": "天地图 key",
+    "The app still works without a key (base map falls back to OpenStreetMap, place search is disabled).":
+        "没有 key 也能用：底图自动退回开放街图（OSM），地名搜索不可用。",
+    "Once you have it, paste the 32-character tk below and click Save — it takes effect immediately, no restart or reinstall needed.":
+        "申请到之后，把 32 位 tk 粘到下面、点保存即刻生效，不用重启或重装。",
+    "Paste the 32-character Tianditu key (tk)": "粘贴 32 位天地图 key（tk）",
+    "Apply at:": "申请地址：",
+    "Status: configured ✓ (base map and place search available). Paste a new key to replace it — saving applies it at once.":
+        "状态：已配置 ✓（底图与地名搜索可用）。粘贴新 key 即可替换，保存后立即生效。",
+    "Status: not configured — the base map uses OpenStreetMap and place search is off. Paste your tk and save.":
+        "状态：未配置 —— 底图用开放街图，地名搜索关闭。粘贴 tk 后保存即可。",
     "Searching…": "搜索中…",
     "missing SRT files": "个 SRT 缺失",
     "missing GeoJSON files": "个 GeoJSON 缺失",

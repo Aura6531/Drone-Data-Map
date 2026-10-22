@@ -426,8 +426,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
      · 宽屏一行排开（省高度），窄屏自动换行（省不了高度但保证能用）
    ------------------------------------------------------------ */
 .action-bar{position:absolute;left:10px;top:10px;z-index:810;
-            max-width:min(560px,calc(100% - 20px));
-            padding:9px 10px;border-radius:9px;
+            max-width:min(900px,calc(100% - 20px));
+            display:flex;align-items:center;flex-wrap:wrap;gap:12px;
+            padding:9px 12px;border-radius:9px;
             background:rgba(255,255,255,.55);
             -webkit-backdrop-filter:blur(7px) saturate(1.7);
             backdrop-filter:blur(7px) saturate(1.7);
@@ -436,18 +437,22 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 折叠状态：只留搜索那一行 —— 收起后地图几乎全露出来 */
 .action-bar.folded .probe-line,
 .action-bar.folded .action-row{display:none}
-.action-bar .ab-toggle{position:absolute;right:6px;top:6px;width:22px;height:22px;
+.action-bar .ab-toggle{position:static;order:9;flex:0 0 auto;margin-left:2px;width:22px;height:24px;
                        padding:0;border-radius:6px;border:1px solid rgba(148,163,184,.45);
                        background:rgba(255,255,255,.75);color:#475569;
                        font-size:13px;line-height:1;cursor:pointer;z-index:1}
 .action-bar .ab-toggle:hover{border-color:#2563eb;color:#2563eb}
 /* 折叠时给搜索框右边让出按钮的位置 */
-.action-bar .search-bar{padding-right:26px}
-.probe-line{font-size:12px;margin:7px 0 6px;color:#1f2937;
+.action-bar .search-bar{padding-right:0;gap:10px;flex:1 1 auto;min-width:0}
+.action-bar .search-bar input{height:32px;min-width:150px}
+.action-bar .search-bar button{height:32px;padding:0 16px}
+/* 三个操作按钮与搜索行同排：不换行、间距 12px（用户 2026-10-22：
+   「做成一个长条即可，不用上下两排。按钮之间多留点空间」） */
+.action-bar .action-row{flex:0 0 auto;flex-wrap:nowrap;gap:12px;margin:0}
+.action-bar .action-row button{height:32px;padding:0 14px;font-size:13px}
+.probe-line{font-size:12px;margin:0;flex:1 0 100%;color:#1f2937;
             text-shadow:0 1px 2px rgba(255,255,255,.85)}
-/* 按钮一行排开：宽屏不换行、省高度；窄屏允许换行但不塌成竖排单字 */
-.action-row{gap:6px;flex-wrap:wrap}
-.action-row button{height:32px;padding:0 11px;font-size:12px;flex:0 1 auto;min-width:0}
+/* 折叠态（`.folded`）只留搜索那一行；展开态见 `.action-bar .action-row` */
 /* Zoom 键默认也在左上角，会被上面的悬浮卡盖住 —— 往下让开。
    让的距离要按卡片**展开**时的高度算（实测 88px 折叠 / 117px 展开，
    容器顶边距 10px），所以 10+117+8 ≈ 135。宁可多让一点：让多了只是
@@ -1548,23 +1553,22 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 <!-- 天地图 key：先用系统、后补 key 的入口（由地图工具栏右侧的「天地图key」按钮打开） -->
 <div id="keyModal" class="mini-modal" style="display:none">
   <div class="mini-modal-box">
-    <div class="mini-modal-title">Tianditu key</div>
-    <div class="mini-modal-hint">
-      The app still works without a key (base map falls back to OpenStreetMap, place search is disabled).<br>
-      Once you have it, paste the  <b>32-character tk</b>  below and click Save<strong>It takes effect immediately</strong>  — no restart or reinstall needed.
-    </div>
-    <input id="keyInput" type="text" placeholder="Paste the 32-character Tianditu key (tk)" spellcheck="false" autocomplete="off">
+    <div class="mini-modal-title" data-i18n="Tianditu key">Tianditu key</div>
+    <!-- 两段拆开写：applyI18n() 用 textContent 替换，整段带 <b> 会被抹掉结构 -->
+    <div class="mini-modal-hint" data-i18n="The app still works without a key (base map falls back to OpenStreetMap, place search is disabled).">The app still works without a key (base map falls back to OpenStreetMap, place search is disabled).</div>
+    <div class="mini-modal-hint" data-i18n="Once you have it, paste the 32-character tk below and click Save — it takes effect immediately, no restart or reinstall needed.">Once you have it, paste the 32-character tk below and click Save — it takes effect immediately, no restart or reinstall needed.</div>
+    <input id="keyInput" type="text" data-i18n-placeholder="Paste the 32-character Tianditu key (tk)" placeholder="Paste the 32-character Tianditu key (tk)" spellcheck="false" autocomplete="off">
     <!-- 申请地址直接给官网那一页，不再另做指南 -->
     <div class="key-link-row">
-      <span>Apply at: </span>
+      <span data-i18n="Apply at:">Apply at: </span>
       <a href="https://lbs.tianditu.gov.cn/authorization/authorization.html"
          target="_blank" rel="noreferrer">lbs.tianditu.gov.cn/authorization/authorization.html</a>
     </div>
     <div id="keyModalError" class="mini-modal-error" style="display:none"></div>
     <div id="keyModalState" class="mini-modal-hint" style="margin:9px 0 0"></div>
     <div class="row mini-modal-actions">
-      <button id="keyCancel" class="secondary" type="button">Cancel</button>
-      <button id="keySave" type="button">Save</button>
+      <button id="keyCancel" class="secondary" type="button" data-i18n="Cancel">Cancel</button>
+      <button id="keySave" type="button" data-i18n="Save">Save</button>
     </div>
   </div>
 </div>
@@ -7282,8 +7286,8 @@ async function openKeyDialog(){
 
   if(keyModalState){
     keyModalState.textContent=active
-      ? 'Status: configured ✓ (base map and place search available). Paste a new key to replace it — saving applies it at once.'
-      : 'Status: not configured — the base map uses OpenStreetMap and place search is off. Paste your tk and save.';
+      ? t('Status: configured ✓ (base map and place search available). Paste a new key to replace it — saving applies it at once.')
+      : t('Status: not configured — the base map uses OpenStreetMap and place search is off. Paste your tk and save.');
   }
 
   keyModal.style.display='flex';
@@ -10759,6 +10763,9 @@ function boot(){
     if(qsLang!=='zh'&&qsLang!=='en')qsLang='';
     const start=qsLang||want||(sel&&sel.value)||fallback;
     setLang(start,{notifyServer:!want});
+
+    // 深链接：#key 直接打开天地图 key 弹窗（技术支持让客户『打开这个链接填 key』）
+    if(location.hash==='#key')setTimeout(()=>{try{openKeyDialog()}catch(e){}},300);
   }catch(e){
     console.warn('language init failed:',e&&e.message);
   }
