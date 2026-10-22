@@ -911,6 +911,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .remove-danger input{margin:0;width:15px;height:15px;cursor:pointer}
 .remove-danger-hint{color:#b91c1c;font-size:11px;margin-top:6px}
 /* 展开的子项缩进 + 左侧竖线：一眼能看出「属于上面那一条」 */
+/* 正射金字塔进度：百分比 + 细进度条 */
+.ld-pct{flex:0 0 auto;font-size:11px;color:#b45309;font-variant-numeric:tabular-nums}
+.ld-prog{flex:0 0 54px;height:4px;border-radius:2px;background:#fde68a;overflow:hidden}
+.ld-prog i{display:block;height:100%;width:0;background:#b45309;transition:width .3s}
 .ld-sublist{max-height:260px;overflow:auto;padding:2px 0 4px 14px;margin-left:20px;
     border-left:2px solid #e2e8f0}
 .ld-subrow{display:flex;align-items:center;gap:6px;padding:2px 8px 2px 4px;font-size:11.5px}
@@ -6304,6 +6308,29 @@ async function autoPrepareOrtho(){
   }catch(e){}
 }
 
+// 正射金字塔构建进度（面板行 + 顶部状态行都用这一份）
+let orthoJob={state:'idle',progress:0,tiles:0,path:''};
+
+function paintOrthoProgress(){
+  const building=orthoJob.state==='running'||orthoJob.state==='queued';
+  document.querySelectorAll('[data-ortho-path]').forEach(row=>{
+    const same=row.dataset.orthoPath===orthoJob.path;
+    const bar=row.querySelector('.ld-prog');
+    const pct=row.querySelector('.ld-pct');
+    if(!bar||!pct)return;
+    if(building&&same){
+      bar.style.display='block';
+      pct.style.display='inline';
+      const p=Math.max(0,Math.min(100,Math.round(orthoJob.progress*100)));
+      bar.querySelector('i').style.width=p+'%';
+      pct.textContent=p+'%';
+    }else{
+      bar.style.display='none';
+      pct.style.display='none';
+    }
+  });
+}
+
 // 轮询建金字塔的进度。建完就停。
 function pollOrthoJob(name,path){
   if(orthoPollTimer)clearInterval(orthoPollTimer);
@@ -6313,6 +6340,9 @@ function pollOrthoJob(name,path){
     try{
       const r=await api(q);
       const job=(r&&r.job)||{};
+      orthoJob={state:job.state||'idle',progress:Number(job.progress||0),
+        tiles:job.tiles||0,path:path};
+      try{ paintOrthoProgress(); }catch(e){}
       if(job.state==='running'||job.state==='queued'){
         const pct=Math.round(Number(job.progress||0)*100);
         setOrthoStatus(t('Building pyramid…')+' '+pct+'%'
@@ -9033,6 +9063,22 @@ function ldRow(opts){
   name.addEventListener('click',()=>{ try{opts.onGo()}catch(e){} });
   row.appendChild(name);
 
+  // 正射影像：正在建金字塔时，名称后面带百分比 + 一条细进度条
+  if(opts.orthoPath){
+    const pct=document.createElement('span');
+    pct.className='ld-pct';
+    pct.style.display='none';
+    row.appendChild(pct);
+
+    const bar=document.createElement('span');
+    bar.className='ld-prog';
+    bar.style.display='none';
+    bar.appendChild(document.createElement('i'));
+    row.appendChild(bar);
+
+    row.dataset.orthoPath=opts.orthoPath;
+  }
+
   // 移出项目：只从地图和列表里去掉，磁盘文件不动
   const del=document.createElement('button');
   del.type='button';
@@ -9315,7 +9361,7 @@ function renderLoadedPanel(){
         const key=it.name||it.file||'ortho';
         const shown=loadedUiState.ortho[key]!==false && (orthoLayer!=null || loadedUiState.ortho[key]===true);
         return {
-          name:key, icon:'🗺', shown, key,
+          name:key, icon:'🗺', shown, key, orthoPath:it.path,
           onGo:()=>{
             // 优先用后端给的经纬度范围 —— 图层还没打开时也能跳过去
             const b=(it.source&&it.source.bounds)||null;
