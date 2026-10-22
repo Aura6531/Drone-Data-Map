@@ -9173,8 +9173,12 @@ function renderLoadedPanel(){
         const name=document.createElement('span');
         name.className='ld-subname';
         // 用拍摄时刻 + 张数做名字（后端给 stamp，形如 20250412_110058）
+        // 名字优先用文件名：全景照片有自己的命名（如「东城南站 全景1.JPG」），
+        // 用拍摄时刻反而看不出是哪一张。DJI_ 开头的原片没有可读名字，才退回时刻。
+        const mems=(g.members||[]).map(m=>String((m&&m.name)||''));
+        const niceName=mems.map(n=>n.replace(/\.[^.]+$/,'')).find(n=>n && !/^DJI_/i.test(n));
         const stamp=g.stamp?String(g.stamp).replace(/^(.{8})_(.{2})(.{2})(.{2})$/, '$1 $2:$3:$4'):'';
-        const label=(stamp||t('Photo point'))+(g.count>1?(' x'+g.count):'');
+        const label=(niceName||stamp||t('Photo point'))+(g.count>1?(' x'+g.count):'');
         name.textContent=label;
         name.title=`${t('Jump to')} ${label}`;
         name.addEventListener('click',()=>{
