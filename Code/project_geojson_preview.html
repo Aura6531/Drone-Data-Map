@@ -2615,13 +2615,13 @@ function popup(feature, fileInfo){
 
   const encoded=encodeURIComponent(JSON.stringify(payload));
 
-  return `<div class="popup-title">${esc(videoName||'Track')}</div>
-    <div class="popup-row">Segments：${esc(p.segment_index??'-')}</div>
-    <div class="popup-row">Points: ${esc(p.point_count??'-')}</div>
-    <div class="popup-row">Time at click: ${formatTime(clickStart)}</div>
-    <div class="popup-row">Segment end：${formatTime(p.video_end)}</div>
-    <div class="popup-row">Remaining: ${formatTime(Math.max(0,Number(p.video_end||0)-clickStart))}</div>
-    <button class="play-btn" onclick="openVideoFromPopup('${encoded}')">▶ Play from here</button>`;
+  return `<div class="popup-title">${esc(videoName||t('Track'))}</div>
+    <div class="popup-row">${esc(t('Segments:'))} ${esc(p.segment_index??'-')}</div>
+    <div class="popup-row">${esc(t('Points:'))} ${esc(p.point_count??'-')}</div>
+    <div class="popup-row">${esc(t('Time at click:'))} ${formatTime(clickStart)}</div>
+    <div class="popup-row">${esc(t('Segment end:'))} ${formatTime(p.video_end)}</div>
+    <div class="popup-row">${esc(t('Remaining:'))} ${formatTime(Math.max(0,Number(p.video_end||0)-clickStart))}</div>
+    <button class="play-btn" onclick="openVideoFromPopup('${encoded}')">▶ ${esc(t('Play from here'))}</button>`;
 }
 
 function nearestPointTime(feature, clickLatLng){
@@ -11145,12 +11145,14 @@ function renderNearbyResult(group){
   altVideos.innerHTML=othersHtml;
   altVideos.style.display=group.others.length?'block':'none';
 
+  // 记住这次的参数：切语言时要重刷这块（否则已渲染的内容停在旧语言）
+  lastHitDetailArgs=[group,hit,encoded,distText,far,othersHtml,props];
   hitDetail.innerHTML=`
     <div class="hit-detail-title">${esc(t('Point details'))}${far?' <span class="warn">'+esc(t('(far away — there may be no flight data near this position)'))+'</span>':''}</div>
     <div class="hit-chips">
       <span class="hit-chip"><span class="k">${esc(t('Ground distance'))}</span><span class="v">${distText}${hit.inFrame?' '+esc(t('(frame center)')):''}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('Match'))}</span><span class="v">${esc(hit.inFrame?t('Visible in frame'):t('Nearest drone position'))}</span></span>
-      <span class="hit-chip"><span class="k">${esc(t('In frame'))}</span><span class="v">${hit.inFrame?esc(hit.framePos||t('center')):'-'}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('In frame'))}</span><span class="v">${hit.inFrame?esc(t(hit.framePos||'center')):'-'}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('Video type'))}</span><span class="v">${esc(streamLabelOf(hit.track.fileInfo.relative_path))}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('segments'))}</span><span class="v">${esc(props.segment_index??'-')}</span></span>
       <span class="hit-chip"><span class="k">${esc(t('Video time'))}</span><span class="v">${formatTime(hit.time)}</span></span>
@@ -11577,6 +11579,8 @@ async function setLang(lang,opts){
  *
  * 每个重刷都单独 try：某一块失败不该让其余部分也不换。
  */
+let lastHitDetailArgs=null;
+
 function onLangChanged(){
   // 只重刷"当前确实存在"的部分，避免在未渲染时白跑（也会抛错）
   const each=(fn,name)=>{
@@ -11602,6 +11606,10 @@ function onLangChanged(){
   }
   // 静态 HTML 里剩下的按钮文案（有些是脚本里设的，不在 data-i18n 范围内）
   each(()=>{if(typeof updateLoadAllLabel==='function')updateLoadAllLabel()},'load-all-label');
+  // 该点信息面板：用上次的参数重渲染一遍
+  if(lastHitDetailArgs&&hitDetail&&hitDetail.style.display!=='none'){
+    each(()=>renderNearbyResult(...lastHitDetailArgs),'hit-detail');
+  }
 }
 
 // 语言下拉的监听在 boot() 里挂（元素在脚本块之后，顶层挂会拿到 null）

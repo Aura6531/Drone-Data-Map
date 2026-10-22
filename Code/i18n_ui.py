@@ -82,6 +82,12 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Track": "航迹",
+    "Segments:": "航段：",
+    "Points:": "点数：",
+    "Time at click:": "点击处时刻：",
+    "Segment end:": "航段结束：",
+    "Remaining:": "剩余：",
     "Point details": "该点信息",
     "(far away — there may be no flight data near this position)": "（离得很远 —— 这附近可能没有飞行数据）",
     "Ground distance": "地面距离",
