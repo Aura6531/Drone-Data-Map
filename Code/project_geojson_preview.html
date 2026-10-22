@@ -1912,8 +1912,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     </label>
     <label class="mini-modal-field">
       <span class="mini-modal-field-label">Category</span>
-      <input id="markerEditCategory" type="text" list="markerEditCategoryList"
-             autocomplete="off" placeholder="pick one below or type a new one" data-i18n-placeholder="pick one below or type a new one">
+      <!-- 下拉里选已有分类；要新建就选最后一项，露出一行输入框 -->
+      <select id="markerEditCategorySel"></select>
+      <input id="markerEditCategory" type="text" style="display:none"
+             autocomplete="off" placeholder="new category name" data-i18n-placeholder="new category name">
       <datalist id="markerEditCategoryList"></datalist>
     </label>
     <div class="mini-modal-hint mini-modal-hint-small" id="markerEditCategoryHint"></div>
@@ -4821,7 +4823,7 @@ function updateMarkerCategoryHint(){
   const exists=markerCategories().some(c=>c===v);
   videoMarkCategoryHint.textContent=exists
     ? `Reuses the existing category “${v}”.`
-    : `“${v}” will be created as a new category.`;
+    : `${t('will be created as a new category, and this marker moves into it')}: “${v}”`;
 }
 
 // 当前项目的标记点（从 project.json 的 markers 读进来 / 保存回去）
@@ -5176,6 +5178,20 @@ function openMarkerEdit(id){
   const errEl=document.getElementById('markerEditError');
 
   if(nameEl)nameEl.value=String(m.name||'');
+  const selEl=document.getElementById('markerEditCategorySel');
+  const current=String(m.category||'');
+  if(selEl){
+    const cats=markerCategories();
+    selEl.innerHTML=cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')
+      +`<option value="__new__">${esc(t('+ New category…'))}</option>`;
+    if(current&&cats.indexOf(current)>=0){
+      selEl.value=current;
+      if(catEl){catEl.value=current;catEl.style.display='none';}
+    }else{
+      selEl.value=cats.length?'__new__':'__new__';
+      if(catEl){catEl.value=current;catEl.style.display=current?'none':'';}
+    }
+  }
   if(catEl)catEl.value=String(m.category||'');
   if(listEl){
     // 下拉里列出**全部已有类别**（含这个点自己现在的类别）——
@@ -5184,6 +5200,17 @@ function openMarkerEdit(id){
   }
   if(errEl)errEl.style.display='none';
 
+  if(selEl&&!selEl.dataset.bound){
+    selEl.dataset.bound='1';
+    selEl.addEventListener('change',()=>{
+      const v=selEl.value;
+      const c=document.getElementById('markerEditCategory');
+      if(v==='__new__'){
+        if(c){ c.value=''; c.style.display=''; c.focus(); }
+      }else if(c){ c.value=v; c.style.display='none'; }
+      updateMarkerEditHint();
+    });
+  }
   updateMarkerEditHint();
   modal.style.display='flex';
   if(nameEl){nameEl.focus();if(nameEl.select)nameEl.select()}
@@ -5197,8 +5224,8 @@ function updateMarkerEditHint(){
   if(!v){el.textContent=t('Leave blank to file this marker without a category.');return}
   const exists=markerCategories().some(c=>c===v);
   el.textContent=exists
-    ? `Moves this marker into the existing category “${v}”.`
-    : `“${v}” will be created as a new category, and this marker moves into it.`;
+    ? `${t('Moves this marker into the existing category')} “${v}”`
+    : `${t('will be created as a new category, and this marker moves into it')}: “${v}”`;
 }
 
 function closeMarkerEdit(){

@@ -82,6 +82,10 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Moves this marker into the existing category": "把这个标记点移到已有分类",
+    "will be created as a new category, and this marker moves into it": "将新建一个分类，这个标记点会移进去",
+    "new category name": "新分类名称",
+    "+ New category…": "＋ 新建分类…",
     "Removed from the loaded list (files on disk are kept).": "已从「已加载」清除（磁盘文件保留）。",
     "Orthophoto found — building the pyramid and showing it (this takes a few minutes)…": "检测到正射影像 —— 正在建立金字塔并加载显示（需要几分钟）…",
     "Expand": "展开",
