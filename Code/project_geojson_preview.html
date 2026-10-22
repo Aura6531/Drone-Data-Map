@@ -9316,7 +9316,7 @@ function ldGroup(title,items,onAll,opts={}){
 }
 
 // 位置点专用：位置点 → 分类 → 具体点（两层折叠）
-function ldCategoryGroup(title,cats,onAllAll,key){
+function ldCategoryGroup(title,cats,onAllAll,key,onCategoryAll){
   const wrap=document.createElement('div');
   wrap.className='ld-group';
   const head=document.createElement('div');
@@ -9378,6 +9378,18 @@ function ldCategoryGroup(title,cats,onAllAll,key){
         renderLoadedPanel();
       });
       ch.appendChild(ctog);
+
+      // 分类级复选框：整类批量显隐（部分选中时是半选态）
+      const cbox=document.createElement('input');
+      cbox.type='checkbox';
+      cbox.className='tree-check';
+      const cShown=cat.items.filter(i=>i.shown).length;
+      cbox.checked=cShown>0&&cShown===cat.items.length;
+      cbox.indeterminate=cShown>0&&cShown<cat.items.length;
+      cbox.addEventListener('change',()=>{
+        if(onCategoryAll)onCategoryAll(cat,cbox.checked);
+      });
+      ch.appendChild(cbox);
 
       const cname=document.createElement('span');
       cname.className='ld-cname';
@@ -9636,7 +9648,10 @@ function renderLoadedPanel(){
       box.appendChild(ldCategoryGroup(t('Positions'),cats,(on)=>{
         items.forEach(i=>{ loadedUiState.markers[i.key]=on; });
         loadedUiSave(); renderLoadedPanel();
-      },'positions'));
+      },'positions',(cat,on)=>{
+        cat.items.forEach(i=>{ loadedUiState.markers[i.key]=on; });
+        loadedUiSave(); renderLoadedPanel();
+      }));
     }
   }catch(e){}
 
