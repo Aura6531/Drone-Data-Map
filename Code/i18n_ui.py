@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "The request was interrupted — the server may have been restarted. Please try again.": "请求中断了 —— 服务可能刚被重启。请再点一次。",
     "The server is not responding.": "服务端没有响应。",
     "Make sure project_manager.py is still running;": "确认 project_manager.py 还在运行；",
     "Cannot compute a ground position here: the camera may be level or pointing up, or telemetry is missing at this moment.": "这里算不出地面位置：相机可能是水平的或朝上，或者这一刻缺少遥测数据。",

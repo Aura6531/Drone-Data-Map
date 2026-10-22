@@ -2447,7 +2447,15 @@ function applyReportCapabilities(caps){
 }
 
 async function api(url,options={}){
-  const r=await fetch(url,options);
+  // fetch 抛出来的是浏览器的原文（"Failed to fetch"），对用户没有任何信息量。
+  // 最常见的真实原因：请求还在跑的时候服务被重启/关掉了（大架次构建要 1~2 分钟，
+  // 期间一重启连接就断）。
+  let r;
+  try{
+    r=await fetch(url,options);
+  }catch(e){
+    throw new Error(t('The request was interrupted — the server may have been restarted. Please try again.'));
+  }
   const text=await r.text();
 
   let d=null;
