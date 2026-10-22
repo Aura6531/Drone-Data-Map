@@ -2397,6 +2397,13 @@ function fileMatchesFilter(f){
 // 返回 [{f,index}]，index 始终指向 geoFiles ——「加载」和 dataset.index 都靠它，
 // 不能因为筛选而错位。
 function filteredGeoFiles(){
+  // 「日期/类型筛选」那块已经隐藏（功能并入「已加载」）。
+  // 如果仍按隐藏下拉里的旧值过滤，会出现「明明有 GeoJSON 却一条都不加载」，
+  // 左栏「视频」分组因此空着 —— 用户会以为刷新后数据没了。
+  const legacy=document.getElementById('legacyTrackTools');
+  const filtersHidden=legacy&&getComputedStyle(legacy).display==='none';
+  if(filtersHidden)return geoFiles.map((f,index)=>({f,index}));
+
   return geoFiles
     .map((f,index)=>({f,index}))
     .filter(x=>fileMatchesFilter(x.f));
@@ -11165,11 +11172,20 @@ projectSelect.addEventListener('change',()=>{
   // 刷新页面/换项目后，航迹要自动上图：否则「已加载 → 视频」是空的，
   // 用户得先点一个照片（那会顺带加载匹配航迹）才「神奇地」出现。
   scanGeoJSON().then(()=>{
-    try{
-      if(geoFiles.length && !loadedTracks.length){
-        setTimeout(()=>{ try{ ensureAllLoaded(); }catch(e){} },300);
-      }
-    }catch(e){}
+    // 自动把航迹载入（「视频」分组因此有内容）。地图/图层可能还没就绪，
+    // 所以失败就隔 1.2 秒重试，最多 3 次；仍然空就写一句到任务日志。
+    let tries=0;
+    const attempt=()=>{
+      tries++;
+      if(!geoFiles.length||loadedTracks.length)return;
+      try{ ensureAllLoaded(); }catch(e){}
+      setTimeout(()=>{
+        if(loadedTracks.length||!geoFiles.length)return;
+        if(tries<3)attempt();
+        else taskLog(t('Tracks were not loaded automatically — click “Load all tracks” if needed.'),'err');
+      },1200);
+    };
+    setTimeout(attempt,300);
   }).catch(()=>{});
   refreshFlowStates();
   // 换项目了，标记点也跟着换
