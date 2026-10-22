@@ -8649,12 +8649,13 @@ async function runAutoPipeline(){
     // 有字幕流 = 现在有 SRT 的 + 还要生成的
     const withSubs=srtHave+first.srt.length;
 
+    // 注意：键里不能带数字（查表按整串匹配），一律「数字 + t(固定部分)」。
     const detected=[
-      t(`${videoCount} DJI videos in this project`),
-      t(`${withSubs} of them carry a telemetry subtitle stream`),
-      srtHave?t(`${srtHave} already have an SRT file`):t('No SRT files yet')
+      `${videoCount} ${t('DJI videos in this project')}`,
+      `${withSubs} ${t('of them carry a telemetry subtitle stream')}`,
+      srtHave?`${srtHave} ${t('already have an SRT file')}`:t('No SRT files yet')
     ];
-    if(first.other.length)detected.push(t(`${first.other.length} non-DJI videos skipped`));
+    if(first.other.length)detected.push(`${first.other.length} ${t('non-DJI videos skipped')}`);
 
     setFlowStatus(t('Checked subtitle streams and position data'),detected,false);
     await new Promise(r=>setTimeout(r,220));   // 让这一步的结果看得见再往下走
@@ -8664,7 +8665,7 @@ async function runAutoPipeline(){
     if(first.srt.length){
       const total=first.srt.length;
       const srtProgress=(i,n,rel)=>{
-        setFlowStatus(t(`Creating SRT files (${i}/${n})`),
+        setFlowStatus(`${t('Creating SRT files')} (${i}/${n})`,
           [...detected,`→ ${rel}`],true);
       };
       srtProgress(1,total,first.srt[0].video.relative_path);
@@ -8677,9 +8678,9 @@ async function runAutoPipeline(){
     if(second.geo.length){
       const total=second.geo.length;
       const geoProgress=(i,n,rel)=>{
-        setFlowStatus(t(`Creating GeoJSON tracks (${i}/${n})`),
+        setFlowStatus(`${t('Creating GeoJSON tracks')} (${i}/${n})`,
           [...detected,
-           `SRT: ${srtResult.ok} created${srtResult.failed.length?`, ${srtResult.failed.length} skipped`:''}`,
+           `SRT: ${srtResult.ok} ${t('created')}${srtResult.failed.length?`, ${srtResult.failed.length} ${t('Skipped')}`:''}`,
            `→ ${rel}`],true);
       };
       geoProgress(1,total,second.geo[0].video.relative_path);
@@ -8695,18 +8696,20 @@ async function runAutoPipeline(){
 
     // ---- 汇总 ----
     const summary=[
-      `${videoCount} DJI videos · ${withSubs} with a subtitle stream`,
-      `SRT: ${srtResult.ok} created${srtResult.failed.length?`, ${srtResult.failed.length} skipped`:''}`,
-      `GeoJSON: ${geoResult.ok} created${geoResult.failed.length?`, ${geoResult.failed.length} skipped`:''}`,
-      `${geoFiles.length} tracks loaded onto the map`
+      `${videoCount} ${t('DJI videos')} · ${withSubs} ${t('with a subtitle stream')}`,
+      `SRT: ${srtResult.ok} ${t('created')}${srtResult.failed.length?`, ${srtResult.failed.length} ${t('Skipped')}`:''}`,
+      `GeoJSON: ${geoResult.ok} ${t('created')}${geoResult.failed.length?`, ${geoResult.failed.length} ${t('Skipped')}`:''}`,
+      `${geoFiles.length} ${t('tracks loaded onto the map')}`
     ];
 
     const failed=srtResult.failed.concat(geoResult.failed);
-    if(failed.length)summary.push('', 'Skipped:', ...failed);
-    else summary.push('Click a track popup on the map to play from that point.');
+    if(failed.length)summary.push('', t('Skipped:'), ...failed);
+    else summary.push(t('Click a track popup on the map to play from that point.'));
 
     setFlowStatus(
-      geoResult.failed.length?srtResult.failed.length?'Finished with some files skipped':'Finished':'Tracks ready',
+      geoResult.failed.length
+        ? (srtResult.failed.length ? t('Finished with some files skipped') : t('Finished'))
+        : t('Tracks ready'),
       summary,false);
 
     if(buildTracksBtn)buildTracksBtn.classList.add('done');
