@@ -174,17 +174,18 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 语言切换：固定右上角。刻意做小、做轻 —— 它是个“设置项”，
    不该抢地图/按钮的注意力。观感与地图上那几个悬浮控件同一套（毛玻璃）。 */
 .lang-switch{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
-  display:flex;align-items:center;gap:6px;
-  padding:5px 8px;border-radius:9px;
+  padding:0 2px;border-radius:9px;
   background:rgba(255,255,255,.72);
   -webkit-backdrop-filter:blur(7px) saturate(1.7);
   backdrop-filter:blur(7px) saturate(1.7);
   border:1px solid rgba(148,163,184,.42);
   box-shadow:0 1px 8px rgba(15,23,42,.12)}
-.lang-switch label{margin:0;font-size:13px;color:#475569;white-space:nowrap}
-.lang-switch select{height:32px;padding:0 6px;font-size:13px;
+/* 嵌进工具栏后不再显示「语言」二字（用 aria-label 保留可访问性），
+   否则一行放不下、会横向压到右栏 */
+.lang-switch label{margin:0;font-size:13px;color:#475569;white-space:nowrap;display:none}
+.lang-switch select{height:32px;padding:0 4px;font-size:13px;
   border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#0f172a;
-  max-width:130px}
+  max-width:96px}
 .lang-switch select:focus{outline:none;border-color:#2563eb;
   box-shadow:0 0 0 3px rgba(37,99,235,.12)}
 /* 窄屏（≤900px）把“语言”两个字藏掉，只留下拉框，省出右上角空间 */
@@ -468,7 +469,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 悬浮条里的两行 */
 .ab-row{display:flex;align-items:center;gap:12px;min-width:0;flex-wrap:nowrap}
 .ab-title{font-weight:700;font-size:15px;color:#0f172a;white-space:nowrap;flex:0 0 auto}
-.ab-tools{overflow:hidden}
+/* 宽窗口一行排开；放不下就折行 —— 绝不允许横向压到右栏 */
+.ab-tools{overflow:visible;flex-wrap:wrap;row-gap:6px}
 .ab-tools button{height:32px;padding:0 12px;font-size:13px;white-space:nowrap;flex:0 0 auto}
 .ab-tools .ctrl-label{font-size:13px;color:#475569;white-space:nowrap;flex:0 0 auto}
 .ab-tools select{max-width:150px;flex:0 0 auto}
@@ -1407,14 +1409,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <span class="probe-line" id="probeLine" style="display:none">
             <span id="probeSource" hidden>map click</span><span id="probeCoord" class="probe-coord"></span><span id="probeLabel"></span>
           </span>
-          <!-- 语言切换：用户 2026-10-22 要求嵌进地图栏右上角（不再悬浮在页面角落） -->
-          <div class="lang-switch" id="langSwitch">
-            <label for="langSelect" data-i18n="ui.language">Language</label>
-            <select id="langSelect" aria-label="Language" data-i18n-aria="Language">
-              <option value="en">English</option>
-              <option value="zh">中文</option>
-            </select>
-          </div>
           <button id="probeFoldBtn" class="ab-toggle" type="button" aria-pressed="false"
                   title="Collapse these controls to see more of the map" data-i18n-title="Collapse these controls to see more of the map">–</button>
         </div>
@@ -1424,6 +1418,15 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <div class="search-bar">
             <input id="placeInput" type="text" data-i18n-placeholder="Search a place, e.g. Zhaoqing, Nan'an Street" placeholder="Search a place, e.g. Zhaoqing, Nan'an Street">
             <button id="placeSearchBtn" data-i18n="Search place">Search place</button>
+          </div>
+          <!-- 语言切换：嵌在地图悬浮条右侧（工具行放不下，放这里既在右上区域、
+               又不会把工具行挤成三行） -->
+          <div class="lang-switch" id="langSwitch">
+            <label for="langSelect" data-i18n="ui.language">Language</label>
+            <select id="langSelect" aria-label="Language" data-i18n-aria="Language">
+              <option value="en">English</option>
+              <option value="zh">中文</option>
+            </select>
           </div>
           <!-- 五个「以此位置为依据」的动作都在**点击处的气泡**里（probeQuickHtml）。
                这里保留 DOM（测试与旧逻辑还按 id 引用），但不显示 ——
