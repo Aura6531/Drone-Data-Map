@@ -921,6 +921,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .ld-prog i{display:block;height:100%;width:0;background:#b45309;transition:width .3s}
 .ld-sublist{max-height:260px;overflow:auto;padding:2px 0 4px 14px;margin-left:20px;
     border-left:2px solid #e2e8f0}
+/* 位置点：分类层 */
+.ld-cat{border-top:1px dashed #e2e8f0;padding:2px 0 2px 10px;margin-left:6px}
+.ld-chead{display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:11.5px;
+    color:#334155;font-weight:700}
+.ld-cname{flex:1 1 auto}
 .ld-subrow{display:flex;align-items:center;gap:6px;padding:2px 8px 2px 4px;font-size:11.5px}
 /* 行首的 + / − */
 .ld-exp{flex:0 0 auto;width:15px;height:15px;line-height:12px;padding:0;border-radius:4px;
@@ -9220,6 +9225,90 @@ function ldGroup(title,items,onAll,opts={}){
   return wrap;
 }
 
+// 位置点专用：位置点 → 分类 → 具体点（两层折叠）
+function ldCategoryGroup(title,cats,onAllAll,key){
+  const wrap=document.createElement('div');
+  wrap.className='ld-group';
+  const head=document.createElement('div');
+  head.className='ld-head';
+
+  const allItems=cats.flatMap(c=>c.items);
+  const shown=allItems.filter(i=>i.shown).length;
+  const collapsed=collapsedGroups.has(key);
+
+  const tog=document.createElement('button');
+  tog.type='button';
+  tog.className='ld-exp'+(collapsed?'':' open');
+  tog.textContent=collapsed?'+':'−';
+  tog.title=collapsed?t('Expand'):t('Collapse');
+  tog.addEventListener('click',()=>{
+    if(collapsedGroups.has(key))collapsedGroups.delete(key);
+    else collapsedGroups.add(key);
+    saveCollapsedGroups();
+    renderLoadedPanel();
+  });
+  head.appendChild(tog);
+
+  const all=document.createElement('input');
+  all.type='checkbox';
+  all.className='tree-check';
+  all.checked=shown>0&&shown===allItems.length;
+  all.indeterminate=shown>0&&shown<allItems.length;
+  all.addEventListener('change',()=>onAllAll(all.checked));
+  head.appendChild(all);
+
+  const label=document.createElement('span');
+  label.textContent=title;
+  head.appendChild(label);
+
+  const count=document.createElement('span');
+  count.className='ld-count';
+  count.textContent=`(${shown}/${allItems.length})`;
+  head.appendChild(count);
+  wrap.appendChild(head);
+
+  if(!collapsed){
+    for(const cat of cats){
+      const catKey=key+'/'+cat.name;
+      const catCollapsed=collapsedGroups.has(catKey);
+      const sub=document.createElement('div');
+      sub.className='ld-cat';
+
+      const ch=document.createElement('div');
+      ch.className='ld-chead';
+      const ctog=document.createElement('button');
+      ctog.type='button';
+      ctog.className='ld-exp'+(catCollapsed?'':' open');
+      ctog.textContent=catCollapsed?'+':'−';
+      ctog.title=catCollapsed?t('Expand'):t('Collapse');
+      ctog.addEventListener('click',()=>{
+        if(collapsedGroups.has(catKey))collapsedGroups.delete(catKey);
+        else collapsedGroups.add(catKey);
+        saveCollapsedGroups();
+        renderLoadedPanel();
+      });
+      ch.appendChild(ctog);
+
+      const cname=document.createElement('span');
+      cname.className='ld-cname';
+      cname.textContent=cat.name;
+      ch.appendChild(cname);
+
+      const ccount=document.createElement('span');
+      ccount.className='ld-count';
+      ccount.textContent=`(${cat.items.length})`;
+      ch.appendChild(ccount);
+      sub.appendChild(ch);
+
+      if(!catCollapsed){
+        for(const it of cat.items)sub.appendChild(ldRow(it));
+      }
+      wrap.appendChild(sub);
+    }
+  }
+  return wrap;
+}
+
 function renderLoadedPanel(){
   const box=document.getElementById('loadedGroups');
   if(!box)return;
@@ -9445,10 +9534,19 @@ function renderLoadedPanel(){
           onToggle:(on)=>{ loadedUiState.markers[key]=on; loadedUiSave(); renderLoadedPanel(); },
         };
       });
-      box.appendChild(ldGroup(t('Positions'),items,(on)=>{
+      // 按分类分组（保持原有顺序；没有分类的归到「未分类」）
+      const order=[];
+      const byCat=new Map();
+      mk.filter(Boolean).forEach((m,idx)=>{
+        const cat=String(m.category||'').trim()||t('Uncategorised');
+        if(!byCat.has(cat)){byCat.set(cat,[]);order.push(cat);}
+        byCat.get(cat).push(items[idx]);
+      });
+      const cats=order.map(name=>({name,items:byCat.get(name)}));
+      box.appendChild(ldCategoryGroup(t('Positions'),cats,(on)=>{
         items.forEach(i=>{ loadedUiState.markers[i.key]=on; });
         loadedUiSave(); renderLoadedPanel();
-      }));
+      },'positions'));
     }
   }catch(e){}
 

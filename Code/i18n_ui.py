@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Uncategorised": "未分类",
     "Moves this marker into the existing category": "把这个标记点移到已有分类",
     "will be created as a new category, and this marker moves into it": "将新建一个分类，这个标记点会移进去",
     "new category name": "新分类名称",
