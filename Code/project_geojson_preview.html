@@ -2985,7 +2985,10 @@ function renderTrackArrows(){
 // 缩放结束重新算（用定时器合并连续的 zoomend/moveend）
 function scheduleTrackArrows(){
   if(trackArrowTimer)return;
-  trackArrowTimer=setTimeout(()=>{trackArrowTimer=0;renderTrackArrows();},140);
+  trackArrowTimer=setTimeout(()=>{trackArrowTimer=0;renderTrackArrows();
+    // 航迹变了，「已加载」面板也要跟着刷新（否则新导入的视频不出现）
+    try{ renderLoadedPanel(); }catch(e){}
+  },140);
 }
 
 function addGeo(data,index,name,fileInfo){
@@ -10470,6 +10473,10 @@ if(buildTracksBtn)buildTracksBtn.addEventListener('click',()=>{runAutoPipeline()
 // 所以原来那套「记住上次勾选」的 localStorage 逻辑也一并去掉。
 
 projectSelect.addEventListener('change',()=>{
+  // 换项目：文件树、已加载面板、标注/矢量全部跟着刷新
+  try{ treeState.roots=[]; treeState.children.clear(); treeState.checked.clear(); }catch(e){}
+  try{ renderFileTree(); }catch(e){}
+  try{ renderLoadedPanel(); }catch(e){}
   // 换项目：重读文字标注与 KML 矢量（初始化那次可能还没选项目）
   (async()=>{
     try{
