@@ -2792,12 +2792,14 @@ function decimateForArrows(coords,meters){
 // 12px 的小箭头，按方位角旋转（SVG 里箭头默认朝右，所以要再减 90°）
 function trackArrowIcon(bearing){
   const deg=Number.isFinite(bearing)?bearing-90:0;
-  // 10px 的小箭头，描边 1.3 —— 压在线上的存在感更弱（用户 2026-10-22：还是大了）
-  const html='<svg width="10" height="10" viewBox="0 0 10 10" '
+  // 「→」式样（用户 2026-10-22 给的图）：一段横线 + 实心三角箭头。
+  // 比之前的 V 形雪佛龙更像"箭"，方向也更好认。
+  const html='<svg width="12" height="12" viewBox="0 0 12 12" '
     +`style="transform:rotate(${deg.toFixed(1)}deg)">`
-    +'<path d="M2.8 2.2 L7.8 5 L2.8 7.8" fill="none" stroke="rgba(255,255,255,.62)" '
-    +'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  return L.divIcon({className:'track-arrow',html,iconSize:[10,10],iconAnchor:[5,5]});
+    +'<line x1="1.6" y1="6" x2="8.6" y2="6" stroke="rgba(255,255,255,.78)" '
+    +'stroke-width="1.2" stroke-linecap="round"/>'
+    +'<path d="M7.4 3.4 L10.6 6 L7.4 8.6 Z" fill="rgba(255,255,255,.85)"/></svg>';
+  return L.divIcon({className:'track-arrow',html,iconSize:[12,12],iconAnchor:[6,6]});
 }
 
 // 箭头层：单独一层，缩放时整层重建（数量随缩放变化）
