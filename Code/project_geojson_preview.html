@@ -937,24 +937,28 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    否则会把上面的画廊挤扁（画廊是 flex:1 那个，抢不过它）。
    按钮刻意压扁（28px / 11px 字）：实测 1800 窗口下 6 个候选会长到 205px、
    换 4 行，把画廊挤到只剩 130px —— 那比按钮本身重要得多。 */
-/* 「跳到视频的那一刻」整块浮在图片下沿（半透明底板）—— 不再占独立高度 */
-.photo-jump{position:absolute;left:0;right:0;bottom:0;z-index:3;
-    margin:0;padding:8px 10px;border-top:0;
-    background:rgba(15,23,42,.62);color:#e2e8f0;
+/* 「跳到视频的那一刻」：浮在**右下角**，按内容收成一张小卡片
+   （用户 2026-10-22：字号缩小、放到右下角；原来横贯整条底边，右侧空一大片） */
+.photo-jump{position:absolute;left:auto;right:10px;bottom:10px;z-index:3;
+    margin:0;padding:6px 9px;border-top:0;border-radius:10px;
+    max-width:min(62%,520px);
+    background:rgba(15,23,42,.72);color:#e2e8f0;
     -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    box-shadow:0 4px 16px rgba(15,23,42,.28);
     flex:0 0 auto}
 .photo-head,.photo-chips{flex:0 0 auto}
 .photo-jump-title{margin-bottom:5px}
 .photo-jump-row{gap:5px}
 .photo-jump-btn{height:28px;padding:0 9px;font-size:11px}
 .photo-jump-note{margin-top:5px;font-size:11px;line-height:1.5}
-.photo-jump-title{font-size:12px;color:#cbd5e1;margin-bottom:7px}
+.photo-jump-title{font-size:11px;color:#cbd5e1;margin-bottom:5px;line-height:1.45}
 .photo-jump-title b{color:#fff}
 .photo-jump-row{display:flex;flex-wrap:wrap;gap:6px}
-.photo-jump-btn{height:32px;padding:0 12px;font-size:12px;font-weight:700;border-radius:8px;
-                background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;cursor:pointer}
+.photo-jump-btn{height:26px;padding:0 8px;font-size:11px;font-weight:600;border-radius:7px;
+                background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;cursor:pointer;
+                white-space:nowrap}
 .photo-jump-btn:hover{border-color:#2563eb;background:#dbeafe}
-.photo-jump-note{margin-top:7px;font-size:12px;line-height:1.6;color:#cbd5e1}
+.photo-jump-note{margin-top:5px;font-size:11px;line-height:1.5;color:#cbd5e1}
 .photo-jump-note .warn{color:#fbbf24;font-weight:600}
 /* 浮层里的按钮用浅色描边，压在深色底上才看得清 */
 .photo-jump-btn{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.35);color:#e2e8f0}
