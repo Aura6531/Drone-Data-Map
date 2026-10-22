@@ -911,6 +911,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .remove-danger input{margin:0;width:15px;height:15px;cursor:pointer}
 .remove-danger-hint{color:#b91c1c;font-size:11px;margin-top:6px}
 /* 展开的子项缩进 + 左侧竖线：一眼能看出「属于上面那一条」 */
+/* 分类小标签 */
+.ld-tag{flex:0 0 auto;font-size:10.5px;line-height:1;padding:2px 5px;border-radius:4px;
+    background:#e0e7ff;color:#3730a3;white-space:nowrap}
+
 /* 正射金字塔进度：百分比 + 细进度条 */
 .ld-pct{flex:0 0 auto;font-size:11px;color:#b45309;font-variant-numeric:tabular-nums}
 .ld-prog{flex:0 0 54px;height:4px;border-radius:2px;background:#fde68a;overflow:hidden}
@@ -9112,6 +9116,14 @@ function ldRow(opts){
   name.addEventListener('click',()=>{ try{opts.onGo()}catch(e){} });
   row.appendChild(name);
 
+  // 分类小标签（标记点的「桥/房子/高层…」）
+  if(opts.tag){
+    const tag=document.createElement('span');
+    tag.className='ld-tag';
+    tag.textContent=opts.tag;
+    row.appendChild(tag);
+  }
+
   // 正射影像：正在建金字塔时，名称后面带百分比 + 一条细进度条
   if(opts.orthoPath){
     const pct=document.createElement('span');
@@ -9390,7 +9402,7 @@ function renderLoadedPanel(){
         const key=m.name||('marker-'+i);
         const shown=loadedUiState.markers[key]!==false;
         return {
-          name:key, icon:'📍', shown, key,
+          name:key, icon:'📍', shown, key, tag:m.category||'',
           onGo:()=>{ try{ map.setView([Number(m.lat),Number(m.lng)],Math.max(map.getZoom(),17)); }catch(e){} },
           onToggle:(on)=>{ loadedUiState.markers[key]=on; loadedUiSave(); renderLoadedPanel(); },
         };
