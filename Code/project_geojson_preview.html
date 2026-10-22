@@ -5531,7 +5531,9 @@ function photoIcon(group,active){
   // 内联颜色 + 外层 CSS 变量：颜色由「实不实测」在 JS 里决定，
   // CSS 里没法从一个变量推另一个（选中时的描边色也要跟它一致）。
   // 全景用更深的靛色，和普通照片的蓝拉开距离。
-  const dotColor=warn?'#f5b301':(isPano?'#4c1d95':'#1d4ed8');
+  // 全景用深青绿：地图上的道路是紫色，原来那个 #4c1d95 会糊在一起
+  // （用户 2026-10-22）。普通照片仍是蓝色。
+  const dotColor=warn?'#f5b301':(isPano?'#0d9488':'#1d4ed8');
 
   // 叹号：不压到圆边（圆半径 6，竖条从 y=6.9 到 10.8、点在 12.3）
   const mark=warn
@@ -5540,21 +5542,27 @@ function photoIcon(group,active){
     :'';
 
   // 全景的「小球」：圆 + 一条赤道 + 一条经线（12 半径 6，线条细一点避免糊成一团）
+  // 全景的图标整体放大一档（20→24），否则小球里的经纬线糊成一团
+  const size=isPano?24:20, half=size/2, r=isPano?8:6;
+
   const globe=isPano
-    ?'<ellipse class="photo-globe-line" cx="10" cy="10" rx="6" ry="2.6"/>'
-     +'<ellipse class="photo-globe-line" cx="10" cy="10" rx="2.6" ry="6"/>'
-     +'<line class="photo-globe-line" x1="4" y1="10" x2="16" y2="10"/>'
+    ?`<ellipse class="photo-globe-line" cx="${half}" cy="${half}" rx="8" ry="3.4"/>`
+     +`<ellipse class="photo-globe-line" cx="${half}" cy="${half}" rx="3.4" ry="8"/>`
+     +`<line class="photo-globe-line" x1="${half-8}" y1="${half}" x2="${half+8}" y2="${half}"/>`
     :'';
+
+  // 叹号只在普通照片上用（全景不会进 warn 分支），坐标按 20px 画布写死
+  const markHtml=mark;
 
   return L.divIcon({
     className:cls,
-    iconSize:[20,20],
-    iconAnchor:[10,10],
-    tooltipAnchor:[0,-11],
-    html:`<svg class="photo-dot-svg" width="20" height="20" viewBox="0 0 20 20" style="--photo-dot:${dotColor}">`
-        +`<circle class="photo-dot" cx="10" cy="10" r="6"/>`
+    iconSize:[size,size],
+    iconAnchor:[half,half],
+    tooltipAnchor:[0,-(half+1)],
+    html:`<svg class="photo-dot-svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="--photo-dot:${dotColor}">`
+        +`<circle class="photo-dot" cx="${half}" cy="${half}" r="${r}"/>`
         +globe
-        +mark
+        +markHtml
         +`</svg>`
   });
 }
