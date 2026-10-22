@@ -5281,15 +5281,23 @@ function openMarkerCreate(latlng){
       if(catEl){catEl.value=last;catEl.style.display='none';}
     }else{
       selEl.value='__new__';
-      if(catEl){catEl.value='';catEl.style.display='';}
+      // 没有「上次用过的分类」时：下拉保持可见、输入框先不出现，
+      // 用户选「＋ 新建分类…」的那一刻，下拉才原地变成输入框
+      if(catEl){catEl.value='';catEl.style.display='none';}
     }
     if(!selEl.dataset.bound){
       selEl.dataset.bound='1';
       selEl.addEventListener('change',()=>{
         const v=selEl.value;
         const c=document.getElementById('markerEditCategory');
-        if(v==='__new__'){ if(c){ c.value=''; c.style.display=''; c.focus(); } }
-        else if(c){ c.value=v; c.style.display='none'; }
+        if(v==='__new__'){
+          // 下拉**原地**变成输入框，而不是在下面再多出一行
+          selEl.style.display='none';
+          if(c){ c.value=''; c.style.display=''; c.focus(); }
+        }else if(c){
+          c.value=v; c.style.display='none';
+          selEl.style.display='';
+        }
         updateMarkerEditHint();
       });
     }
@@ -5297,6 +5305,10 @@ function openMarkerCreate(latlng){
 
   const errEl=document.getElementById('markerEditError');
   if(errEl)errEl.style.display='none';
+
+  // 打开时下拉一定可见；输入框的可见性由上面的选中值决定
+  if(selEl)selEl.style.display='';
+  if(catEl&&selEl&&selEl.value!=='__new__')catEl.style.display='none';
 
   updateMarkerEditHint();
   modal.style.display='flex';
