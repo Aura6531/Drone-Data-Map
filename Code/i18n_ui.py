@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Expand": "展开",
     "photo points": "个照片点",
     "Photo point": "照片点",
     "Remove from this project": "确定从本项目移出",

@@ -910,8 +910,17 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     border:1px solid #fecaca;border-radius:8px;cursor:pointer}
 .remove-danger input{margin:0;width:15px;height:15px;cursor:pointer}
 .remove-danger-hint{color:#b91c1c;font-size:11px;margin-top:6px}
-.ld-sublist{max-height:260px;overflow:auto;border-top:1px dashed #e2e8f0;padding:2px 0}
-.ld-subrow{display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:11.5px}
+/* 展开的子项缩进 + 左侧竖线：一眼能看出「属于上面那一条」 */
+.ld-sublist{max-height:260px;overflow:auto;padding:2px 0 4px 14px;margin-left:20px;
+    border-left:2px solid #e2e8f0}
+.ld-subrow{display:flex;align-items:center;gap:6px;padding:2px 8px 2px 4px;font-size:11.5px}
+/* 行首的 + / − */
+.ld-exp{flex:0 0 auto;width:15px;height:15px;line-height:12px;padding:0;border-radius:4px;
+    border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:13px;font-weight:700;
+    cursor:pointer;text-align:center}
+.ld-exp:hover{background:#e2e8f0}
+.ld-exp.open{background:#e2e8f0}
+.ld-exp-space{flex:0 0 15px;width:15px}
 .ld-subrow:hover{background:#f1f5f9}
 .ld-subrow .ld-subname{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
     cursor:pointer;color:#1d4ed8}
@@ -8978,6 +8987,21 @@ function loadedUiSave(){
 function ldRow(opts){
   const row=document.createElement('div');
   row.className='ld-row'+(opts.shown?'':' hidden');
+  // 可展开的行：左边一个「+ / −」（收起时是加号，展开时是减号）
+  if(opts.expandable){
+    const tog=document.createElement('button');
+    tog.type='button';
+    tog.className='ld-exp'+(opts.expanded?' open':'');
+    tog.textContent=opts.expanded?'−':'+';
+    tog.title=opts.expanded?t('Collapse'):t('Expand');
+    tog.addEventListener('click',(ev)=>{ ev.stopPropagation(); opts.onExpand&&opts.onExpand(); });
+    row.appendChild(tog);
+  }else{
+    const pad=document.createElement('span');
+    pad.className='ld-exp-space';
+    row.appendChild(pad);
+  }
+
   const box=document.createElement('input');
   box.type='checkbox';
   box.className='tree-check';
@@ -9106,8 +9130,10 @@ function renderLoadedPanel(){
     const grp=ldGroup(t('Photos'),[{
       name:`${pg} ${t('photo points')}`,
       icon:'🖼', shown,
-      // 点名称 = 展开/收起这 149 条单点（不是飞过去）
-      onGo:()=>{ photoListOpen=!photoListOpen; renderLoadedPanel(); },
+      expandable:true,
+      expanded:photoListOpen,
+      onExpand:()=>{ photoListOpen=!photoListOpen; renderLoadedPanel(); },
+      onGo:()=>{ try{ if(!photoLayerOn)setPhotoLayer(true); zoomToAllPhotos(); }catch(e){} },
       onToggle:(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
     }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); });
 
