@@ -9447,6 +9447,26 @@ function ldCategoryGroup(title,cats,onAllAll,key,onCategoryAll){
 }
 
 // 外层：渲染前后保住滚动位置（勾选分类时整块重建，否则列表会跳回顶部）
+
+// 自动把当前项目的航迹加载进地图（「视频」分组因此有内容）。
+// 地图/图层可能还没就绪，所以失败就隔 1.2 秒重试，最多 3 次；
+// 仍然空就写一句到任务日志。切换项目与 **刷新页面** 都会调它。
+function autoLoadTracks(){
+  if(!geoFiles.length){ setTimeout(autoLoadTracks,800); return; }
+  let tries=0;
+  const attempt=()=>{
+    tries++;
+    if(loadedTracks.length)return;
+    try{ ensureAllLoaded(); }catch(e){}
+    setTimeout(()=>{
+      if(loadedTracks.length||!geoFiles.length)return;
+      if(tries<3)attempt();
+      else taskLog(t('Tracks were not loaded automatically — click “Load all tracks” if needed.'),'err');
+    },1200);
+  };
+  setTimeout(attempt,300);
+}
+
 function renderLoadedPanel(){
   const box0=document.getElementById('loadedGroups');
   const prevTop=box0?box0.scrollTop:0;
@@ -10975,6 +10995,9 @@ async function doCreateProject(name){
   }
 }
 
+// 刷新页面时项目是启动时恢复的、不会触发 change：这里主动加载一次航迹
+setTimeout(()=>{ try{ autoLoadTracks(); }catch(e){} }, 900);
+
 if(createProjectBtn)createProjectBtn.addEventListener('click',openNewProjectDialog);
 
 if(newProjectOk)newProjectOk.addEventListener('click',()=>{
@@ -11307,22 +11330,7 @@ projectSelect.addEventListener('change',()=>{
   if(buildTracksBtn)buildTracksBtn.classList.remove('done');
   // 刷新页面/换项目后，航迹要自动上图：否则「已加载 → 视频」是空的，
   // 用户得先点一个照片（那会顺带加载匹配航迹）才「神奇地」出现。
-  scanGeoJSON().then(()=>{
-    // 自动把航迹载入（「视频」分组因此有内容）。地图/图层可能还没就绪，
-    // 所以失败就隔 1.2 秒重试，最多 3 次；仍然空就写一句到任务日志。
-    let tries=0;
-    const attempt=()=>{
-      tries++;
-      if(!geoFiles.length||loadedTracks.length)return;
-      try{ ensureAllLoaded(); }catch(e){}
-      setTimeout(()=>{
-        if(loadedTracks.length||!geoFiles.length)return;
-        if(tries<3)attempt();
-        else taskLog(t('Tracks were not loaded automatically — click “Load all tracks” if needed.'),'err');
-      },1200);
-    };
-    setTimeout(attempt,300);
-  }).catch(()=>{});
+  scanGeoJSON().then(()=>{ try{ autoLoadTracks(); }catch(e){} }).catch(()=>{});
   refreshFlowStates();
   // 换项目了，标记点也跟着换
   loadProjectMarkers();
