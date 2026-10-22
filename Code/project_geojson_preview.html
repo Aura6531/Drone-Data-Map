@@ -1832,19 +1832,17 @@ function showFatal(message){
   const box=document.getElementById('fatalNotice');
   if(!box)return;
 
-  let text='Page script error: '+message;
+  let text=t('Page script error:')+' '+message;
 
   // 跨域脚本（Leaflet 来自 CDN）内部抛错时，浏览器会把详情抹成
   // 「Script error.」并且不给文件名和行号。这种情况下必须说明白，
   // 否则这条提示等于没有信息量。
   if(/^Script error\.?$/i.test(String(message).trim())){
-    text+='\n(Thrown inside a cross-origin script; the browser hides the details.'
-      +' crossorigin has been added to CDN scripts — refresh to see the real cause;'
-      +' if it still only says “Script error”, it is most likely inside the map library. Please report it with the steps you took.)';
+    text+='\n'+t('(Thrown inside a cross-origin script; the browser hides the details. crossorigin has been added to CDN scripts — refresh to see the real cause; if it still only says “Script error”, it is most likely inside the map library. Please report it with the steps you took.)');
   }
 
   box.style.display='block';
-  box.textContent=text+'\n(If you only see a blank area, please report this to the developer)';
+  box.textContent=text+'\n'+t('(If you only see a blank area, please report this to the developer)');
 
   const close=document.getElementById('fatalClose');
   if(close)close.style.display='flex';
@@ -1863,12 +1861,12 @@ function clearFatal(){
 document.getElementById('fatalClose')?.addEventListener('click',clearFatal);
 
 window.addEventListener('error',e=>{
-  showFatal((e.message||'Unknown error')
+  showFatal((e.message||t('Unknown error'))
     +'  at: '+String(e.filename||'').split('/').pop()+':'+(e.lineno||'?'));
 });
 
 window.addEventListener('unhandledrejection',e=>{
-  showFatal('Unhandled async error: '+((e.reason&&e.reason.message)||e.reason||'unknown'));
+  showFatal(t('Unhandled async error:')+' '+((e.reason&&e.reason.message)||e.reason||t('unknown')));
 });
 
 const projectSelect=document.getElementById('projectSelect');
@@ -1900,8 +1898,8 @@ function setProbeFold(folded){
   if(b){
     b.textContent=folded?'+':'–';
     b.setAttribute('aria-pressed',folded?'true':'false');
-    b.title=folded?'Show the search and action buttons'
-                   :'Collapse these controls to see more of the map';
+    b.title=folded?t('Show the search and action buttons')
+                   :t('Collapse these controls to see more of the map');
   }
   try{localStorage.setItem(PROBE_FOLD_KEY,folded?'1':'0')}catch(e){}
   refreshMapSizeSoon();
@@ -2467,12 +2465,12 @@ async function api(url,options={}){
       // 服务端回的是网页而不是数据（几乎都是 404 的 HTML 错误页）。
       // 最常见的原因：端口上还跑着旧代码的服务 —— Python 只在启动时载入一次，
       // 而页面是每次请求现读的，所以会出现「界面是新的、接口却是旧的」。
-      throw new Error(`The server returned a web page instead of data (HTTP ${r.status}).`
-        +'An old server is probably still running on this port. Stop it, start the server again, and reload this page.');
+      throw new Error(t('The server returned a web page instead of data')+' (HTTP '+r.status+'). '
+        +t('An old server is probably still running on this port. Stop it, start the server again, and reload this page.'));
     }
   }
 
-  if(!r.ok)throw new Error((d&&d.error)||`Request failed: ${r.status}`);
+  if(!r.ok)throw new Error((d&&d.error)||(t('Request failed:')+' '+r.status));
   if(d&&d.error)throw new Error(d.error);
 
   return d;
@@ -2855,6 +2853,7 @@ const MEDIA_ERROR_TEXT={
   3:'Decode error: the video data is damaged',
   4:'This browser does not support the video\'s codec'
 };
+// 上面四条是英文原文，显示时统一过一遍 t()（中文模式走词表）
 
 function proxyBucketOf(start){
   return Math.floor(Math.max(0,start)/PROXY_BUCKET_SECONDS)*PROXY_BUCKET_SECONDS;
@@ -7809,7 +7808,7 @@ async function saveKey(){
       : 'Saved Tianditu key cleared.'+(result&&result.note?result.note:''));
 
   }catch(e){
-    showKeyError(e.message||'Save failed.');
+    showKeyError(e.message||t('Save failed.'));
 
   }finally{
     if(keySave)keySave.disabled=false;
@@ -8225,18 +8224,18 @@ videoPlayer.addEventListener('error',async()=>{
   // 服务端没起来的话，原片和转码片段都会失败，先明确告诉用户
   if(!await serverAlive()){
     videoStatus.innerHTML='<b>'+t('The server is not responding.')+'</b> '+t('Make sure project_manager.py is still running;')+' '
-      +'if you just changed backend code or restarted the server, reload this page and try again.'
-      +`<br>Error code ${code}  ·  network state ${videoPlayer.networkState}`;
+      +t('if you just changed backend code or restarted the server, reload this page and try again.')
+      +`<br>${t('Error code')} ${code}  ·  ${t('network state')} ${videoPlayer.networkState}`;
     return;
   }
 
   // 服务端正常，那才可能是编码/文件问题——原片失败就自动转码
   if(clip&&!clip.useProxy&&clip.allowFallback){
-    fallbackToProxy(`Cannot play the original file (error ${code}: ${MEDIA_ERROR_TEXT[code]||'unknown'})`);
+    fallbackToProxy(`Cannot play the original file (error ${code}: ${t(MEDIA_ERROR_TEXT[code])||'unknown'})`);
     return;
   }
 
-  videoStatus.innerHTML=`Video failed to load: ${esc(MEDIA_ERROR_TEXT[code]||('error code '+code))}.`
+  videoStatus.innerHTML=`Video failed to load: ${esc(t(MEDIA_ERROR_TEXT[code])||('error code '+code))}.`
     +`<br>The server is reachable, so this is a file or codec problem.`
     +`<br>Error code ${code}  ·  network state ${videoPlayer.networkState}  ·  ready state ${videoPlayer.readyState}`
     +`<br><span style="word-break:break-all">${esc(videoPlayer.currentSrc||'(no URL)')}</span>`;

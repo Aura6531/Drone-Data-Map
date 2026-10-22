@@ -82,6 +82,15 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "The server returned a web page instead of data": "服务端返回的是网页而不是数据",
+    "(Thrown inside a cross-origin script; the browser hides the details. crossorigin has been added to CDN scripts — refresh to see the real cause; if it still only says “Script error”, it is most likely inside the map library. Please report it with the steps you took.)": "（异常抛在跨域脚本里，浏览器把细节抹掉了。我们已给 CDN 脚本加 crossorigin —— 刷新一次就能看到真实原因；如果仍只显示「Script error」，多半在地图库内部，请把复现步骤一起反馈。）",
+    "unknown": "未知",
+    "An old server is probably still running on this port. Stop it, start the server again, and reload this page.": "端口上很可能还跑着旧的服务。把它停掉、重新启动服务，再刷新本页。",
+    "Request failed:": "请求失败：",
+    "if you just changed backend code or restarted the server, reload this page and try again.": "如果你刚改过后端代码或重启过服务，刷新本页再试。",
+    "Error code": "错误码",
+    "network state": "网络状态",
+    "Save failed.": "保存失败。",
     "The request was interrupted — the server may have been restarted. Please try again.": "请求中断了 —— 服务可能刚被重启。请再点一次。",
     "The server is not responding.": "服务端没有响应。",
     "Make sure project_manager.py is still running;": "确认 project_manager.py 还在运行；",
