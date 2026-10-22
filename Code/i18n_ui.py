@@ -82,6 +82,8 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Polylines": "多段线",
+    "Polygons": "多边形",
     "Text label": "文字标注",
     "Text labels": "文字标注",
     "Add a text label on the map": "在地图上添加文字标注",

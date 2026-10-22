@@ -8656,6 +8656,138 @@ class ProjectManagerHandler(
             self.path
         ).path
 
+        if path == "/api/project/vectors":
+            # 矢量整份覆盖写（删除一条、或前端改过顺序时用）
+            try:
+                body = self.read_json()
+                project_name = (body.get("project_name") or "").strip()
+                vectors = body.get("vectors") or []
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                clean = []
+                for v in vectors[:200]:
+                    feat = v.get("feature") or {}
+                    if not isinstance(feat, dict):
+                        continue
+                    clean.append(
+                        {
+                            "id": str(v.get("id") or "")[:80],
+                            "name": str(v.get("name") or "")[:120],
+                            "kind": str(v.get("kind") or "line")[:12],
+                            "source": str(v.get("source") or "")[:400],
+                            "feature": feat,
+                        }
+                    )
+                project["vectors"] = clean
+                save_project(project_name, project)
+                json_response(self, {"success": True, "count": len(clean)})
+            except Exception as e:
+                json_response(self, {"success": False, "error": str(e)}, status=400)
+            return
+
+        if path == "/api/project/kml":
+            # 导入 KML 矢量（线/面）。只支持 KML，解析成 GeoJSON 存进 project.json。
+            try:
+                import xml.etree.ElementTree as ET
+
+                body = self.read_json()
+                project_name = (body.get("project_name") or "").strip()
+                raw_path = (body.get("path") or "").strip()
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                if not raw_path:
+                    raise ValueError("No KML file given.")
+
+                target = Path(raw_path).resolve()
+                if target.suffix.lower() != ".kml":
+                    raise ValueError("Only .kml is supported.")
+                if not target.is_file():
+                    raise ValueError("File not found.")
+
+                NS = "{http://www.opengis.net/kml/2.2}"
+                tree = ET.parse(str(target))
+                root = tree.getroot()
+
+                def parse_coords(text):
+                    pts = []
+                    for chunk in (text or "").replace("\n", " ").split():
+                        parts = chunk.split(",")
+                        if len(parts) < 2:
+                            continue
+                        try:
+                            pts.append([float(parts[0]), float(parts[1])])
+                        except ValueError:
+                            continue
+                    return pts
+
+                features = []
+
+                # Placemark 逐个处理：名字取 <name>，几何取 LineString / Polygon
+                for pm in root.iter(NS + "Placemark"):
+                    name_el = pm.find(NS + "name")
+                    name = (name_el.text or "").strip() if name_el is not None else ""
+
+                    line = pm.find(".//" + NS + "LineString")
+                    if line is not None:
+                        coords = parse_coords(
+                            (line.find(NS + "coordinates").text if line.find(NS + "coordinates") is not None else "")
+                        )
+                        if len(coords) >= 2:
+                            features.append(
+                                {
+                                    "type": "Feature",
+                                    "properties": {"name": name, "kind": "line"},
+                                    "geometry": {"type": "LineString", "coordinates": coords},
+                                }
+                            )
+                        continue
+
+                    poly = pm.find(".//" + NS + "Polygon")
+                    if poly is not None:
+                        ring = poly.find(".//" + NS + "LinearRing").find(NS + "coordinates")
+                        coords = parse_coords(ring.text if ring is not None else "")
+                        if len(coords) >= 3:
+                            if coords[0] != coords[-1]:
+                                coords.append(coords[0])
+                            features.append(
+                                {
+                                    "type": "Feature",
+                                    "properties": {"name": name, "kind": "polygon"},
+                                    "geometry": {"type": "Polygon", "coordinates": [coords]},
+                                }
+                            )
+
+                if not features:
+                    raise ValueError("No line or polygon found in this KML.")
+
+                vectors = project.get("vectors") or []
+                for f in features:
+                    vectors.append(
+                        {
+                            "id": "v" + str(len(vectors) + 1) + "_" + target.stem,
+                            "name": (f["properties"].get("name") or target.stem),
+                            "kind": f["properties"]["kind"],
+                            "source": str(target),
+                            "feature": f,
+                        }
+                    )
+                project["vectors"] = vectors
+                save_project(project_name, project)
+
+                json_response(
+                    self,
+                    {
+                        "success": True,
+                        "added": len(features),
+                        "total": len(vectors),
+                    },
+                )
+            except Exception as e:
+                json_response(self, {"success": False, "error": str(e)}, status=400)
+            return
+
         if path == "/api/project/labels":
             # 文字标注（地图上的自定义文字牌）。整份保存，前端简单。
             try:

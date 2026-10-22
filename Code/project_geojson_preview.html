@@ -8730,6 +8730,42 @@ function openVideoFromPopup(encoded,autoPlay=true){
 }
 
 /* ============================================================
+   KML 矢量（多段线 / 多边形）
+   ============================================================ */
+let projectVectors=[];          // [{id,name,kind,feature}]
+let vectorLayer=null;
+const vectorHidden=new Set();   // 隐藏的 vector id
+
+function vectorStyle(kind){
+  return kind==='polygon'
+    ? {color:'#7c3aed',weight:2,opacity:.9,fillColor:'#7c3aed',fillOpacity:.18}
+    : {color:'#7c3aed',weight:2.5,opacity:.9,dashArray:'6,5',fill:false};
+}
+
+function renderVectors(){
+  if(!map)return;
+  if(!vectorLayer)vectorLayer=L.layerGroup().addTo(map);
+  vectorLayer.clearLayers();
+  for(const v of projectVectors){
+    if(vectorHidden.has(v.id))continue;
+    try{
+      const layer=L.geoJSON(v.feature,{style:()=>vectorStyle(v.kind),interactive:true});
+      layer.bindTooltip(v.name||'',{direction:'top'});
+      layer.addTo(vectorLayer);
+    }catch(e){}
+  }
+}
+
+function saveVectors(){
+  // vectors 与 labels 一样，整份存在 project.json（后端 /api/project/kml 负责追加，
+  // 删除时走 /api/project/vectors 覆盖写）
+  try{
+    jsonPost('/api/project/vectors',{project_name:projectSelect.value,vectors:projectVectors.map(v=>({
+      id:v.id,name:v.name,kind:v.kind,source:v.source,feature:v.feature}))});
+  }catch(e){}
+}
+
+/* ============================================================
    文字标注：半透明定位点 + 白色底板文字牌
    ============================================================ */
 let projectLabels=[];           // [{id,lat,lng,text,size,color}]
@@ -8944,6 +8980,25 @@ function renderLoadedPanel(){
       onToggle:(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
     }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); }));
   }
+
+  // —— 多段线 / 多边形（KML）——
+  try{
+    for(const kind of ['line','polygon']){
+      const items=projectVectors.filter(v=>v.kind===kind);
+      if(!items.length)continue;
+      const rows=items.map(v=>({
+        name:v.name||v.id, icon:kind==='polygon'?'▱':'〰',
+        shown:!vectorHidden.has(v.id), key:v.id,
+        onGo:()=>{ try{ const l=L.geoJSON(v.feature); map.fitBounds(l.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
+        onToggle:(on)=>{ if(on)vectorHidden.delete(v.id); else vectorHidden.add(v.id); renderVectors(); renderLoadedPanel(); },
+        onRemove:()=>{ projectVectors=projectVectors.filter(x=>x.id!==v.id); saveVectors(); renderVectors(); renderLoadedPanel(); },
+      }));
+      box.appendChild(ldGroup(t(kind==='polygon'?'Polygons':'Polylines'),rows,(on)=>{
+        items.forEach(v=>{ if(on)vectorHidden.delete(v.id); else vectorHidden.add(v.id); });
+        renderVectors(); renderLoadedPanel();
+      }));
+    }
+  }catch(e){}
 
   // —— 文字标注 ——
   try{
@@ -9265,6 +9320,24 @@ async function importTreeSelection(){
   }
 
   // 勾选的目录直接用；勾选的文件取它所在的目录（后端按文件夹登记）
+  // 勾选的 .kml 直接走矢量导入（其余按文件夹登记）
+  const kmlFiles=[...treeState.checked].filter(p=>/\.kml$/i.test(p));
+  for(const kp of kmlFiles){
+    try{
+      await jsonPost('/api/project/kml',{project_name:projectSelect.value,path:kp});
+      taskLog(`${t('Imported')} ${kp.split(/[\\/]/).pop()}`,'ok');
+    }catch(e){
+      taskLog(t('Import failed:')+' '+e.message,'err');
+    }
+  }
+  if(kmlFiles.length){
+    try{
+      const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value));
+      projectVectors=(d.project&&d.project.vectors)||[];
+      renderVectors(); renderLoadedPanel();
+    }catch(e){}
+  }
+
   const dirs=new Set();
   for(const p of sel){
     const isDir=[...treeState.roots,...[...treeState.children.values()].flat()]
@@ -10151,6 +10224,8 @@ initFileTree();
     try{
       const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
       projectLabels=(d.project&&d.project.labels)||[];
+      projectVectors=(d.project&&d.project.vectors)||[];
+      try{ renderVectors(); }catch(e){}
     }catch(e){ projectLabels=[]; }
     try{ initLabels(); renderLabels(); renderLoadedPanel(); }catch(e){}
   })();
@@ -10277,6 +10352,16 @@ if(buildTracksBtn)buildTracksBtn.addEventListener('click',()=>{runAutoPipeline()
 // 所以原来那套「记住上次勾选」的 localStorage 逻辑也一并去掉。
 
 projectSelect.addEventListener('change',()=>{
+  // 换项目：重读文字标注与 KML 矢量（初始化那次可能还没选项目）
+  (async()=>{
+    try{
+      const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
+      projectLabels=(d.project&&d.project.labels)||[];
+      projectVectors=(d.project&&d.project.vectors)||[];
+      labelSelectedId=null;
+      renderLabels(); renderVectors(); renderLoadedPanel();
+    }catch(e){}
+  })();
   if(map){layerGroup.clearLayers();if(trackArrowLayer)trackArrowLayer.clearLayers();rebuildLegend();stats.innerHTML=''}
   loadedTracks=[];allLoaded=false;clearProbe();clearHighlight();hideDroneMarker();hideNearbyResult();
   // 换项目：文件夹路径、航迹遥测、照片（组与匹配结果）全部作废
