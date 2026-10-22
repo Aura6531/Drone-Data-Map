@@ -167,9 +167,12 @@ chk(/Number\.isInteger\(total\)\?total:total\.toFixed\(1\)/.test(body),
 chk(/digital zoom \$\{lens\.digital\.toFixed\(2\)\}×/.test(body), '悬停里说明digital zoom倍数');
 chk(/exact ratio \$\{\(70\/BASE_FOCAL\)\.toFixed\(2\)\}×/.test(body),
   '悬停里说明中长焦exact ratio 2.92×（DJI 标称 3×）');
-chk(/Visible 3840×2160/.test(body) && /Visible 1920×1080/.test(body)
-  && /Thermal 1280×1024/.test(body),
-  '三种视频类型标签用数字分辨率（Visible / Thermal 字样保留；界面文案已统一成英文）');
+// 2026-10-22：改成「镜头 + 画质」四类（广角 / 变焦 / 热成像 / 全彩夜视）
+chk(/STREAM_KINDS=/.test(body) && /W:'wide'/.test(body) && /Z:'zoom'/.test(body)
+  && /T:'thermal'/.test(body) && /N:'night'/.test(body),
+  '四类镜头映射齐全（广角/变焦/热成像/全彩夜视）');
+chk(/T:'1280×1024'/.test(body) && /S:'1080p'/.test(body),
+  '画质后缀按后缀标签给（_S=1080p、热成像=实测 1280×1024）');
 // 只看函数真正 return 出去的标签；注释里提到旧叫法不算问题。
 // 文案改成英文之后，旧的中文叫法已经不可能再出现 —— 跟到英文叫法上，
 // 否则这条会退化成「永远为真」的空断言。
@@ -194,10 +197,9 @@ console.log('\n=== 文件列表：类型标签与排序 ===');
   // 排序权重必须直接看后缀，不能靠标签文字查表（改文案就会失配）
   const start = body.indexOf('function streamRankOf(');
   const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/if\(\/_v\\\.\/\.test\(v\)\)return 0/.test(fn)
-    && /if\(\/_s\\\.\/\.test\(v\)\)return 1/.test(fn)
-    && /if\(\/_t\\\.\/\.test\(v\)\)return 2/.test(fn),
-    '排序权重直接看文件名后缀（_V -> _S -> _T）');
+  // 2026-10-22：排序 = 镜头类型（×10）+ 画质子序（同类里 4K 在 1080p 之前）
+  chk(/streamKindOf\(/.test(fn) && /wide:0,zoom:10,thermal:20/.test(fn),
+    '排序按「镜头类型 + 画质」（广角4K > 广角1080p > 变焦 > 热成像 > 全彩夜视）');
   chk(!/STREAM_ORDER/.test(body), '去掉了按标签文字查表的老写法');
 }
 chk(/\.badge-type\{background:#0f766e/.test(html), '类型徽标有独立配色，便于一眼分辨');

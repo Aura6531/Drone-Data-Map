@@ -172,9 +172,9 @@ chk(grp.primary.track === V, 'primary 就是那份合并航迹');
 chk(grp.primary.track.referenceStream === 'V',
   '主视频仍标为可见光（参考路 V）—— 修复前会命中列表里第一条 S.3d', grp.primary.track.referenceStream);
 // streamLabelOf 现在要拿**视频文件名**问，不能拿合并航迹名（那个没有后缀，必是 Other）
-chk(streamLabelOf(videoOf(V, V.referenceStream)) === 'Visible 3840×2160',
-  '主视频视频名标为“Visible 3840×2160”', videoOf(V, V.referenceStream));
-chk(streamLabelOf('DJI_x_S.geojson') === 'Visible 1920×1080', '_S 标为“Visible 1920×1080”');
+chk(streamLabelOf(videoOf(V, V.referenceStream)) === 'Wide 4K',
+  '主视频视频名标为“Wide 4K”（广角 4K）', videoOf(V, V.referenceStream));
+chk(streamLabelOf('DJI_x_S.geojson') === 'Wide 1080p', '_S 标为“Wide 1080p”（同一广角镜头的 1080p 版本）');
 chk(streamLabelOf('DJI_x_T.geojson') === 'Thermal 1280×1024',
   '_T 标为“Thermal 1280×1024”（实测尺寸，不是 640×512 也不是 540p）');
 chk(streamLabelOf(V.fileInfo.relative_path) === 'Other',

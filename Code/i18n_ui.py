@@ -82,6 +82,13 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Zoom lens": "变焦",
+    "Full-color night vision": "全彩夜视",
+    "16:9 · wide lens (the default view)": "16:9 · 广角镜头（默认视角）",
+    "16:9 · zoom lens (narrower field of view, same sensor family)": "16:9 · 变焦镜头（视角更窄，同一传感器系列）",
+    "4:3 · thermal sensor 640×512, recorded after 2× in-camera upscaling": "4:3 · 红外传感器 640×512，机内 2 倍上采样后录制",
+    "16:9 · full-color night vision (low-light sensor)": "16:9 · 全彩夜视（低照度传感器）",
+    "2:1 equirectangular · 360 panorama (dual fisheye, stitched in camera)": "2:1 等距柱状 · 360 全景（双鱼眼，机内拼接）",
     "Other videos at this position:": "这个位置的其他视频：",
     "No laser data for this photo": "这张照片没有激光数据",
     "ground position estimated on a flat-earth assumption": "地面位置按平地假设估算",

@@ -10811,31 +10811,72 @@ function isVisibleStream(relativePath){
 // 视频类型标签：直接写数字分辨率（4K/1080P 这种叫法对热成像没有对应词，
 // 而且它也不是 16:9，按 p 口径容易误解）。实测分辨率（ffprobe）：
 //   _V 3840×2160（16:9）   _S 1920×1080（16:9）   _T 1280×1024（5:4）
-function streamLabelOf(relativePath){
-  const v=String(relativePath||'').toLowerCase();
-  if(/_t\./.test(v))return t('Thermal 1280×1024');
-  if(/_v\./.test(v))return t('Visible 3840×2160');
-  if(/_s\./.test(v))return t('Visible 1920×1080');
-  return t('Other');
+// 视频/照片按**镜头**归类（用户 2026-10-22 定的四类）。
+// 依据 DJI 文件名后缀：
+//   _W 广角、_Z 变焦、_T 热成像、_N 全彩夜视、_D 360 全景
+//   _V = 可见光主码流（Mavic 系列拍的就是广角镜头）→ 广角
+//   _S = 与 _V 同一镜头的 1080p 版本 → 广角（低码率）
+const STREAM_KINDS={
+  W:'wide', Z:'zoom', T:'thermal', N:'night', D:'pano', V:'wide', S:'wide',
+};
+
+// 画质只作为后缀信息（"广角 4K" / "广角 1080p"），不再是分类依据。
+// 由**后缀标签**直接决定，别回来再正则匹配一遍文件名。
+const STREAM_QUAL={
+  V:'4K',       // 可见光主码流 3840×2160
+  S:'1080p',    // 同一镜头的 1080p 版本 1920×1080
+  W:'4K',       // 广角镜头
+  Z:'4K',       // 变焦镜头
+  N:'1080p',    // 全彩夜视
+  T:'1280×1024', // 红外：传感器 640×512，机内 2× 上采样后录成 1280×1024
+  D:'8K',       // 360 全景（双鱼眼拼接）
+};
+
+function streamTagOfPath(relativePath){
+  // 先去掉最后的扩展名，再去掉 3D 航迹的 .3d —— 否则 DJI_x_S.3d.geojson
+  // 会被当成"没有后缀"，落到"其他"里（排序和筛选都会错位）
+  const base=String(relativePath||'').replace(/\.[^.]+$/,'').replace(/\.3d$/i,'');
+  const m=base.match(/_([A-Za-z]+)$/);
+  return m?m[1].toUpperCase():'';
 }
 
-// 徽标悬停的补充说明：分辨率已经写在标签里了，这里只讲画幅和相机
+function streamKindOf(relativePath){
+  return STREAM_KINDS[streamTagOfPath(relativePath)]||'';
+}
+
+function streamLabelOf(relativePath){
+  const kind=streamKindOf(relativePath);
+  if(!kind)return t('Other');
+  const qual=STREAM_QUAL[streamTagOfPath(relativePath)]||'';
+  const name=kind==='wide'?t('Wide')
+    :kind==='zoom'?t('Zoom lens')
+    :kind==='thermal'?t('Thermal')
+    :kind==='night'?t('Full-color night vision')
+    :kind==='pano'?t('360 panorama')
+    :t('Other');
+  return qual?`${name} ${qual}`:name;
+}
+
 function streamNoteOf(relativePath){
-  const v=String(relativePath||'').toLowerCase();
-  if(/_t\./.test(v))return t('5:4 · thermal sensor 640×512, recorded after 2× in-camera upscaling');
-  if(/_v\./.test(v))return t('16:9 · visible-light hybrid zoom (4K main stream)');
-  if(/_s\./.test(v))return t('16:9 · visible-light hybrid zoom (1080p version of the same view)');
+  const kind=streamKindOf(relativePath);
+  if(kind==='wide')return t('16:9 · wide lens (the default view)');
+  if(kind==='zoom')return t('16:9 · zoom lens (narrower field of view, same sensor family)');
+  if(kind==='thermal')return t('4:3 · thermal sensor 640×512, recorded after 2× in-camera upscaling');
+  if(kind==='night')return t('16:9 · full-color night vision (low-light sensor)');
+  if(kind==='pano')return t('2:1 equirectangular · 360 panorama (dual fisheye, stitched in camera)');
   return '';
 }
 
-// 列表排序权重：_V（可见光主码流）-> _S（可见光 1080p 版本）-> _T（热成像）-> 其他。
-// 直接看文件名后缀判断，不依赖上面的标签文字 —— 否则改一次文案就要同步改表。
+// 列表排序权重：按镜头类型 —— 广角 > 变焦 > 热成像 > 全彩夜视 > 360 全景 > 其他。
+// 只看后缀判断，不依赖上面的文案（改文案不用同步改这里）。
 function streamRankOf(relativePath){
-  const v=String(relativePath||'').toLowerCase();
-  if(/_v\./.test(v))return 0;
-  if(/_s\./.test(v))return 1;
-  if(/_t\./.test(v))return 2;
-  return 9;
+  const kind=streamKindOf(relativePath);
+  // 先按镜头类型（广角 > 变焦 > 热成像 > 全彩夜视 > 360 全景），
+  // 同类里高画质优先（4K/8K 在 1080p 之前）—— 否则 _S 会排到 _V 前面。
+  const base=({wide:0,zoom:10,thermal:20,night:30,pano:40})[kind]??90;
+  const qual=STREAM_QUAL[streamTagOfPath(relativePath)]||'';
+  const sub=(qual==='4K'||qual==='8K')?0:1;
+  return base+sub;
 }
 
 const GROUP_METERS=8;    // 距离相差不到这么多米，视为“同一个位置”

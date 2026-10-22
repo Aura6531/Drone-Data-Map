@@ -15,8 +15,21 @@ function extractFn(name) {
   }
   throw new Error(name);
 }
+// 抠 const 对象（STREAM_KINDS / STREAM_QUAL）：用大括号配对，别用正则
+// （正则里的 \\s 在 JS 里是字面反斜杠，之前就栽在这里）
+function extractConst(name) {
+  const start = html.indexOf('const ' + name + '=');
+  if (start < 0) throw new Error('const ' + name);
+  let depth = 0;
+  for (let j = html.indexOf('{', start); j < html.length; j++) {
+    if (html[j] === '{') depth++;
+    else if (html[j] === '}') { depth--; if (depth === 0) return html.slice(start, j + 2); }
+  }
+  throw new Error('const ' + name);
+}
 const src = 'const t=k=>k;\n'
-  + extractFn('streamLabelOf') + '\n' + extractFn('streamNoteOf') + '\n'
+  + extractConst('STREAM_KINDS') + '\n' + extractConst('STREAM_QUAL') + '\n'
+  + extractFn('streamLabelOf') + '\n' + extractFn('streamKindOf') + '\n' + extractFn('streamTagOfPath') + '\n' + extractFn('streamNoteOf') + '\n'
   + extractFn('streamRankOf') + '\n' + extractFn('streamKeyOf') + '\n'
   + extractFn('is3dTrack') + '\n' + extractFn('parseDjiName') + '\n' + extractFn('shortFileName')
   + '\n' + extractFn('dateOfFile')
@@ -80,9 +93,10 @@ chk(new Set(order.map((x) => x.index)).size === geoFiles.length, '索引不重�
 chk(order.map((x) => x.index).sort((a, b) => a - b).join(',') === '0,1,2,3,4,5',
   '索引仍是完整集合（点「加载」不会串位）');
 // 同类型内保持原顺序：S.3d 必须排在 S 前面
-const sIdx = order.filter((x) => streamLabelOf(geoFiles[x.index].relative_path) === 'Visible 1920×1080')
+// 2026-10-22：标签改成「镜头 + 画质」后，_S 的类型名是 'Wide 1080p'
+const sIdx = order.filter((x) => streamLabelOf(geoFiles[x.index].relative_path) === 'Wide 1080p')
   .map((x) => geoFiles[x.index].relative_path);
-chk(sIdx[0].includes('.3d'), '同类型内保持原顺序（_S.3d 仍在 _S 之前）', sIdx.join(' , '));
+chk(sIdx[0] && sIdx[0].includes('.3d'), '同类型内保持原顺序（_S.3d 仍在 _S 之前）', sIdx.join(' , '));
 
 console.log('\n=== 同一视频的 .geojson / .3d.geojson 去重 ===');
 {
@@ -163,8 +177,9 @@ console.log('\n=== 同一视频的 .geojson / .3d.geojson 去重 ===');
   console.log('\n  实际流水线（先去重、再按类型排序）:');
   pipeline.forEach((line, i) => console.log(`    第${i + 1}行  ${line}`));
   chk(pipeline.length === 3, '列表最终 3 行');
-  chk(/3840×2160/.test(pipeline[0]) && /1920×1080/.test(pipeline[1]) && /1280×1024/.test(pipeline[2]),
-    '顺序为 Visible 4K -> Visible 1080p -> Thermal');
+  // 2026-10-22：标签改成「镜头 + 画质」（Wide 4K / Wide 1080p / Thermal 1280×1024）
+  chk(/Wide 4K/.test(pipeline[0]) && /Wide 1080p/.test(pipeline[1]) && /Thermal 1280×1024/.test(pipeline[2]),
+    '顺序为 Wide 4K -> Wide 1080p -> Thermal 1280×1024');
 
   console.log('\n=== 文件名简化（年月日 时间 · 编号 · 后缀）===');
 {
@@ -226,8 +241,8 @@ console.log('\n=== 按年月日 / 视频类型筛选 ===');
   f.set('2026-09-25', '');
   chk(show('日期 2026-09-25').length === 1, '另一天只剩 1 条');
 
-  f.set('', 'Visible 3840×2160');
-  chk(show('类型 Visible 3840×2160').length === 2, '按类型筛出 2 条');
+  f.set('', 'Wide 4K');
+  chk(show('类型 Wide 4K').length === 2, '按类型筛出 2 条');
 
   f.set('2026-09-24', 'Thermal 1280×1024');
   chk(show('日期 + 类型组合').length === 1, '两个条件同时生效');
