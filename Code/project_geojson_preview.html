@@ -6801,8 +6801,15 @@ function panoInlineResize(){
   // 贴到屏幕上 —— 观感就是"糊 + 拉伸"（用户 2026-10-22 反馈）。
   // 拖动时用 1 倍保证跟手，松手后再按真实 DPR 重画一次。
   const dpr=panoInline.dragging?1:Math.min(2,Math.max(1,window.devicePixelRatio||1));
-  const w=Math.max(160,Math.round(r.width*dpr));
-  const h=Math.max(120,Math.round((r.height||(r.width*9/16))*dpr));
+  let w=Math.max(160,Math.round(r.width*dpr));
+  let h=Math.max(120,Math.round((r.height||(r.width*9/16))*dpr));
+  // 拖动时再压一档（全屏 2000+ px 每帧要算 200 多万像素，会卡）：
+  // 宽度上限 1400，松手后按真实尺寸重画 —— 只影响拖动中的瞬时观感。
+  if(panoInline.dragging&&w>1400){
+    const k=1400/w;
+    w=1400;
+    h=Math.max(120,Math.round(h*k));
+  }
   if(c.width!==w||c.height!==h){c.width=w;c.height=h;}
 }
 
@@ -7034,7 +7041,11 @@ function panoInlineInit(){
   });
   c.addEventListener('wheel',e=>{
     e.preventDefault();
-    panoInline.fov=Math.max(25,Math.min(140,panoInline.fov*(e.deltaY>0?1.08:1/1.08)));
+    // 缩放速度（用户 2026-10-22：原来一格只变 8%，太慢，至少要翻倍）
+    // 每格约 20%；deltaY 大的（普通鼠标 100）再乘一点，触控板小步也照样能动。
+    const step=Math.min(2.2,Math.max(0.5,Math.abs(e.deltaY)/100));
+    const factor=1+0.20*step*(e.deltaY>0?1:-1);
+    panoInline.fov=Math.max(25,Math.min(140,panoInline.fov*factor));
     panoInline.dragging=false;   // 缩放结束按高清重画
     panoInlineRequestDraw();
   },{passive:false});
