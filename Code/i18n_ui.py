@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Orthophoto found — building the pyramid and showing it (this takes a few minutes)…": "检测到正射影像 —— 正在建立金字塔并加载显示（需要几分钟）…",
     "Expand": "展开",
     "photo points": "个照片点",
     "Photo point": "照片点",

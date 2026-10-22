@@ -6292,6 +6292,18 @@ async function toggleOrtho(){
   }
 }
 
+// 导入完成后：项目里有正射影像就自动建金字塔并加载（用户不用再点按钮）
+async function autoPrepareOrtho(){
+  try{
+    if(typeof loadOrthoList!=='function')return;
+    await loadOrthoList();
+    if(!orthoPicked)return;          // 没有可用影像
+    if(orthoLayer)return;            // 已经开着，别重复建
+    taskLog(t('Orthophoto found — building the pyramid and showing it (this takes a few minutes)…'),'info');
+    await toggleOrtho();             // 拼瓦片 + 后台建 + 轮询进度，都是现成的
+  }catch(e){}
+}
+
 // 轮询建金字塔的进度。建完就停。
 function pollOrthoJob(name,path){
   if(orthoPollTimer)clearInterval(orthoPollTimer);
@@ -10502,6 +10514,9 @@ async function importScannedFolder(folder,quiet){
 
   // 照片（含 360 全景）也要跟着进来：原来要等用户点「加载全部照片」才会读，
   // 于是刚导入完「已加载」里看不到照片组 —— 用户会以为没导入成功。
+  // 正射影像：导入时就该开始建金字塔并上图
+  try{ await autoPrepareOrtho(); }catch(e){}
+
   try{
     await loadProjectPhotos();
     // 只有照片、没有航迹的项目（比如全景上传文件夹）：直接点亮照片图层，
