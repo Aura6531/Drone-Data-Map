@@ -6460,6 +6460,9 @@ async function selectPhotoGroup(index){
     photoJump.style.display='block';
 
     photoCard.style.display='block';
+    // 右栏一次只留一块：之前if打开过 360 全景查看器，现在看别的照片就收掉它
+    // （用户 2026-10-22：「当我看别的照片、视频时，之前打开过的 360 照片模块自动关掉」）
+    try{ closePanoInline(); }catch(e){}
   }
 
   // 地图上把这个点标出来，并把视野带过去（已经看得见就不动地图，
@@ -8537,6 +8540,8 @@ function openVideoFromPopup(encoded,autoPlay=true){
 
     videoTitle.textContent=data.video||'Video player';
     videoModal.style.display='flex';
+    // 看视频时把 360 查看器收掉（右栏一次只留一块）
+    try{ closePanoInline(); }catch(e){}
 
     // **用户明确要看这一段视频**（点照片跳转、点气泡按钮）——
     // 必须把折叠成一条的面板展开，否则没画面只有声音（用户 2026-10-22 反馈）。
