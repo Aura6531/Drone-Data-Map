@@ -759,7 +759,8 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '已从地图卡片里挪走（不再位于 altVideos 之前）');
   chk(/\.col-right:has\(\.photo-card\[style\*="display: block"\]\) \.marker-card/.test(html),
     '右栏里两者按 :has() 分高度（照片区 : 标记点 = 3 : 2）');
-  chk(/\.photo-card\{display:none;flex:1 1 auto;min-height:300px/.test(html),
+  // 2026-10-22：加了 position:relative（底部「跳到视频」要做成浮在图片上的半透明层）
+  chk(/\.photo-card\{position:relative;display:none;flex:1 1 auto;min-height:300px/.test(html),
     '展示区 flex:1 1 auto（右栏剩余高度基本都给它，按内容长）');
   chk(/--marker-flex:0 1 130px/.test(html),
     '标记点卡片让到 130px（用户说「不一定用得到标记点和导出」）');

@@ -780,7 +780,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 展示区：右栏剩余高度基本都给它（flex:1 1 auto，按内容长）。
    用户 2026-10-07：「很多时候只需要看照片、看视频，不一定用得到标记点和导出」——
    所以标记点卡片只留一小份，照片这边要够高。 */
-.photo-card{display:none;flex:1 1 auto;min-height:300px;
+.photo-card{position:relative;display:none;flex:1 1 auto;min-height:300px;
             padding:13px 15px;border-radius:12px;
             background:#fff;border:1px solid #cbd5e1;
             box-shadow:0 5px 18px rgba(20,30,50,.07);
@@ -819,12 +819,25 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    现在：nowrap + 两边 min-width:0，宽度按 flex 比例各自伸缩，永远并排。
    flex-basis 用 0：写 auto 会让画廊按内容抢高度（卡片固定高度时会溢出）。
    整块由 .photo-gallery 自己滚动。 */
-.photo-gallery{display:flex;flex-wrap:nowrap;gap:10px;align-items:flex-start;
+.photo-gallery{display:flex;flex-wrap:nowrap;gap:10px;align-items:stretch;
                flex:1 1 0;min-height:130px;overflow:auto}
 /* 大图 : 小图 = 2.6 : 1（约 470 : 180）。小图的 flex-basis 0 让它只吃剩余宽度，
    不会把大图挤扁；想给小图更多就把 2.6 调小。 */
-.photo-lead{flex:2.6 1 0;min-width:0;min-height:70px}
+.photo-lead{flex:2.6 1 0;min-width:0;min-height:70px;display:flex;flex-direction:column}
 .photo-thumbs{flex:1 1 0;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:70px}
+
+/* 图片按**可用高度**自适应（用户 2026-10-22：「刚好上下高度把界面留出来的空间占满」）：
+   容器定高、图片 contain 居中。原来卡 max-height:420px，16:9 的图只用掉容器 3/4 宽，
+   右边留一条深色空带。 */
+.photo-lead .photo-shot{flex:1 1 auto;min-height:0;
+    display:flex;align-items:center;justify-content:center}
+/* 大图：铺满整个可用区域（cover）。16:9 的照片塞进接近 1:1 的框里，
+   contain 会在上下留黑边，用户明确不要；cover 只裁两侧一小部分。 */
+.photo-lead .photo-shot img{width:100%;height:100%;object-fit:cover;object-position:center}
+.photo-thumbs .photo-shot{flex:0 1 auto;min-height:0;
+    display:flex;align-items:center;justify-content:center}
+.photo-thumbs .photo-shot img{max-width:100%;max-height:100%;width:auto;height:auto;
+    object-fit:contain}
 
 .photo-shot{margin:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#0f172a}
 /* 图片按容器宽度自适应：只给 max-width 与 height:auto，不给固定宽度，
@@ -882,10 +895,14 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
     pointer-events:none;white-space:nowrap}
 .photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
-.photo-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
+/* 说明条浮在图片底部（半透明底板），不再单独占一行高度 */
+.photo-cap{position:absolute;left:0;right:0;bottom:0;z-index:2;
+           background:rgba(15,23,42,.55);color:#e2e8f0;
+           -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+           display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
            background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
 /* 相机标签上色：变焦 / 广角 / 热成像一眼分清（和大图上那个「大图」标记同色系） */
-.photo-cap b{color:#0f172a}
+.photo-cap b{color:#fff}
 .photo-cap .cam{font-weight:700;border-radius:999px;padding:1px 8px;font-size:11px}
 .photo-cap .cam-zoom{background:#dbeafe;color:#1d4ed8}
 .photo-cap .cam-wide{background:#dcfce7;color:#15803d}
@@ -903,20 +920,28 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    否则会把上面的画廊挤扁（画廊是 flex:1 那个，抢不过它）。
    按钮刻意压扁（28px / 11px 字）：实测 1800 窗口下 6 个候选会长到 205px、
    换 4 行，把画廊挤到只剩 130px —— 那比按钮本身重要得多。 */
-.photo-jump{margin-top:2px;padding-top:6px;border-top:1px dashed #e2e8f0;flex:0 0 auto}
+/* 「跳到视频的那一刻」整块浮在图片下沿（半透明底板）—— 不再占独立高度 */
+.photo-jump{position:absolute;left:0;right:0;bottom:0;z-index:3;
+    margin:0;padding:8px 10px;border-top:0;
+    background:rgba(15,23,42,.62);color:#e2e8f0;
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    flex:0 0 auto}
 .photo-head,.photo-chips{flex:0 0 auto}
 .photo-jump-title{margin-bottom:5px}
 .photo-jump-row{gap:5px}
 .photo-jump-btn{height:28px;padding:0 9px;font-size:11px}
 .photo-jump-note{margin-top:5px;font-size:11px;line-height:1.5}
-.photo-jump-title{font-size:12px;color:#64748b;margin-bottom:7px}
-.photo-jump-title b{color:#0f172a}
+.photo-jump-title{font-size:12px;color:#cbd5e1;margin-bottom:7px}
+.photo-jump-title b{color:#fff}
 .photo-jump-row{display:flex;flex-wrap:wrap;gap:6px}
 .photo-jump-btn{height:32px;padding:0 12px;font-size:12px;font-weight:700;border-radius:8px;
                 background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;cursor:pointer}
 .photo-jump-btn:hover{border-color:#2563eb;background:#dbeafe}
-.photo-jump-note{margin-top:7px;font-size:12px;line-height:1.6;color:#64748b}
-.photo-jump-note .warn{color:#b45309;font-weight:600}
+.photo-jump-note{margin-top:7px;font-size:12px;line-height:1.6;color:#cbd5e1}
+.photo-jump-note .warn{color:#fbbf24;font-weight:600}
+/* 浮层里的按钮用浅色描边，压在深色底上才看得清 */
+.photo-jump-btn{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.35);color:#e2e8f0}
+.photo-jump-btn:hover{background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.6)}
 
 /* 展示区没内容时的说明 */
 .photo-empty{font-size:13px;color:#94a3b8;line-height:1.7;padding:2px 0}
