@@ -329,7 +329,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .video-pin svg{display:block}
 
 /* 照片卡里的 360 展开图：原始比例 2:1 撑满整栏太占地方，限高后用缩略图就够看 */
-.photo-lead .photo-shot[data-pano="1"]{height:180px}
+/* 360 大图：按用户 2026-10-22 画的红框大小（约 280×158），不再整行铺开 */
+.photo-lead .photo-shot[data-pano="1"]{width:min(280px,100%);height:158px}
 .pano-card .pano-view-wrap{max-height:340px}
 
 /* 右侧控件：不受全局 .row 的 flex-wrap:wrap 影响，强制单行 */
@@ -5950,6 +5951,22 @@ function clearProjectPhotos(){
 
 // 一组照片 -> HTML（大图优先变焦，其余小图并排）。
 // 单独抽出来是为了能脱离 DOM 直接测：只吃数据、只吐字符串。
+// 360 封面的淡入：`.photo-shot[data-pano="1"] img` 默认 opacity:0，
+// 图片真正解码完才加 `.ready` 显示出来（否则只有铺底的缩略图，看着像一条紫带）。
+// 注意：`load` 事件**不冒泡**，所以必须用捕获阶段在容器上挂一次。
+function bindPanoCoverFade(){
+  if(window.__panoCoverFadeBound)return;
+  window.__panoCoverFadeBound=true;
+  document.addEventListener('load',e=>{
+    const el=e.target;
+    if(el&&el.tagName==='IMG')el.classList.add('ready');
+  },true);
+  // 已经加载完（缓存命中）的图不会再触发 load —— 补一遍
+  document.querySelectorAll('.photo-shot img').forEach(img=>{
+    if(img.complete)img.classList.add('ready');
+  });
+}
+
 function photoGalleryHtml(group){
   if(!group)return '';
 
@@ -6050,10 +6067,9 @@ function photoJumpHtml(group,matches){
   const list=Array.isArray(matches)?matches:[];
 
   if(!list.length){
-    return `<div class="photo-jump-title">Jump to video: this photo was taken at <b>${esc(timeText)}</b></div>`
-      +`<div class="photo-jump-note">No video matches this time.`
-      +`Common causes: the flight\'s video is not loaded yet (click “Load all tracks” first), `
-      +`the video file name has no usable time, or this flight was not recorded.</div>`;
+    return `<div class="photo-jump-title">${esc(t('Jump to video:'))} ${esc(t('this photo was taken at'))} <b>${esc(timeText)}</b></div>`
+      +`<div class="photo-jump-note">${esc(t('No video matches this time.'))} `
+      +`${esc(t('Common causes: the flight is not loaded yet (click “Load all tracks” first), the video file name has no usable time, or this flight was not recorded.'))}</div>`;
   }
 
   const buttons=list.map((m,i)=>{
@@ -6127,6 +6143,7 @@ async function selectPhotoGroup(index){
 
     photoChips.innerHTML=photoCardChips(group);
     photoGallery.innerHTML=photoGalleryHtml(group);
+    bindPanoCoverFade();
 
     // 大图 / 小图统一：普通照片 -> 按时刻跳视频；**全景照片 -> 看 360**
     // 全景图当普通照片看没有意义（就是一张被拉扁的球面展开图），

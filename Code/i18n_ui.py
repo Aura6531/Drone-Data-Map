@@ -82,6 +82,11 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Jump to video:": "跳到视频：",
+    "this photo was taken at": "这张照片拍摄于",
+    "No video matches this time.": "这一时刻没有匹配的视频。",
+    "Common causes: the flight is not loaded yet (click “Load all tracks” first), the video file name has no usable time, or this flight was not recorded.": "常见原因：该架次的视频还没加载（先点「加载全部轨迹」）、视频文件名里没有可用时间、或者这次飞行没有录像。",
+    "inaccurate": "不准",
     "to the horizon": "至地平线",
     "Ground range covered by this frame": "这一帧在地面上的覆盖范围（画面下沿到上沿）",
     "shots": "张",
