@@ -82,6 +82,8 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "to the horizon": "至地平线",
+    "Ground range covered by this frame": "这一帧在地面上的覆盖范围（画面下沿到上沿）",
     "shots": "张",
     "Position quality": "定位质量",
     "estimated": "估算",

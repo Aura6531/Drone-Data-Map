@@ -3667,6 +3667,24 @@ function renderTelemetry(){
     }
 
     parts.push(`<span title="${esc(distTitle)}"><b>${t('Ground distance at frame center')}</b>${distText}</span>`);
+
+    // 视场覆盖范围：画面下沿 → 上沿各自落到地面的距离（按中心列算，不掺水平偏角）。
+    // 用户 2026-10-22 看着视场框问"虚线边到底该画多长" —— 把这两个数直接报出来，
+    // 框画到哪儿、肉眼能看到哪儿，一眼就能对上。
+    try{
+      const vf=fovOf(focal)[1];
+      const dep=Math.abs(pitch);
+      if(Number.isFinite(dep)&&Number.isFinite(vf)&&alt>0){
+        const nearD=alt/Math.tan(Math.min(89,dep+vf/2)*Math.PI/180);
+        const farDep=dep-vf/2;
+        const farM=alt/Math.tan(Math.max(0.5,farDep)*Math.PI/180);
+        const nearTxt=nearD>=1000?(nearD/1000).toFixed(2)+' km':nearD.toFixed(0)+' m';
+        const farTxt=farDep<=0.5
+          ?t('to the horizon')
+          :(farM>=1000?(farM/1000).toFixed(2)+' km':farM.toFixed(0)+' m');
+        parts.push(`<span title="${esc(t('Ground range covered by this frame'))}"><b>${t('Coverage')}</b>${nearTxt}–${farTxt}</span>`);
+      }
+    }catch(e){}
   }
 
   videoTelemetry.innerHTML=parts.join('');
@@ -3896,6 +3914,9 @@ if(crosshairToggle){
 // ——视场框本来就是地面覆盖范围，被硬截断反而会让人以为镜头只看到那么远。
 const FOOTPRINT_MAX_PER_ALT=12;      // 每 1 m 相对高度允许多远（97 m 高 → 1164 m）
 const FOOTPRINT_MAX_DISTANCE_MIN=600;// 下限：低空时也不至于把框画得太短
+// 画面最上沿落到地面超过这个距离就当作"接近地平线"，不再按真实落点画
+// （不然低俯角时上沿动不动就是几公里，框会长得没边）。
+const FOOTPRINT_FAR_LIMIT=3000;
 // 35mm 全幅对角线 43.27mm；DJI 的等效焦距按对角线折算，视频 16:9
 const FULLFRAME_DIAGONAL=43.2666;
 const FRAME_ASPECT=[16,9];
@@ -4033,15 +4054,39 @@ function footprintGeometry(origin,alt,yaw,pitch,roll,focal,dzoom){
   // 下边缘必须有落点，否则这块不画
   if(!bl||!br)return null;
 
-  // 远边截断距离：按相对高度成比例给（低空也不短于下限）
-  const maxDistance=Math.max(FOOTPRINT_MAX_DISTANCE_MIN,FOOTPRINT_MAX_PER_ALT*alt);
+  // 远边 = **画面最上沿**两个角点落到地面的位置。
+  //
+  // 为什么改（用户 2026-10-22：「按红框修正视场长度，虚线边应是大致能看到的内容范围」）：
+  // 旧算法用 max(600 m, 12×高度) 做截断 —— 实测那一刻（alt 61 m、俯仰 -31.2°、广角）
+  // 画面下沿 69 m、上沿 585 m，而截断给到 734 m，于是虚线边比画面真的能看到的地方
+  // 还远 150 m，在水面上拖出一段"看得见但什么都没有"的框。
+  //
+  // 退化情形：镜头压得很平，上沿射线接近/高于地平线 → 角点不存在或远得离谱
+  // （> FOOTPRINT_FAR_LIMIT），这时才退回"按高度成比例截断"的近似。
+  const farLimit=FOOTPRINT_FAR_LIMIT;
 
-  const left=edgePointAtDistance(project,-1,maxDistance,tl);
-  const right=edgePointAtDistance(project,1,maxDistance,tr);
+  // 远边距离 = min(画面上沿真实落点, 旧的"按高度成比例"截断)。
+  // 取 min 的理由（两条都要满足）：
+  //   · 不许超出画面真能看到的地方（用户 2026-10-22：虚线边应是内容范围）；
+  //   · 也不许比以前更长 —— 低俯角时上沿落点能到 1 km 以上，
+  //     test_footprint 有一条断言"左右端不超过截断距离"，那条规则要保住。
+  const heuristic=Math.min(farLimit,
+    Math.max(FOOTPRINT_MAX_DISTANCE_MIN,FOOTPRINT_MAX_PER_ALT*alt));
+  const topDist=Math.min(
+    (tl&&Number.isFinite(tl.distance))?tl.distance:Infinity,
+    (tr&&Number.isFinite(tr.distance))?tr.distance:Infinity);
+
+  const capDistance=Math.min(heuristic,Number.isFinite(topDist)?topDist:heuristic);
+
+  const left=edgePointAtDistance(project,-1,capDistance,tl);
+  const right=edgePointAtDistance(project,1,capDistance,tr);
 
   if(!left||!right)return null;
 
-  return {bl:bl.latlng,br:br.latlng,left,right};
+  return {
+    bl:bl.latlng,br:br.latlng,left,right,
+    near:Math.round(bl.distance),far:Math.round(Math.max(tl?tl.distance:0,tr?tr.distance:0))||null
+  };
 }
 
 // ============================================================
