@@ -82,6 +82,18 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Text label": "文字标注",
+    "Text labels": "文字标注",
+    "Add a text label on the map": "在地图上添加文字标注",
+    "Label text": "标注文字",
+    "Click on the map to place the label.": "点地图上任意位置放置标注。",
+    "Label added.": "已添加标注。",
+    "Label removed.": "已删除标注。",
+    "Size xs": "极小",
+    "Size s": "小",
+    "Size m": "中",
+    "Size l": "大",
+    "Size xl": "超大",
     "Rebuild tracks": "重新生成航迹",
     "Remove from this project (files on disk are kept)": "移出本项目（磁盘文件保留）",
     "Removed from the project (files on disk are kept).": "已移出本项目（磁盘文件保留）。",

@@ -8656,6 +8656,39 @@ class ProjectManagerHandler(
             self.path
         ).path
 
+        if path == "/api/project/labels":
+            # 文字标注（地图上的自定义文字牌）。整份保存，前端简单。
+            try:
+                body = self.read_json()
+                project_name = (body.get("project_name") or "").strip()
+                labels = body.get("labels") or []
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+
+                clean = []
+                for item in labels[:500]:
+                    try:
+                        clean.append(
+                            {
+                                "id": str(item.get("id") or "")[:64],
+                                "lat": float(item.get("lat")),
+                                "lng": float(item.get("lng")),
+                                "text": str(item.get("text") or "")[:200],
+                                "size": str(item.get("size") or "m")[:4],
+                                "color": str(item.get("color") or "dark")[:12],
+                            }
+                        )
+                    except (TypeError, ValueError):
+                        continue
+
+                project["labels"] = clean
+                save_project(project_name, project)
+                json_response(self, {"success": True, "count": len(clean)})
+            except Exception as e:
+                json_response(self, {"success": False, "error": str(e)}, status=400)
+            return
+
         if path == "/api/project/delete-files":
             # 「已加载」里勾了「同步删除磁盘文件」才会走到这里。
             # 安全边界：只允许删除**项目已登记文件夹之内**的媒体文件。

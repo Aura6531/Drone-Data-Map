@@ -877,6 +877,23 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .ld-row .ld-name:hover{text-decoration:underline}
 .ld-row.hidden .ld-name{color:#94a3b8;text-decoration:line-through}
 .ld-ico{width:16px;flex:0 0 16px;text-align:center}
+/* 文字标注：半透明定位点 + 白色底板文字牌 */
+.map-label{background:none;border:0}
+.map-label .lab-wrap{display:flex;align-items:center;gap:5px;transform:translate(-50%,-50%)}
+.map-label .lab-dot{width:11px;height:11px;border-radius:50%;
+    background:rgba(37,99,235,.55);border:2px solid rgba(255,255,255,.9);
+    box-shadow:0 1px 3px rgba(15,23,42,.4);flex:0 0 auto}
+.map-label .lab-text{background:rgba(255,255,255,.92);color:#0f172a;
+    border:1px solid rgba(148,163,184,.6);border-radius:8px;padding:2px 7px;
+    white-space:nowrap;box-shadow:0 2px 8px rgba(15,23,42,.18);cursor:grab}
+.map-label.sel .lab-text{outline:2px solid #2563eb}
+.map-label.sel .lab-dot{background:#2563eb}
+.lab-editor{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;
+    border-top:1px dashed #e2e8f0;font-size:11px;color:#475569}
+.lab-editor .sw{width:16px;height:16px;border-radius:4px;border:1px solid #cbd5e1;cursor:pointer}
+.lab-editor .sw.on{outline:2px solid #2563eb}
+.lab-editor button{font-size:11px;height:22px;padding:0 7px}
+
 .ld-del{border:0;background:none;color:#cbd5e1;cursor:pointer;font-size:14px;
     line-height:1;padding:0 2px;flex:0 0 auto}
 .ld-row:hover .ld-del{color:#b91c1c}
@@ -1527,6 +1544,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <button id="coverageToggleBtn" class="coverage-toggle-btn" type="button"
                   aria-pressed="false"
                   title="Show where this project's flights actually observed the ground, and how clearly" data-i18n-title="Show where this project's flights actually observed the ground, and how clearly" data-i18n="Coverage">Coverage</button>
+          <!-- 文字标注：点一下进入落点模式，再点地图任意位置放一块文字牌 -->
+          <button id="labelBtn" class="coverage-toggle-btn" type="button"
+                  title="Add a text label on the map" data-i18n-title="Add a text label on the map"
+                  data-i18n="Text label">Text label</button>
           <label for="baseMap" class="ctrl-label" data-i18n="Base map">Base map</label>
           <select id="baseMap" class="ctrl-select">
             <option value="street" selected data-i18n="Street (Tianditu)">Street (Tianditu)</option>
@@ -8709,6 +8730,90 @@ function openVideoFromPopup(encoded,autoPlay=true){
 }
 
 /* ============================================================
+   文字标注：半透明定位点 + 白色底板文字牌
+   ============================================================ */
+let projectLabels=[];           // [{id,lat,lng,text,size,color}]
+let labelLayer=null;            // L.layerGroup
+let labelPlacing=false;         // 落点模式
+let labelSelectedId=null;
+
+const LABEL_SIZES={xs:11,s:12,m:14,l:18,xl:24};
+const LABEL_COLORS={dark:'#0f172a',blue:'#1d4ed8',red:'#b91c1c',green:'#15803d',orange:'#b45309'};
+
+function labelIcon(item){
+  const fs=LABEL_SIZES[item.size]||LABEL_SIZES.m;
+  const color=LABEL_COLORS[item.color]||LABEL_COLORS.dark;
+  const sel=item.id===labelSelectedId?' sel':'';
+  return L.divIcon({
+    className:'map-label'+sel,
+    html:`<div class="lab-wrap"><span class="lab-dot"></span>`
+      +`<span class="lab-text" style="font-size:${fs}px;color:${color}">${esc(item.text||'')}</span></div>`,
+    iconSize:[0,0],
+    iconAnchor:[0,0],
+  });
+}
+
+function renderLabels(){
+  if(!map)return;
+  if(!labelLayer)labelLayer=L.layerGroup().addTo(map);
+  labelLayer.clearLayers();
+  for(const item of projectLabels){
+    const mk=L.marker([item.lat,item.lng],{icon:labelIcon(item),draggable:true,keyboard:false});
+    mk.on('drag',(e)=>{ const p=e.target.getLatLng(); item.lat=p.lat; item.lng=p.lng; });
+    mk.on('dragend',()=>{ saveLabels(); });
+    mk.on('click',(e)=>{ L.DomEvent.stopPropagation(e); labelSelectedId=item.id; renderLabels(); renderLoadedPanel(); });
+    mk.on('dblclick',(e)=>{
+      L.DomEvent.stopPropagation(e);
+      const v=prompt(t('Label text'),item.text||'');
+      if(v===null)return;
+      item.text=String(v).slice(0,200);
+      saveLabels(); renderLabels(); renderLoadedPanel();
+    });
+    mk.addTo(labelLayer);
+  }
+}
+
+function saveLabels(){
+  try{
+    jsonPost('/api/project/labels',{project_name:projectSelect.value,labels:projectLabels});
+  }catch(e){}
+}
+
+function setLabelPlacing(on){
+  labelPlacing=!!on;
+  const btn=document.getElementById('labelBtn');
+  if(btn)btn.setAttribute('aria-pressed',labelPlacing?'true':'false');
+  if(map&&map.getContainer()){
+    map.getContainer().style.cursor=labelPlacing?'crosshair':'';
+  }
+  taskLog(labelPlacing?t('Click on the map to place the label.'):'',labelPlacing?'info':'ok');
+}
+
+function initLabels(){
+  const btn=document.getElementById('labelBtn');
+  if(btn&&!btn.dataset.bound){
+    btn.dataset.bound='1';
+    btn.addEventListener('click',()=>setLabelPlacing(!labelPlacing));
+  }
+  if(map&&!map._labelBound){
+    map._labelBound=true;
+    map.on('click',(e)=>{
+      if(!labelPlacing)return;
+      const v=prompt(t('Label text'),'');
+      setLabelPlacing(false);
+      if(v===null||!String(v).trim())return;
+      projectLabels.push({
+        id:'l'+Date.now().toString(36),
+        lat:e.latlng.lat, lng:e.latlng.lng,
+        text:String(v).slice(0,200), size:'m', color:'dark',
+      });
+      saveLabels(); renderLabels(); renderLoadedPanel();
+      taskLog(t('Label added.'),'ok');
+    });
+  }
+}
+
+/* ============================================================
    左栏「已加载」：按类别分组的图层管理器
    ============================================================ */
 // 显隐状态（path/label -> bool）。存 project.json 的 ui 字段里。
@@ -8839,6 +8944,62 @@ function renderLoadedPanel(){
       onToggle:(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
     }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); }));
   }
+
+  // —— 文字标注 ——
+  try{
+    if(projectLabels.length){
+      const items=projectLabels.map((it)=>{
+        const shown=true;
+        return {
+          name:it.text||'(空)', icon:'✎', shown, key:it.id,
+          onGo:()=>{ try{ map.setView([it.lat,it.lng],Math.max(map.getZoom(),17)); labelSelectedId=it.id; renderLabels(); renderLoadedPanel(); }catch(e){} },
+          onToggle:()=>{ renderLoadedPanel(); },
+          onRemove:()=>{
+            projectLabels=projectLabels.filter(x=>x.id!==it.id);
+            if(labelSelectedId===it.id)labelSelectedId=null;
+            saveLabels(); renderLabels(); renderLoadedPanel();
+            taskLog(t('Label removed.'),'ok');
+          },
+        };
+      });
+      const grp=ldGroup(t('Text labels'),items,(on)=>{ renderLoadedPanel(); });
+      // 选中某条时，底下出现编辑条（字号 / 颜色 / 删除）
+      const sel=projectLabels.find(x=>x.id===labelSelectedId);
+      if(sel){
+        const bar=document.createElement('div');
+        bar.className='lab-editor';
+        for(const key of ['xs','s','m','l','xl']){
+          const b=document.createElement('button');
+          b.type='button';
+          b.textContent=t('Size '+key);
+          b.className=sel.size===key?'secondary':'';
+          b.style.fontWeight=sel.size===key?'700':'400';
+          b.addEventListener('click',()=>{ sel.size=key; saveLabels(); renderLabels(); renderLoadedPanel(); });
+          bar.appendChild(b);
+        }
+        for(const key of Object.keys(LABEL_COLORS)){
+          const sw=document.createElement('span');
+          sw.className='sw'+(sel.color===key?' on':'');
+          sw.style.background=LABEL_COLORS[key];
+          sw.title=key;
+          sw.addEventListener('click',()=>{ sel.color=key; saveLabels(); renderLabels(); renderLoadedPanel(); });
+          bar.appendChild(sw);
+        }
+        const del=document.createElement('button');
+        del.type='button';
+        del.textContent=t('Delete');
+        del.className='secondary';
+        del.addEventListener('click',()=>{
+          projectLabels=projectLabels.filter(x=>x.id!==sel.id);
+          labelSelectedId=null;
+          saveLabels(); renderLabels(); renderLoadedPanel();
+        });
+        bar.appendChild(del);
+        grp.appendChild(bar);
+      }
+      box.appendChild(grp);
+    }
+  }catch(e){}
 
   // —— 位置点（标记点）——
   try{
@@ -9986,6 +10147,13 @@ async function importScannedFolder(folder,quiet){
 }
 
 initFileTree();
+  (async()=>{
+    try{
+      const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
+      projectLabels=(d.project&&d.project.labels)||[];
+    }catch(e){ projectLabels=[]; }
+    try{ initLabels(); renderLabels(); renderLoadedPanel(); }catch(e){}
+  })();
 
 if(addFolderBtn)addFolderBtn.addEventListener('click',()=>{
   if(!currentProjectName())return;
