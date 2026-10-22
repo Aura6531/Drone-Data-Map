@@ -6675,7 +6675,7 @@ function openPanoPhoto(group,name){
 // 和右栏实际显示宽度接近，够清晰又不至于每帧拷 33 MB。
 const PANO_INLINE_MAX_W = 9216;
 // 全屏模式下的采样上限：全屏窗口更大，需要更多源像素才不糊
-const PANO_FULLSCREEN_MAX_W = 12288;
+const PANO_FULLSCREEN_MAX_W = 14400;   // = 原图宽（14400×7200）
 
 const panoInline = {
   el:null, canvas:null, ctx:null, msg:null, title:null, sub:null, fovSel:null,
@@ -6793,10 +6793,26 @@ function panoInlineDraw(){
     sctx.imageSmoothingQuality='high';
     sctx.clearRect(0,0,W,H);
     sctx.drawImage(img,0,0,W,H);
-    panoInline._sd=sctx.getImageData(0,0,W,H).data;
-    panoInline._srcKey=key;
+    try{
+      panoInline._sd=sctx.getImageData(0,0,W,H).data;
+      panoInline._srcKey=key;
+    }catch(err){
+      // 内存不够（例如全屏要 14400×7200 ≈ 414 MB）就退回小一号再取一次
+      const W2=Math.min(W,12288);
+      const H2=Math.max(1,Math.round(nh*W2/nw));
+      if(sc.width!==W2||sc.height!==H2){sc.width=W2;sc.height=H2;panoInline._sctx=null;}
+      const s2=sc.getContext('2d',{willReadFrequently:true});
+      s2.imageSmoothingEnabled=true;
+      s2.imageSmoothingQuality='high';
+      s2.drawImage(img,0,0,W2,H2);
+      panoInline._sd=s2.getImageData(0,0,W2,H2).data;
+      panoInline._srcKey=W2+'x'+H2+'|'+img.src;
+    }
   }
   const sd=panoInline._sd;
+
+  // 拖动中用最近邻（快、跟手）；静止/全屏用双线性（细节连贯）
+  const hiQ=!panoInline.dragging;
 
   const out=ctx.createImageData(cw,ch);
   const od=out.data;
@@ -6823,11 +6839,24 @@ function panoInlineDraw(){
       let u=(lon/(2*Math.PI)+0.5)*W;
       const v=(0.5-lat/Math.PI)*H;
       if(u<0)u+=W; if(u>=W)u-=W;
-      const ui=u|0, vi=v|0;
       const o=rowOff+i*4;
-      if(vi<0||vi>=H){od[o+3]=255;continue;}
-      const s=(vi*W+ui)*4;
-      od[o]=sd[s]; od[o+1]=sd[s+1]; od[o+2]=sd[s+2]; od[o+3]=255;
+      if(v<0||v>=H){od[o+3]=255;continue;}
+      if(hiQ){
+        // 双线性：静止/全屏时细节更连贯（拖动时不用，保证跟手）
+        const u0=Math.floor(u), v0=Math.floor(v);
+        const fu=u-u0, fv=v-v0;
+        const u1=(u0+1)%W, v1=Math.min(H-1,v0+1);
+        const s00=(v0*W+u0)*4, s10=(v0*W+u1)*4, s01=(v1*W+u0)*4, s11=(v1*W+u1)*4;
+        const w00=(1-fu)*(1-fv), w10=fu*(1-fv), w01=(1-fu)*fv, w11=fu*fv;
+        od[o]  =sd[s00]*w00+sd[s10]*w10+sd[s01]*w01+sd[s11]*w11;
+        od[o+1]=sd[s00+1]*w00+sd[s10+1]*w10+sd[s01+1]*w01+sd[s11+1]*w11;
+        od[o+2]=sd[s00+2]*w00+sd[s10+2]*w10+sd[s01+2]*w01+sd[s11+2]*w11;
+        od[o+3]=255;
+      }else{
+        const ui=u|0, vi=v|0;
+        const s=(vi*W+ui)*4;
+        od[o]=sd[s]; od[o+1]=sd[s+1]; od[o+2]=sd[s+2]; od[o+3]=255;
+      }
     }
   }
   ctx.putImageData(out,0,0);
