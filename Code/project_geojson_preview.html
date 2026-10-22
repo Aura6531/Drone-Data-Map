@@ -2777,14 +2777,28 @@ function decimateForArrows(coords,meters){
     (b.lng-a.lng)*Math.cos(a.lat*Math.PI/180)*111320
   );
   let lastKept=L.latLng(coords[0][1],coords[0][0]);
+  let lastBearing=0;
   for(let i=1;i<coords.length;i++){
     const p=L.latLng(coords[i][1],coords[i][0]);
-    if(dist(lastKept,p)>=meters){
-      const dy=p.lat-lastKept.lat;
-      const dx=(p.lng-lastKept.lng)*Math.cos(lastKept.lat*Math.PI/180);
-      out.push({lat:p.lat,lng:p.lng,bearing:Math.atan2(dx,dy)*180/Math.PI});
-      lastKept=p;
+    if(dist(lastKept,p)<meters)continue;
+
+    // 方位角要看**更远一点**的方向：GPS 相邻点只差几米，抖动会让箭头乱转
+    // （用户 2026-10-22：箭头变歪、还突到线外）。往后看 ~10 个点求方向。
+    const aheadIdx=Math.min(coords.length-1,i+10);
+    const pa=L.latLng(coords[aheadIdx][1],coords[aheadIdx][0]);
+    let dy=pa.lat-lastKept.lat;
+    let dx=(pa.lng-lastKept.lng)*Math.cos(lastKept.lat*Math.PI/180);
+    if(Math.abs(dx)+Math.abs(dy)<1e-9){   // 原地悬停：沿用上一个方向
+      dy=p.lat-lastKept.lat;
+      dx=(p.lng-lastKept.lng)*Math.cos(lastKept.lat*Math.PI/180);
     }
+    const bearing=(Math.abs(dx)+Math.abs(dy)<1e-9)
+      ?lastBearing
+      :Math.atan2(dx,dy)*180/Math.PI;
+    lastBearing=bearing;
+
+    out.push({lat:p.lat,lng:p.lng,bearing});
+    lastKept=p;
   }
   return out;
 }
@@ -2793,13 +2807,13 @@ function decimateForArrows(coords,meters){
 function trackArrowIcon(bearing){
   const deg=Number.isFinite(bearing)?bearing-90:0;
   // 「→」式样（用户 2026-10-22 给的图）：一段横线 + 实心三角箭头。
-  // 比之前的 V 形雪佛龙更像"箭"，方向也更好认。
-  const html='<svg width="12" height="12" viewBox="0 0 12 12" '
+  // 10px 内画完：航迹线宽 5px，太长会在弯道处"突出去"（用户反馈：箭头变歪、突到线外）。
+  const html='<svg width="10" height="10" viewBox="0 0 10 10" '
     +`style="transform:rotate(${deg.toFixed(1)}deg)">`
-    +'<line x1="1.6" y1="6" x2="8.6" y2="6" stroke="rgba(255,255,255,.78)" '
-    +'stroke-width="1.2" stroke-linecap="round"/>'
-    +'<path d="M7.4 3.4 L10.6 6 L7.4 8.6 Z" fill="rgba(255,255,255,.85)"/></svg>';
-  return L.divIcon({className:'track-arrow',html,iconSize:[12,12],iconAnchor:[6,6]});
+    +'<line x1="1.2" y1="5" x2="6.8" y2="5" stroke="rgba(255,255,255,.8)" '
+    +'stroke-width="1.1" stroke-linecap="round"/>'
+    +'<path d="M5.8 2.9 L8.8 5 L5.8 7.1 Z" fill="rgba(255,255,255,.9)"/></svg>';
+  return L.divIcon({className:'track-arrow',html,iconSize:[10,10],iconAnchor:[5,5]});
 }
 
 // 箭头层：单独一层，缩放时整层重建（数量随缩放变化）
