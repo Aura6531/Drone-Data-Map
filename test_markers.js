@@ -432,7 +432,7 @@ console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ==
     'videoStage', 'formatTime', 'fallbackToProxy', 'setTimeout', 'clearTimeout',
     // 点照片跳视频那套「倒退 3 秒 + 倒计时」：startClip 里会调它，
     // 标记点这条路（autoPlay=false）用不到，给个空桩即可
-    'setPhotoCountdownTarget',
+    'setPhotoCountdownTarget', 't',
     `${extractFn('startClip')}\nreturn {startClip};`
   );
 
@@ -457,7 +457,9 @@ console.log('\n=== 11) 跳过去之后视频停在暂停态（不自动播） ==
       (t) => Number(t).toFixed(3), () => {},
       setTimeout, clearTimeout,
       // 标记点这条路不带 photo_pause_at，桩里只记录调用
-      (photoAtAbs, bucket) => { countdownCalls.push([photoAtAbs, bucket]) }
+      (photoAtAbs, bucket) => { countdownCalls.push([photoAtAbs, bucket]) },
+      // startClip 里现在会调 t()（状态文案），沙箱里给个直通桩
+      (k) => k
     );
 
     api.startClip();

@@ -1203,7 +1203,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
      否则页面只会剩下几个空白框，完全看不出发生了什么（踩过一次）。 -->
 <div id="fatalNotice" class="fatal-notice"></div>
 <button id="fatalClose" class="fatal-close" type="button" style="display:none"
-        title="Dismiss" aria-label="Dismiss">×</button>
+        title="Dismiss" data-i18n-title="Dismiss" aria-label="Dismiss" data-i18n-aria="Dismiss">×</button>
 
 <!-- 语言切换：固定在**右上角**。
      用户 2026-10-15：「页面右上角增加一个切换语言的选项，中文英文可互相切换，
@@ -1214,7 +1214,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
      z-index 高于弹框（12000）之下、但高于普通内容，避免被地图/图例盖住。 -->
 <div class="lang-switch" id="langSwitch">
   <label for="langSelect" data-i18n="ui.language">Language</label>
-  <select id="langSelect" aria-label="Language">
+  <select id="langSelect" aria-label="Language" data-i18n-aria="Language">
     <option value="en">English</option>
     <option value="zh">中文</option>
   </select>
@@ -1229,7 +1229,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
          原来是"只有 ≤1280px 才显示"，现在**任意宽度**都能折叠
          （见 CSS 里 `.layout.left-folded` 那组）；宽屏下也用得上。 -->
     <button id="leftRail" class="left-rail" type="button"
-            title="Expand the left panel" aria-label="Expand the left panel">
+            title="Expand the left panel" data-i18n-title="Expand the left panel" aria-label="Expand the left panel" data-i18n-aria="Expand the left panel">
       <span class="lr-icon">›</span>
       <span class="lr-text">PROJECT</span>
     </button>
@@ -1250,12 +1250,12 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                （实测全页只有 `setLeftOpen(true)`，没有 false）。
                用户要的是"选好文件后收起侧边栏把宽度让给地图"，所以补上。 -->
           <button id="foldLeftBtn" class="side-toggle fold-left" type="button"
-                  title="Collapse the left panel (give the width to the map)"
-                  aria-label="Collapse the left panel">«</button>
+                  title="Collapse the left panel (give the width to the map)" data-i18n-title="Collapse the left panel (give the width to the map)"
+                  aria-label="Collapse the left panel" data-i18n-aria="Collapse the left panel">«</button>
           <button id="sideToggle" class="side-toggle" type="button"
                   aria-pressed="false"
-                  title="Switch to markers (list and export)"
-                  aria-label="Switch to markers" data-i18n="‹ Markers">‹ Markers</button>
+                  title="Switch to markers (list and export)" data-i18n-title="Switch to markers (list and export)"
+                  aria-label="Switch to markers" data-i18n-aria="Switch to markers" data-i18n="‹ Markers">‹ Markers</button>
         </div>
 
         <label class="ctrl-label" for="projectSelect" data-i18n="Select project">Select project</label>
@@ -1264,8 +1264,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <!-- 把当前项目从项目列表里移除。只是列表里的一项，不动任何数据文件，
                所以做成下拉框右侧的小 ×，点了才弹确认和说明。 -->
           <button id="deleteProjectBtn" class="proj-del" type="button"
-                  title="Remove this project from the list (no data files are deleted)"
-                  aria-label="Remove from project list">×</button>
+                  title="Remove this project from the list (no data files are deleted)" data-i18n-title="Remove this project from the list (no data files are deleted)"
+                  aria-label="Remove from project list" data-i18n-aria="Remove from project list">×</button>
         </div>
         <div id="projectNotice" class="notice" style="display:none"></div>
 
@@ -1287,7 +1287,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div class="card-head">
           <h2 data-i18n="Tracks">Tracks</h2>
           <button class="hdr-caret" type="button" data-collapse="tracksCard"
-                  title="Collapse / expand this list" aria-label="Collapse this list">▾</button>
+                  title="Collapse / expand this list" data-i18n-title="Collapse / expand this list" aria-label="Collapse this list" data-i18n-aria="Collapse this list">▾</button>
         </div>
         <!-- 三个按钮合并成一个：检测 -> 生成 SRT -> 生成 GeoJSON。
              为什么合并：GeoJSON 必须读同名 .srt（后端 generate_geojson_for_video
@@ -1326,10 +1326,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div class="card-head">
           <!-- 方向在左边：这个按钮从「标记点页」往右扫回项目页 -->
           <button id="sideToggleBack" class="side-toggle" type="button"
-                  title="Back to project / tracks" aria-label="Back to project">Project ›</button>
+                  title="Back to project / tracks" data-i18n-title="Back to project / tracks" aria-label="Back to project" data-i18n-aria="Back to project">Project ›</button>
           <h2>Markers<span id="markerCount" class="marker-count">(empty)</span></h2>
           <button class="hdr-caret" type="button" data-collapse="markerCard"
-                  title="Collapse / expand this list" aria-label="Collapse this list">▾</button>
+                  title="Collapse / expand this list" data-i18n-title="Collapse / expand this list" aria-label="Collapse this list" data-i18n-aria="Collapse this list">▾</button>
         </div>
         <div class="marker-head">
           <label class="marker-all"><input type="checkbox" id="markerSelectAll">Select all</label>
@@ -1337,13 +1337,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         </div>
         <div class="card-tools marker-tools">
           <button id="markerDeleteBtn" class="secondary" type="button"
-                  title="Delete checked markers (removes from project only; videos and data untouched)">Delete</button>
+                  title="Delete checked markers (removes from project only; videos and data untouched)" data-i18n-title="Delete checked markers (removes from project only; videos and data untouched)">Delete</button>
           <button id="markerKmlBtn" class="secondary" type="button"
-                  title="Export checked markers as KML (opens in Google Earth and similar apps)">Export KML</button>
+                  title="Export checked markers as KML (opens in Google Earth and similar apps)" data-i18n-title="Export checked markers as KML (opens in Google Earth and similar apps)">Export KML</button>
           <button id="markerCopyBtn" class="secondary" type="button"
-                  title="Copy checked markers as Name / Lat / Lng, tab-separated, ready to paste into Excel">Copy lat/lng</button>
+                  title="Copy checked markers as Name / Lat / Lng, tab-separated, ready to paste into Excel" data-i18n-title="Copy checked markers as Name / Lat / Lng, tab-separated, ready to paste into Excel">Copy lat/lng</button>
           <button id="markerReportBtn" type="button"
-                  title="Build a Word report for checked markers (clickable contents, summary table, one video and one map image per marker)">Make Word report</button>
+                  title="Build a Word report for checked markers (clickable contents, summary table, one video and one map image per marker)" data-i18n-title="Build a Word report for checked markers (clickable contents, summary table, one video and one map image per marker)">Make Word report</button>
         </div>
         <div id="markerList" class="marker-list"></div>
         <div id="reportStatus" class="marker-hint" style="display:none"></div>
@@ -1375,7 +1375,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div class="ab-row ab-tools">
           <span class="ab-title" data-i18n="Track map">Track map</span>
           <button id="photoLayerBtn" class="photo-layer-btn" type="button" aria-pressed="false"
-                  title="Show all photo points on the map and zoom to fit them (click again to hide)" data-i18n="Load all photos">Load all photos</button>
+                  title="Show all photo points on the map and zoom to fit them (click again to hide)" data-i18n-title="Show all photo points on the map and zoom to fit them (click again to hide)" data-i18n="Load all photos">Load all photos</button>
           <span class="photo-tools">
             <span id="photoLayerCount" class="photo-sub"></span><span id="photoLayerCountExtra"
                   class="photo-sub"></span>
@@ -1385,11 +1385,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                没有 .tif 时按钮本身不出现，不占位置。 -->
           <button id="orthoBtn" class="coverage-toggle-btn" type="button"
                   aria-pressed="false" hidden
-                  title="Overlay this project's orthomosaic (GeoTIFF) on the map" data-i18n="Ortho">Ortho</button>
+                  title="Overlay this project's orthomosaic (GeoTIFF) on the map" data-i18n-title="Overlay this project's orthomosaic (GeoTIFF) on the map" data-i18n="Ortho">Ortho</button>
           <span id="orthoStatus" class="photo-sub" hidden></span>
           <button id="coverageToggleBtn" class="coverage-toggle-btn" type="button"
                   aria-pressed="false"
-                  title="Show where this project's flights actually observed the ground, and how clearly" data-i18n="Coverage">Coverage</button>
+                  title="Show where this project's flights actually observed the ground, and how clearly" data-i18n-title="Show where this project's flights actually observed the ground, and how clearly" data-i18n="Coverage">Coverage</button>
           <label for="baseMap" class="ctrl-label" data-i18n="Base map">Base map</label>
           <select id="baseMap" class="ctrl-select">
             <option value="street" selected data-i18n="Street (Tianditu)">Street (Tianditu)</option>
@@ -1397,7 +1397,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             <option value="osm" data-i18n="OpenStreetMap">OpenStreetMap</option>
           </select>
           <button id="keyBtn" class="key-btn" type="button"
-                  title="Tianditu key: the app works without one; paste it here later and it takes effect on save" data-i18n="Tianditu key">Tianditu key</button>
+                  title="Tianditu key: the app works without one; paste it here later and it takes effect on save" data-i18n-title="Tianditu key: the app works without one; paste it here later and it takes effect on save" data-i18n="Tianditu key">Tianditu key</button>
           <!-- 折叠按钮：放到这一行末尾（不再绝对定位压住最后一个按钮） -->
           <!-- 选中位置：就在工具行里，不再单独占一行 -->
           <!-- 只放坐标（前缀太长会把小片挤成「Selected po…」）。
@@ -1406,7 +1406,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             <span id="probeSource" hidden>map click</span><span id="probeCoord" class="probe-coord"></span><span id="probeLabel"></span>
           </span>
           <button id="probeFoldBtn" class="ab-toggle" type="button" aria-pressed="false"
-                  title="Collapse these controls to see more of the map">–</button>
+                  title="Collapse these controls to see more of the map" data-i18n-title="Collapse these controls to see more of the map">–</button>
         </div>
 
         <!-- 第二行：搜索 + 三个检索按钮（用户要求"一整条，不用上下两排"） -->
@@ -1420,7 +1420,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                用户 2026-10-22：「所有以此位置为依据的按钮都应该放到鼠标旁边」。 -->
           <div class="ab-actions-hidden" style="display:none">
             <button id="searchNearbyBtn" data-i18n="Find flights at this position">Find flights at this position</button>
-            <button id="findFramesBtn" title="Across every flight in this project, find the moments that saw this exact spot — and how clearly" data-i18n="Frames of this spot">Frames of this spot</button>
+            <button id="findFramesBtn" title="Across every flight in this project, find the moments that saw this exact spot — and how clearly" data-i18n-title="Across every flight in this project, find the moments that saw this exact spot — and how clearly" data-i18n="Frames of this spot">Frames of this spot</button>
             <button id="clearProbeBtn" class="secondary" data-i18n="Clear selection">Clear selection</button>
             <button id="playHitBtn" class="play-btn" style="display:none" data-i18n="▶ Play video here">▶ Play video here</button>
             <button id="resultFlyBtn" class="secondary" style="display:none" data-i18n="Center map here">Center map here</button>
@@ -1452,7 +1452,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <button id="coverageBuildBtn" type="button"
                   data-i18n-title="Generate the coverage grid for this flight (reads its SRT; about 30 s for a 20-minute video)"
                   data-i18n="Build"
-                  title="Generate the coverage grid for this flight (reads its SRT; about 30 s for a 20-minute video)">Build</button>
+                  title="Generate the coverage grid for this flight (reads its SRT; about 30 s for a 20-minute video)" data-i18n-title="Generate the coverage grid for this flight (reads its SRT; about 30 s for a 20-minute video)">Build</button>
           <span id="coverageStatus" class="coverage-status"></span>
         </div>
         <div class="coverage-row">
@@ -1479,10 +1479,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                只留一个图标，鼠标放上去或者点击，才会出现这个说明」。
                说明文本在每次点查询后写到 title 里（内容随该点的数值变）。 -->
           <span id="coverageAccuracy" class="cov-info" tabindex="0" role="note"
-                aria-label="Accuracy notes">i</span>
+                aria-label="Accuracy notes" data-i18n-aria="Accuracy notes">i</span>
           <button id="coverageShowBtn" type="button" aria-pressed="false">Show</button>
           <button id="coverageExportBtn" class="secondary" type="button"
-                  title="Export the current coverage area as GeoJSON">Export</button>
+                  title="Export the current coverage area as GeoJSON" data-i18n-title="Export the current coverage area as GeoJSON">Export</button>
           <span id="coverageHint" class="coverage-hint"></span>
         </div>
       </div>
@@ -1522,33 +1522,33 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             <div id="videoInfo" class="video-info"></div>
           </div>
           <div class="row video-head-tools">
-            <button id="crosshairToggle" class="toggle-btn" type="button" aria-pressed="true" title="Center crosshair: show / hide" data-i18n="Crosshair">Crosshair</button>
-            <button id="footprintToggle" class="toggle-btn" type="button" aria-pressed="true" title="Camera field of view: show / hide (ground area covered by the frame)" data-i18n="FOV">FOV</button>
-            <button id="thermalToggle" class="toggle-btn" type="button" hidden aria-pressed="true" title="Sync thermal view: show / hide (bottom-left of the frame)" data-i18n="IR">IR</button>
-            <button id="mapPipToggle" class="toggle-btn" type="button" aria-pressed="true" title="Mini map: show / hide (bottom-right, follows the drone)" data-i18n="Mini map">Mini map</button>
-            <button id="speedToggle" class="toggle-btn" type="button" aria-pressed="false" title="2× playback: on / off (applies to both video and thermal, and persists across videos)" data-i18n="2× speed">2× speed</button>
+            <button id="crosshairToggle" class="toggle-btn" type="button" aria-pressed="true" title="Center crosshair: show / hide" data-i18n-title="Center crosshair: show / hide" data-i18n="Crosshair">Crosshair</button>
+            <button id="footprintToggle" class="toggle-btn" type="button" aria-pressed="true" title="Camera field of view: show / hide (ground area covered by the frame)" data-i18n-title="Camera field of view: show / hide (ground area covered by the frame)" data-i18n="FOV">FOV</button>
+            <button id="thermalToggle" class="toggle-btn" type="button" hidden aria-pressed="true" title="Sync thermal view: show / hide (bottom-left of the frame)" data-i18n-title="Sync thermal view: show / hide (bottom-left of the frame)" data-i18n="IR">IR</button>
+            <button id="mapPipToggle" class="toggle-btn" type="button" aria-pressed="true" title="Mini map: show / hide (bottom-right, follows the drone)" data-i18n-title="Mini map: show / hide (bottom-right, follows the drone)" data-i18n="Mini map">Mini map</button>
+            <button id="speedToggle" class="toggle-btn" type="button" aria-pressed="false" title="2× playback: on / off (applies to both video and thermal, and persists across videos)" data-i18n-title="2× playback: on / off (applies to both video and thermal, and persists across videos)" data-i18n="2× speed">2× speed</button>
             <!-- 导出片段：以当前播放位置为中心，前 5 秒 + 后 5 秒（共 10 秒），1080p。
                  放在「2倍速」右边（用户 2026-10-07 指定的位置）。 -->
             <button id="clipBtn" class="toggle-btn" type="button"
-                    title="Export 5 seconds before and after the current frame (10s total), 1080p download" data-i18n="Export ±5s">Export ±5s</button>
+                    title="Export 5 seconds before and after the current frame (10s total), 1080p download" data-i18n-title="Export 5 seconds before and after the current frame (10s total), 1080p download" data-i18n="Export ±5s">Export ±5s</button>
             <!-- 原来自制了一个「全屏」按钮，但它和浏览器自带控件那个重复，
                  而且原生那个是真铺满、零黑边（自制那条 theater 布局始终有黑边）。
                  所以按需求删掉自制按钮，全屏统一用视频控件里的那个。 -->
-            <select id="followMode" class="follow-select" title="Map follow mode: Fit = keep both target and drone in view; Center = keep the drone centered; Off = map stays put">
+            <select id="followMode" class="follow-select" title="Map follow mode: Fit = keep both target and drone in view; Center = keep the drone centered; Off = map stays put" data-i18n-title="Map follow mode: Fit = keep both target and drone in view; Center = keep the drone centered; Off = map stays put">
               <option value="fit" data-i18n="Follow · Fit">Follow · Fit</option>
               <option value="center" data-i18n="Follow · Center">Follow · Center</option>
               <option value="off" data-i18n="No follow">No follow</option>
             </select>
             <!-- 图钉：钉住 = 视频面板不再自动收成一条 -->
             <button id="videoPinBtn" class="video-pin" type="button" aria-pressed="false"
-                    title="Pin the video panel (keep it expanded)" aria-label="Pin">
+                    title="Pin the video panel (keep it expanded)" data-i18n-title="Pin the video panel (keep it expanded)" aria-label="Pin">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
                 <path d="M9 3h6l-1 6 3 3v2h-5v6l-1 1-1-1v-6H4v-2l3-3-1-6z"
                       fill="none" stroke="currentColor" stroke-width="1.8"
                       stroke-linejoin="round"/>
               </svg>
             </button>
-            <button id="videoClose" class="video-close" type="button" title="Close (Esc)" aria-label="Close">
+            <button id="videoClose" class="video-close" type="button" title="Close (Esc)" data-i18n-title="Close (Esc)" aria-label="Close" data-i18n-aria="Close">
               <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
                 <path d="M5 5 L19 19 M19 5 L5 19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
               </svg>
@@ -1608,9 +1608,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div id="photoSub" class="photo-sub"></div>
         <div class="photo-head-tools">
           <button id="photoMapBtn" class="secondary" type="button"
-                  title="Center the map on this photo" data-i18n="Locate">Locate</button>
+                  title="Center the map on this photo" data-i18n-title="Center the map on this photo" data-i18n="Locate">Locate</button>
           <button id="photoCloseBtn" class="secondary" type="button"
-                  title="Collapse the photo panel (photo layer stays)" data-i18n="Collapse">Collapse</button>
+                  title="Collapse the photo panel (photo layer stays)" data-i18n-title="Collapse the photo panel (photo layer stays)" data-i18n="Collapse">Collapse</button>
         </div>
       </div>
       <div id="photoChips" class="photo-chips"></div>
@@ -1696,7 +1696,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     <label class="mini-modal-field">
       <span class="mini-modal-field-label">Category</span>
       <input id="markerEditCategory" type="text" list="markerEditCategoryList"
-             autocomplete="off" placeholder="pick one below or type a new one">
+             autocomplete="off" placeholder="pick one below or type a new one" data-i18n-placeholder="pick one below or type a new one">
       <datalist id="markerEditCategoryList"></datalist>
     </label>
     <div class="mini-modal-hint mini-modal-hint-small" id="markerEditCategoryHint"></div>
@@ -1725,7 +1725,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     <label class="mini-modal-field">
       <span class="mini-modal-field-label">Category</span>
       <input id="videoMarkCategory" type="text" list="videoMarkCategoryList"
-             autocomplete="off" placeholder="e.g. crack / 裂缝 —— pick one below or type a new one">
+             autocomplete="off" placeholder="e.g. crack / 裂缝 —— pick one below or type a new one" data-i18n-placeholder="e.g. crack / 裂缝 —— pick one below or type a new one">
       <datalist id="videoMarkCategoryList"></datalist>
     </label>
     <div class="mini-modal-hint mini-modal-hint-small" id="videoMarkCategoryHint"></div>
@@ -1801,7 +1801,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       The project name is only a label in the list; which data belongs to it is up to you.
       You can import more later with “Import data”.
     </div>
-    <input id="newProjectName" type="text" placeholder="Project name, e.g. Dongguan 5">
+    <input id="newProjectName" type="text" placeholder="Project name, e.g. Dongguan 5" data-i18n-placeholder="Project name, e.g. Dongguan 5">
     <div id="newProjectError" class="mini-modal-error" style="display:none"></div>
     <div class="row mini-modal-actions">
       <button id="newProjectCancel" class="secondary">Cancel</button>
@@ -2440,7 +2440,7 @@ function applyReportCapabilities(caps){
   reportAvailable=missing.length===0;
 
   if(!reportAvailable){
-    markerReportBtn.title='The report needs: '+missing.join(' / ')+' (restart the server after installing)';
+    markerReportBtn.title=t('The report needs:')+' '+missing.join(' / ')+' '+t('(restart the server after installing)');
   }
 
   updateMarkerBar();
@@ -2474,7 +2474,7 @@ async function loadProjects(){
   try{
     const d=await api('/api/project/list');
     projectSelect.innerHTML='';
-    if(!d.projects?.length){projectSelect.innerHTML='<option>No projects</option>';return}
+    if(!d.projects?.length){projectSelect.innerHTML='<option>'+t('No projects')+'</option>';return}
     d.projects.forEach((p,i)=>{const o=document.createElement('option');o.value=p.name;o.textContent=p.name;projectSelect.appendChild(o)});
     await scanGeoJSON();
     // 初次载入 / 重新载入后，把三个步骤按钮的状态对齐实际情况
@@ -2489,7 +2489,7 @@ async function loadProjects(){
 async function scanGeoJSON(){
   const name=projectSelect.value;
   if(!name)return;
-  hide(fileNotice);fileList.innerHTML='<div style="color:#64748b;padding:15px">Scanning GeoJSON files…</div>';
+  hide(fileNotice);fileList.innerHTML='<div style="color:#64748b;padding:15px">'+t('Scanning GeoJSON files…')+'</div>';
   try{
     const d=await api('/api/project/geojson-list?name='+encodeURIComponent(name));
     geoFiles=pickOneGeoFilePerVideo(d.files||[]);
@@ -3236,7 +3236,7 @@ function followViewport(){
   // 给一句话说明，免得他以为跟随坏了。（改跟随模式即解除。）
   if(followSuppressedByProbe){
     if(videoStatus){
-      videoStatus.textContent='Map follow is paused for this selection — pick a follow mode (or drag the map) to resume.';
+      videoStatus.textContent=t('Map follow is paused for this selection — pick a follow mode (or drag the map) to resume.');
     }
     return;
   }
@@ -4382,7 +4382,7 @@ function updateMarkerCategoryHint(){
   if(!videoMarkCategoryHint||!videoMarkCategory)return;
   const v=String(videoMarkCategory.value||'').trim();
   if(!v){
-    videoMarkCategoryHint.textContent='Leave blank to file this marker without a category.';
+    videoMarkCategoryHint.textContent=t('Leave blank to file this marker without a category.');
     return;
   }
   const exists=markerCategories().some(c=>c===v);
@@ -4402,7 +4402,7 @@ async function saveProjectMarkers(){
     await jsonPost('/api/project/markers',{project_name:name,markers:projectMarkers});
   }catch(e){
     // 保存失败不阻塞取点，只在状态栏说一句
-    if(videoStatus)videoStatus.textContent='Failed to save markers: '+e.message;
+    if(videoStatus)videoStatus.textContent=t('Failed to save markers: ')+e.message;
   }
 }
 
@@ -4759,7 +4759,7 @@ function updateMarkerEditHint(){
   const catEl=document.getElementById('markerEditCategory');
   if(!el||!catEl)return;
   const v=String(catEl.value||'').trim();
-  if(!v){el.textContent='Leave blank to file this marker without a category.';return}
+  if(!v){el.textContent=t('Leave blank to file this marker without a category.');return}
   const exists=markerCategories().some(c=>c===v);
   el.textContent=exists
     ? `Moves this marker into the existing category “${v}”.`
@@ -4782,7 +4782,7 @@ async function confirmMarkerEdit(){
 
   const name=String((nameEl&&nameEl.value)||'').trim();
   if(!name){
-    if(errEl){errEl.textContent='The name cannot be empty.';errEl.style.display='block'}
+    if(errEl){errEl.textContent=t('The name cannot be empty.');errEl.style.display='block'}
     return;
   }
 
@@ -4842,7 +4842,7 @@ function jumpToMarker(id){
   if(map)map.setView([m.lat,m.lng],TRACK_FOCUS_ZOOM);
 
   if(!m.video){
-    if(videoStatus)videoStatus.textContent='This marker has no matching video frame.';
+    if(videoStatus)videoStatus.textContent=t('This marker has no matching video frame.');
     return;
   }
 
@@ -4853,7 +4853,7 @@ function jumpToMarker(id){
   const f=geoFiles.find(x=>trackMatchesPath(x.relative_path,want));
 
   if(!f){
-    if(videoStatus)videoStatus.textContent='Could not find the video for this marker: '+m.video;
+    if(videoStatus)videoStatus.textContent=t('Could not find the video for this marker: ')+m.video;
     return;
   }
 
@@ -5959,7 +5959,7 @@ async function loadProjectPhotos(){
 
     // 照片是附加功能：接口挂了不该打断轨迹/视频这条主线，
     // 所以只在计数位置写一句原因，不弹红框。
-    if(photoLayerCount)photoLayerCount.textContent='Failed to load photos: '+e.message;
+    if(photoLayerCount)photoLayerCount.textContent=t('Failed to load photos: ')+e.message;
   }
 }
 
@@ -6028,8 +6028,8 @@ function photoGalleryHtml(group){
     // 判定来自后端 photo_meta：宽高比 2:1 且宽度 >= 4000。
     `<figure class="photo-shot photo-lead-shot" data-photo-name="${esc(lead.name)}"` +
     (lead.panorama ? ` data-pano="1" style="background-image:url('${esc(photoThumbUrl(lead.folder,lead.name,320))}')"` : '') +
-    (lead.panorama ? ` title="Click to look around in this 360 photo"`
-                   : ` title="Open the video at this photo\'s time"`) + `>`
+    (lead.panorama ? ` title="Click to look around in this 360 photo" data-i18n-title="Click to look around in this 360 photo"`
+                   : ` title="Open the video at this photo\'s time" data-i18n-title="Open the video at this photo\'s time"`) + `>`
     +`<img src="${esc(lead.panorama?panoCoverUrl(lead.folder,lead.name,720):photoThumbUrl(lead.folder,lead.name,720))}" alt="${esc(photoMemberLabel(lead))}Photo">`
     // 360 封面：把「等距柱状缩略图」先铺成背景（几十 KB，毫秒级），
     // 服务端透视封面到了再淡入 —— 否则 figure 会塌成一条细黑条（用户 2026-10-22）
@@ -6042,8 +6042,8 @@ function photoGalleryHtml(group){
 
     return `<figure class="photo-shot photo-thumb" data-photo-name="${esc(m.name)}"`
       +(m.panorama ? ` data-pano="1"` : '')
-      +(m.panorama ? ` title="Click to look around in this 360 photo"`
-                   : ` title="Open the video at this photo\'s time"`) + `>`
+      +(m.panorama ? ` title="Click to look around in this 360 photo" data-i18n-title="Click to look around in this 360 photo"`
+                   : ` title="Open the video at this photo\'s time" data-i18n-title="Open the video at this photo\'s time"`) + `>`
       +`<img src="${esc(m.panorama?panoCoverUrl(m.folder,m.name,480):photoThumbUrl(m.folder,m.name,240))}" alt="${esc(photoMemberLabel(m))}Photo">`
       +(m.panorama ? `<span class="pano-badge">360</span>` : '')
       +`<figcaption class="photo-cap">`
@@ -6188,7 +6188,7 @@ async function selectPhotoGroup(index){
       });
     });
 
-    photoJump.innerHTML='<div class="photo-jump-title">Looking for the matching video…</div>';
+    photoJump.innerHTML='<div class="photo-jump-title">'+t('Looking for the matching video…')+'</div>';
     photoJump.style.display='block';
 
     photoCard.style.display='block';
@@ -6409,7 +6409,7 @@ function openPhotoVideo(group,name){
     }
   }catch(e){}
 
-  if(videoInfo)videoInfo.textContent='No matching video clip found for this photo.';
+  if(videoInfo)videoInfo.textContent=t('No matching video clip found for this photo.');
 }
 
 // 打开**全景照片**的 360 查看器。
@@ -6568,7 +6568,7 @@ function panoInlineLoad(urlThumb,urlFull,label){
     full.src=urlFull;
   };
   thumb.onerror=()=>{
-    if(panoInline.msg)panoInline.msg.textContent='360 photo failed to load';
+    if(panoInline.msg)panoInline.msg.textContent=t('360 photo failed to load');
   };
   thumb.src=urlThumb;
 }
@@ -7098,7 +7098,7 @@ if(videoPlayer)videoPlayer.addEventListener('contextmenu',e=>{
   e.preventDefault();
 
   if(!clip){
-    videoStatus.textContent='Play a video first, then right-click on the frame to mark a point.';
+    videoStatus.textContent=t('Play a video first, then right-click on the frame to mark a point.');
     return;
   }
 
@@ -7106,7 +7106,7 @@ if(videoPlayer)videoPlayer.addEventListener('contextmenu',e=>{
 
   if(!hit){
     videoStatus.textContent=
-      'Cannot compute a ground position here: the camera may be level or pointing up, or telemetry is missing at this moment.';
+      t('Cannot compute a ground position here: the camera may be level or pointing up, or telemetry is missing at this moment.');
     return;
   }
 
@@ -7658,14 +7658,14 @@ function clipTimeText(seconds){
 
 function exportClip(){
   if(!clip){
-    if(videoStatus)videoStatus.textContent='No video is playing. Open one and then export.';
+    if(videoStatus)videoStatus.textContent=t('No video is playing. Open one and then export.');
     return;
   }
 
   const center=currentVideoSeconds();
 
   if(center===null){
-    if(videoStatus)videoStatus.textContent='Cannot read the playback position yet. Wait a moment and export again.';
+    if(videoStatus)videoStatus.textContent=t('Cannot read the playback position yet. Wait a moment and export again.');
     return;
   }
 
@@ -7704,7 +7704,7 @@ function exportClip(){
     },1200);
 
   }catch(e){
-    if(videoStatus)videoStatus.textContent='Export failed: '+e.message;
+    if(videoStatus)videoStatus.textContent=t('Export failed: ')+e.message;
 
   }finally{
     setTimeout(()=>{if(clipBtn)clipBtn.disabled=false},1500);
@@ -7850,14 +7850,14 @@ function applyLeftView(view){
   //   标记点页左上 `项目数据 ›` 往右扫回来）。
   if(sideToggle){
     sideToggle.textContent=markers?'Project ›':'‹ Markers';
-    sideToggle.title=markers?'Back to project / tracks':'Switch to markers (list and export)';
+    sideToggle.title=markers?t('Back to project / tracks'):t('Switch to markers (list and export)');
     sideToggle.setAttribute('aria-label',sideToggle.title);
     // aria-pressed 表示「标记点页是否正显示」
     sideToggle.setAttribute('aria-pressed',markers?'true':'false');
   }
   if(sideToggleBack){
     sideToggleBack.textContent='Project ›';
-    sideToggleBack.title='Back to project / tracks';
+    sideToggleBack.title=t('Back to project / tracks');
   }
 
   // 布局没变宽窄，但列表的可用宽度/高度变了：重排一次列表栏数
@@ -7974,7 +7974,7 @@ function tickPhotoPause(){
     videoPlayer.pause();
     photoPauseAt=null;
     if(videoCountdown)videoCountdown.hidden=true;
-    if(videoStatus)videoStatus.textContent='Reached the photo\'s time — paused automatically (this is the exact frame).';
+    if(videoStatus)videoStatus.textContent=t('Reached the photo\'s time — paused automatically (this is the exact frame).');
     return;
   }
 
@@ -8036,7 +8036,7 @@ function startClip(){
 
     // 只定位、不自动播放（点标记点跳过去就是这种）：停在那一帧，等用户自己点播放
     if(st.autoPlay===false){
-      videoStatus.textContent='Positioned at that moment (not playing) — press play to continue.';
+      videoStatus.textContent=t('Positioned at that moment (not playing) — press play to continue.');
       syncDroneMarker();
       return;
     }
@@ -8044,7 +8044,7 @@ function startClip(){
     videoPlayer.play().then(()=>{
       videoStatus.textContent=t('Playing')+(clip&&clip.useProxy?(' '+t('(transcoded clip)')):(' '+t('(original)')));
     }).catch(()=>{
-      videoStatus.textContent='Video loaded — press the player\'s play button.';
+      videoStatus.textContent=t('Video loaded — press the player\'s play button.');
     });
   };
   videoPlayer.addEventListener('loadedmetadata',onMeta);
@@ -8136,7 +8136,7 @@ videoPlayer.addEventListener('timeupdate',()=>{
   if(videoStopAt!==null && videoPlayer.currentTime>=videoStopAt){
     videoPlayer.currentTime=videoStopAt;
     videoPlayer.pause();
-    videoStatus.textContent='Reached the end of this track segment.';
+    videoStatus.textContent=t('Reached the end of this track segment.');
   }
   // 没有 rAF 的环境（极老 webview）退回这条通道，别把「到点暂停」丢了
   tickPhotoPause();
@@ -8212,11 +8212,11 @@ videoPlayer.addEventListener('error',async()=>{
   const mediaError=videoPlayer.error;
   const code=mediaError?mediaError.code:0;
 
-  videoStatus.textContent='Video failed to load — checking the server…';
+  videoStatus.textContent=t('Video failed to load — checking the server…');
 
   // 服务端没起来的话，原片和转码片段都会失败，先明确告诉用户
   if(!await serverAlive()){
-    videoStatus.innerHTML='<b>The server is not responding.</b> Make sure <code>python project_manager.py</code> is still running; '
+    videoStatus.innerHTML='<b>'+t('The server is not responding.')+'</b> '+t('Make sure project_manager.py is still running;')+' '
       +'if you just changed backend code or restarted the server, reload this page and try again.'
       +`<br>Error code ${code}  ·  network state ${videoPlayer.networkState}`;
     return;
@@ -8308,7 +8308,7 @@ function togglePlay(){
     // 否则一 play 就又被 timeupdate 立刻暂停，像是没反应
     if(videoStopAt!==null&&videoPlayer.currentTime>=videoStopAt){
       videoStopAt=null;
-      videoStatus.textContent='Passed the end of the track segment; continuing playback.';
+      videoStatus.textContent=t('Passed the end of the track segment; continuing playback.');
     }
     videoPlayer.play().catch(()=>{});
   }else{
@@ -8794,7 +8794,7 @@ function showNewProjectError(message){
 async function doCreateProject(name){
   const old=createProjectBtn.textContent;
   createProjectBtn.disabled=true;
-  createProjectBtn.textContent='Choose the data folder in the dialog…';
+  createProjectBtn.textContent=t('Choose the data folder in the dialog…');
 
   try{
     await jsonPost('/api/project/create',{name});
@@ -8951,7 +8951,7 @@ if(addFolderBtn)addFolderBtn.addEventListener('click',()=>{
 
 async function pickFolder(quiet){
   const old=addFolderBtn?addFolderBtn.textContent:'';
-  if(addFolderBtn){addFolderBtn.disabled=true;addFolderBtn.textContent='Choose a folder in the dialog…'}
+  if(addFolderBtn){addFolderBtn.disabled=true;addFolderBtn.textContent=t('Choose a folder in the dialog…')}
   closeImportDialog();
 
   try{
@@ -8994,7 +8994,7 @@ async function pickFolder(quiet){
 
 async function pickFiles(){
   const old=addFolderBtn?addFolderBtn.textContent:'';
-  if(addFolderBtn){addFolderBtn.disabled=true;addFolderBtn.textContent='Choose files in the dialog…'}
+  if(addFolderBtn){addFolderBtn.disabled=true;addFolderBtn.textContent=t('Choose files in the dialog…')}
   closeImportDialog();
 
   try{
@@ -11407,7 +11407,7 @@ function showTimelineSync(d){
         +`</div>`;
     }).join('');
   }else{
-    list.innerHTML='<div class="sync-row"><span class="m">No duration mismatch found.</span></div>';
+    list.innerHTML='<div class="sync-row"><span class="m">'+t('No duration mismatch found.')+'</span></div>';
   }
 
   const foot=document.getElementById('syncFoot');
@@ -11562,6 +11562,11 @@ function applyI18n(root){
   scope.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{
     const v=t(el.dataset.i18nPlaceholder);
     if(v!==el.dataset.i18nPlaceholder)el.placeholder=v;
+  });
+  // aria-label：读屏与"只有图标的按钮"靠它，同样要能切语言
+  scope.querySelectorAll('[data-i18n-aria]').forEach(el=>{
+    const v=t(el.dataset.i18nAria);
+    if(v!==el.dataset.i18nAria)el.setAttribute('aria-label',v);
   });
   // documentElement 可能不存在 —— 测试用的是简化的 document mock。
   // 读它要判空，否则一条 TypeError 会把整个 boot() 打断，
