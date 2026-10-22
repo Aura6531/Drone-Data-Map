@@ -64,6 +64,12 @@ QUALITY_TIERS = {
     "medium": {"lens_size": 2048, "equi_w": 1536, "crf": 22},
     "fast": {"lens_size": 1536, "equi_w": 1536, "crf": 23},
     "quick": {"lens_size": 1280, "equi_w": 1280, "crf": 24},
+    # 清晰档：给"要看清细节"的场合。
+    # 为什么要它：full 档 equi 只有 2048×1024，播放器按 75° FOV 裁出的窗口只有约 430 px 宽，
+    # 铺到 1800 px 显示就是 ~4 倍放大 —— 用户 2026-10-22 反馈"非常糊"就是它。
+    # lens 取 3840（等于原片鱼眼的边长，不再降采样），equi 4096×2048（像素数是 full 的 4 倍）。
+    # 代价：转码时间与体积都明显上升（实测数据见 README/提交说明），按需对个别片段用。
+    "sharp": {"lens_size": 3840, "equi_w": 4096, "crf": 20},
 }
 DEFAULT_TIER = "full"
 

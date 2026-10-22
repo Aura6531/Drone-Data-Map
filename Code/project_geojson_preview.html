@@ -2449,12 +2449,27 @@ function renderFiles(){
       ?`<span class="badge badge-type" title="${esc(streamNoteOf(f.relative_path))}">${esc(typeLabel)}</span>`
       :'';
 
+    // 360 素材（`_D` 流）：给一个「360」按钮，直接开全景播放器。
+    // 视频列表里点 `.OSV` 本来是被跳过的（浏览器解不了），不给入口就只能手拼 URL。
+    const isPano360=/_d(\.3d)?\.geojson$/i.test(String(f.relative_path||''));
+    const panoBadge=isPano360
+      ?`<span class="badge badge-type" title="${t('360 panorama material (dual fisheye). Open the panorama player to look around.')}">360</span>`
+      :'';
+    const panoBtn=isPano360
+      ?`<button class="secondary" data-act="pano" title="${t('Open in the 360 panorama player (drag to look around)')}">360</button>`
+      :'';
+
     // 只留：文件名（简化）、类型、大小、记录数、轨迹段。
     // 「数据文件夹 / 相对路径」那行太长会把窄列撑出横向滚动条，挪到悬停提示里。
     item.title=`${f.file_name}\n${t('Folder:')} ${f.folder_name}  ·  ${t('Relative path:')} ${f.relative_path}`;
 
-    item.innerHTML=`<div class="file-main"><div class="file-name">${esc(shortFileName(f.relative_path))}</div><div class="file-badges">${typeBadge}<span class="badge">${formatSize(f.size)}</span><span class="badge">${f.record_count??'-'} ${t('points')}</span><span class="badge">${f.segment_count??'-'} ${t('segments')}</span></div></div><div class="file-acts"><button class="secondary" data-act="load">${t('Load')}</button><button class="secondary danger" data-act="del" title="${t('Remove this GeoJSON from the project (source video and SRT are kept)')}">${t('Delete')}</button></div>`;
+    item.innerHTML=`<div class="file-main"><div class="file-name">${esc(shortFileName(f.relative_path))}</div><div class="file-badges">${typeBadge}${panoBadge}<span class="badge">${formatSize(f.size)}</span><span class="badge">${f.record_count??'-'} ${t('points')}</span><span class="badge">${f.segment_count??'-'} ${t('segments')}</span></div></div><div class="file-acts">${panoBtn}<button class="secondary" data-act="load">${t('Load')}</button><button class="secondary danger" data-act="del" title="${t('Remove this GeoJSON from the project (source video and SRT are kept)')}">${t('Delete')}</button></div>`;
     item.querySelector('button[data-act="load"]').addEventListener('click',ev=>{ev.stopPropagation();loadOne(index)});
+    if(panoBtn)item.querySelector('button[data-act="pano"]').addEventListener('click',ev=>{
+      ev.stopPropagation();
+      // `.OSV` 与 `.geojson` 同目录同主名，换后缀就能拿到素材路径
+      openPano360(String(f.relative_path||'').replace(/\.geojson$/i,'.OSV'));
+    });
     item.querySelector('button[data-act="del"]').addEventListener('click',ev=>{
       ev.stopPropagation();
       deleteGeoFile(index);
@@ -7573,6 +7588,22 @@ function fallbackToProxy(reason){
   startClip();
 }
 
+// 打开 360 全景播放器（`.OSV`：后端转成等距柱状视频后，canvas 拖拽转向）
+//
+// 为什么需要这个函数：视频列表里点 `.OSV` 是被**刻意跳过**的（浏览器解不了双鱼眼 HEVC），
+// 于是用户只能靠「图墙里的 360 项」或手拼 URL 才能看 —— 2026-10-22 用户反馈太绕。
+// 现在给了两个明确入口：列表行的「360」按钮、以及 360 航迹气泡里的「360 view from here」。
+function openPano360(rel,t=0,tier='full'){
+  const q=new URLSearchParams({
+    name:projectSelect.value||'',
+    rel:String(rel||'').replace(/\\/g,'/'),
+    tier,
+  });
+  const sec=Number(t);
+  if(Number.isFinite(sec)&&sec>0)q.set('t',String(Math.round(sec*100)/100));
+  window.open('/pano360_player.html?'+q.toString(),'_blank','noopener');
+}
+
 function openVideoFromPopup(encoded,autoPlay=true){
   // 开始播放后，轨迹气泡就没用了，顺手关掉（结果卡里的按钮同样走这里，
   // 那种情况下本来也没有气泡，closePopup 是空操作）
@@ -7580,6 +7611,15 @@ function openVideoFromPopup(encoded,autoPlay=true){
 
   try{
     const data=JSON.parse(decodeURIComponent(encoded));
+    const rel=String(data.relative_path||'');
+
+    // 360 素材：直接交给全景播放器（带上点击处的时间点），不要走 <video> ——
+    // 浏览器放不了 .OSV，走 video 只会黑屏。
+    if(/\.osv$/i.test(rel)){
+      openPano360(rel,Number(data.video_start||0));
+      return;
+    }
+
     const mode=proxyMode();
 
     clip={

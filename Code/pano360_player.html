@@ -77,6 +77,14 @@
         <option value="110">110°</option>
       </select>
     </label>
+    <!-- 档位：等距柱状的宽度决定"糊不糊"。full=2048（默认，已转过、秒开）；
+         sharp=4096（4 倍像素，清楚得多，但要重转一次：时间约 2.8×、体积约 3.9×）。 -->
+    <label class="dim" title="清晰档要重转一次，转完自动播">Q
+      <select id="tier">
+        <option value="full" selected>标准 2048</option>
+        <option value="sharp">清晰 4096</option>
+      </select>
+    </label>
     <button id="reset" type="button" title="Reset view (R)">Reset</button>
   </div>
 
@@ -90,7 +98,7 @@
 const Q = new URLSearchParams(location.search);
 const NAME = Q.get('name') || '';
 const REL  = Q.get('rel')  || '';
-const TIER = Q.get('tier') || 'full';
+let   TIER = Q.get('tier') || 'full';
 const T0   = Number(Q.get('t') || 0);
 
 const src    = document.getElementById('src');
@@ -296,6 +304,19 @@ seek.addEventListener('input', () => {
 });
 
 fovSel.addEventListener('change', () => { fov = Number(fovSel.value); requestDraw(); });
+
+// 档位切换：重新走一遍 boot()（会先查缓存/转码，再加载新档位的视频）
+const tierSel = document.getElementById('tier');
+if (tierSel) {
+  tierSel.value = TIER;
+  tierSel.addEventListener('change', () => {
+    TIER = tierSel.value;
+    ready = false;
+    planes.textContent = '…';
+    say('切换清晰度…', '标准档是 2048 宽、清晰档是 4096 宽。清晰档第一次要重转一次（分钟级），转完自动播。');
+    boot();
+  });
+}
 document.getElementById('reset').addEventListener('click', () => {
   yaw = 0; pitch = 0; fov = Number(fovSel.value); requestDraw();
 });
