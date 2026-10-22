@@ -8656,6 +8656,58 @@ class ProjectManagerHandler(
             self.path
         ).path
 
+        if path == "/api/project/delete-files":
+            # 「已加载」里勾了「同步删除磁盘文件」才会走到这里。
+            # 安全边界：只允许删除**项目已登记文件夹之内**的媒体文件。
+            try:
+                body = self.read_json()
+                project_name = (body.get("project_name") or "").strip()
+                paths = body.get("paths") or []
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                if not paths:
+                    raise ValueError("No file given.")
+
+                roots = []
+                for item in project.get("folders") or []:
+                    folder = item.get("path")
+                    if folder:
+                        try:
+                            roots.append(Path(folder).resolve())
+                        except OSError:
+                            pass
+
+                allowed_ext = {".mp4", ".mov", ".osv", ".jpg", ".jpeg", ".png"}
+                deleted, failed = [], []
+
+                for raw in paths:
+                    try:
+                        target = Path(str(raw)).resolve()
+                        inside = False
+                        for r in roots:
+                            try:
+                                target.relative_to(r)
+                                inside = True
+                                break
+                            except ValueError:
+                                pass
+                        if not inside:
+                            raise ValueError("Not inside the project folders.")
+                        if target.suffix.lower() not in allowed_ext:
+                            raise ValueError("Unsupported file type.")
+                        if not target.is_file():
+                            raise ValueError("Not found.")
+                        target.unlink()
+                        deleted.append(str(target))
+                    except Exception as exc:
+                        failed.append({"path": str(raw), "error": str(exc)})
+
+                json_response(self, {"success": True, "deleted": deleted, "failed": failed})
+            except Exception as e:
+                json_response(self, {"success": False, "error": str(e)}, status=400)
+            return
+
         if path == "/api/project/ui-state":
             # 左栏「已加载」的显隐状态。用户要求存在 project.json 里（多台机器来回导数据）。
             try:

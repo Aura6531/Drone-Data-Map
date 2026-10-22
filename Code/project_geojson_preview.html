@@ -877,6 +877,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .ld-row .ld-name:hover{text-decoration:underline}
 .ld-row.hidden .ld-name{color:#94a3b8;text-decoration:line-through}
 .ld-ico{width:16px;flex:0 0 16px;text-align:center}
+.ld-del{border:0;background:none;color:#cbd5e1;cursor:pointer;font-size:14px;
+    line-height:1;padding:0 2px;flex:0 0 auto}
+.ld-row:hover .ld-del{color:#b91c1c}
 .ld-empty{font-size:11px;color:#94a3b8;padding:6px 8px}
 
 .tree-row{display:flex;align-items:center;gap:5px;padding:2px 6px;border-radius:6px;
@@ -2996,7 +2999,9 @@ function addGeo(data,index,name,fileInfo){
   }
 
   // 每条航迹一个独立图层组：「已加载」面板里能单独勾选显隐
-  const trackGroup=L.layerGroup();
+  // 用 featureGroup（不是 layerGroup）：layerGroup 没有 getBounds，
+  // 外层 getBounds() 会退回去调 getLatLng() → “i.getLatLng is not a function”
+  const trackGroup=L.featureGroup();
   layer.addTo(trackGroup);
   trackGroup.addTo(layerGroup);
   // 记到刚登记的那条航迹上，「已加载」面板据此单独显隐
@@ -8720,6 +8725,18 @@ function ldRow(opts){
   name.title=`${t('Jump to')} ${opts.name}`;
   name.addEventListener('click',()=>{ try{opts.onGo()}catch(e){} });
   row.appendChild(name);
+
+  // 移出项目：只从地图和列表里去掉，磁盘文件不动
+  const del=document.createElement('button');
+  del.type='button';
+  del.className='ld-del';
+  del.textContent='×';
+  del.title=t('Remove from this project (files on disk are kept)');
+  del.addEventListener('click',(ev)=>{
+    ev.stopPropagation();
+    opts.onRemove&&opts.onRemove();
+  });
+  row.appendChild(del);
   return row;
 }
 
@@ -8755,6 +8772,12 @@ function ldGroup(title,items,onAll){
 function renderLoadedPanel(){
   const box=document.getElementById('loadedGroups');
   if(!box)return;
+  // 位置点 / 正射 / 覆盖 三份清单按需拉一次（失败就当没有）
+  if(!renderLoadedPanel._loaded){
+    renderLoadedPanel._loaded=true;
+    try{ if(typeof loadOrthoList==='function')loadOrthoList().then(()=>renderLoadedPanel()).catch(()=>{}); }catch(e){}
+    try{ if(typeof coverageLoadList==='function')coverageLoadList().then(()=>renderLoadedPanel()).catch(()=>{}); }catch(e){}
+  }
   box.innerHTML='';
 
   // —— 视频（每条航迹一个图层组）——
@@ -8770,6 +8793,15 @@ function renderLoadedPanel(){
       icon:(function(){ const k=streamKindOf(tr.video||''); return k==='thermal'?'🔥':k==='pano'?'🌐':'🎬'; })(),
       shown, key,
       onGo:()=>{ try{ map.fitBounds(tr.group.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
+      onRemove:()=>{
+        try{ if(tr.group)map.removeLayer(tr.group); }catch(e){}
+        try{ const i=loadedTracks.indexOf(tr); if(i>=0)loadedTracks.splice(i,1); }catch(e){}
+        try{ if(trackArrowLayer)trackArrowLayer.clearLayers(); }catch(e){}
+        renderLoadedPanel();
+        try{ rebuildLegend(); }catch(e){}
+        try{ scheduleTrackArrows(); }catch(e){}
+        taskLog(t('Removed from the project (files on disk are kept).'),'ok');
+      },
       onToggle:(on)=>{ loadedUiState.videos[key]=on; loadedUiSave(); renderLoadedPanel(); scheduleTrackArrows(); },
     };
   });
@@ -8791,6 +8823,71 @@ function renderLoadedPanel(){
       onToggle:(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
     }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); }));
   }
+
+  // —— 位置点（标记点）——
+  try{
+    const mk=(typeof projectMarkers!=='undefined'?projectMarkers:[]);
+    if(mk.length){
+      const items=mk.map((m,i)=>{
+        const key=m.name||('marker-'+i);
+        const shown=loadedUiState.markers[key]!==false;
+        return {
+          name:key, icon:'📍', shown, key,
+          onGo:()=>{ try{ map.setView([Number(m.lat),Number(m.lng)],Math.max(map.getZoom(),17)); }catch(e){} },
+          onToggle:(on)=>{ loadedUiState.markers[key]=on; loadedUiSave(); renderLoadedPanel(); },
+        };
+      });
+      box.appendChild(ldGroup(t('Positions'),items,(on)=>{
+        items.forEach(i=>{ loadedUiState.markers[i.key]=on; });
+        loadedUiSave(); renderLoadedPanel();
+      }));
+    }
+  }catch(e){}
+
+  // —— 正射影像 ——
+  try{
+    const list=(typeof orthoList!=='undefined'&&orthoList)?orthoList:[];
+    if(list.length){
+      const items=list.map((it)=>{
+        const key=it.name||it.file||'ortho';
+        const shown=loadedUiState.ortho[key]!==false && (orthoLayer!=null || loadedUiState.ortho[key]===true);
+        return {
+          name:key, icon:'🗺', shown, key,
+          onGo:()=>{ try{ if(orthoLayer&&orthoLayer.getBounds)map.fitBounds(orthoLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
+          onToggle:(on)=>{ loadedUiState.ortho[key]=on; loadedUiSave();
+            try{ if(on){ if(typeof orthoApply==='function')orthoApply(); } else if(orthoLayer){ map.removeLayer(orthoLayer); orthoLayer=null; } }catch(e){}
+            renderLoadedPanel(); },
+        };
+      });
+      box.appendChild(ldGroup(t('Orthophoto'),items,(on)=>{
+        items.forEach(i=>{ loadedUiState.ortho[i.key]=on; });
+        loadedUiSave(); renderLoadedPanel();
+      }));
+    }
+  }catch(e){}
+
+  // —— 覆盖图层（热力图）——
+  try{
+    const list=(typeof coverageItems!=='undefined'&&coverageItems)?coverageItems:[];
+    const built=list.filter(it=>it&&it.built);
+    if(built.length){
+      const items=built.map((it)=>{
+        const key=it.srt||it.srt_name||'coverage';
+        const shown=loadedUiState.coverage[key]!==false && coverageLayer!=null;
+        return {
+          name:it.video_name||it.srt_name||key, icon:'🔥', shown, key,
+          onGo:()=>{ try{ if(coverageLayer&&coverageLayer.getBounds)map.fitBounds(coverageLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
+          onToggle:(on)=>{ loadedUiState.coverage[key]=on; loadedUiSave();
+            try{ if(on){ if(typeof coverageShow==='function')coverageShow(); } else if(typeof coverageHideLayer==='function')coverageHideLayer(); }catch(e){}
+            renderLoadedPanel(); },
+        };
+      });
+      box.appendChild(ldGroup(t('Coverage'),items,(on)=>{
+        items.forEach(i=>{ loadedUiState.coverage[i.key]=on; });
+        loadedUiSave(); renderLoadedPanel();
+      }));
+    }
+  }catch(e){}
 
   if(!box.children.length){
     box.innerHTML=`<div class="ld-empty">${esc(t('Nothing loaded yet — import data above.'))}</div>`;
