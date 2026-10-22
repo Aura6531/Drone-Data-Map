@@ -2792,7 +2792,11 @@ async function refreshMissingHint(name){
 
 function renderFiles(){
   fileList.innerHTML='';
-  if(!geoFiles.length){show(fileNotice,t('This project has no GeoJSON yet — import data above (tracks are generated automatically).'),false);return}
+  if(!geoFiles.length){
+    // 同样只是提示：放到左下角任务日志，面板里不再常驻一条绿块
+    hide(fileNotice);
+    taskLog(t('This project has no GeoJSON yet — import data above (tracks are generated automatically).'),'info');
+    return}
   hide(fileNotice);
 
   // 按视频类型归拢（同类型内保持原顺序）。
@@ -10074,11 +10078,14 @@ async function ensureAllLoaded(){
   const entries=filteredGeoFiles();
 
   if(!entries.length){
-    show(mapNotice,geoFiles.length?t('No GeoJSON to load with the current filter.')
-      : photoGroups.length
+    // 纯提示走左下角任务日志，不要在地图顶部占一条横幅
+    const msg=geoFiles.length
+      ? t('No GeoJSON to load with the current filter.')
+      : (photoGroups.length
         ? t('This project has only photos so far — showing them on the map.')
-        : t('This project has no GeoJSON to load.'),
-      true);
+        : t('This project has no GeoJSON to load.'));
+    hide(mapNotice);
+    taskLog(msg,'info');
     return false;
   }
 
