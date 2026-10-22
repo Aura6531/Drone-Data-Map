@@ -173,7 +173,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .error{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
 /* 语言切换：固定右上角。刻意做小、做轻 —— 它是个“设置项”，
    不该抢地图/按钮的注意力。观感与地图上那几个悬浮控件同一套（毛玻璃）。 */
-.lang-switch{position:fixed;top:8px;right:12px;z-index:11500;
+.lang-switch{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
   display:flex;align-items:center;gap:6px;
   padding:5px 8px;border-radius:9px;
   background:rgba(255,255,255,.72);
@@ -181,13 +181,14 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
   backdrop-filter:blur(7px) saturate(1.7);
   border:1px solid rgba(148,163,184,.42);
   box-shadow:0 1px 8px rgba(15,23,42,.12)}
-.lang-switch label{margin:0;font-size:12px;color:#475569;white-space:nowrap}
-.lang-switch select{height:26px;padding:0 6px;font-size:12px;
+.lang-switch label{margin:0;font-size:13px;color:#475569;white-space:nowrap}
+.lang-switch select{height:32px;padding:0 6px;font-size:13px;
   border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#0f172a;
   max-width:130px}
 .lang-switch select:focus{outline:none;border-color:#2563eb;
   box-shadow:0 0 0 3px rgba(37,99,235,.12)}
 /* 窄屏（≤900px）把“语言”两个字藏掉，只留下拉框，省出右上角空间 */
+/* 收成一条时（.folded）语言切换跟着工具行一起被隐藏，不额外处理 */
 @media (max-width:900px){.lang-switch label{display:none}}
 /* 时间轴不同步的弹框。做成真正的模态（盖住全屏 + 背景变暗），
    因为"跳到错的时刻"是**静默的错** —— 不挡住用户根本不会注意到。
@@ -453,7 +454,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
      · 宽屏一行排开（省高度），窄屏自动换行（省不了高度但保证能用）
    ------------------------------------------------------------ */
 .action-bar{position:absolute;left:10px;top:10px;z-index:810;
-            max-width:min(860px,calc(100% - 20px));
+            max-width:min(1010px,calc(100% - 20px));
             display:flex;flex-direction:column;align-items:stretch;gap:8px;
             padding:8px 12px;border-radius:9px;
             background:rgba(255,255,255,.55);
@@ -1210,20 +1211,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 <button id="fatalClose" class="fatal-close" type="button" style="display:none"
         title="Dismiss" data-i18n-title="Dismiss" aria-label="Dismiss" data-i18n-aria="Dismiss">×</button>
 
-<!-- 语言切换：固定在**右上角**。
-     用户 2026-10-15：「页面右上角增加一个切换语言的选项，中文英文可互相切换，
-     切换后所有按钮、显示文字、输出报告模板都要自动更换」。
-
-     为什么固定定位而不是放进某一栏：三栏各自会滚动/折叠，放进哪一栏都会
-     跟着动；这个控件要一直在同一个地方。
-     z-index 高于弹框（12000）之下、但高于普通内容，避免被地图/图例盖住。 -->
-<div class="lang-switch" id="langSwitch">
-  <label for="langSelect" data-i18n="ui.language">Language</label>
-  <select id="langSelect" aria-label="Language" data-i18n-aria="Language">
-    <option value="en">English</option>
-    <option value="zh">中文</option>
-  </select>
-</div>
 
 <!-- 三栏并列：左「检索/加载」 中「轨迹地图」 右「视频」。
      左栏可收起，收起后留一条窄轨用于展开。 -->
@@ -1420,6 +1407,14 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <span class="probe-line" id="probeLine" style="display:none">
             <span id="probeSource" hidden>map click</span><span id="probeCoord" class="probe-coord"></span><span id="probeLabel"></span>
           </span>
+          <!-- 语言切换：用户 2026-10-22 要求嵌进地图栏右上角（不再悬浮在页面角落） -->
+          <div class="lang-switch" id="langSwitch">
+            <label for="langSelect" data-i18n="ui.language">Language</label>
+            <select id="langSelect" aria-label="Language" data-i18n-aria="Language">
+              <option value="en">English</option>
+              <option value="zh">中文</option>
+            </select>
+          </div>
           <button id="probeFoldBtn" class="ab-toggle" type="button" aria-pressed="false"
                   title="Collapse these controls to see more of the map" data-i18n-title="Collapse these controls to see more of the map">–</button>
         </div>
