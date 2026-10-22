@@ -1276,12 +1276,19 @@ console.log('\n=== 重要按钮合并成一条操作栏，其余挪到地图下�
   for (const id of ['searchNearbyBtn', 'clearProbeBtn', 'playHitBtn', 'resultFlyBtn']) {
     chk(new RegExp(`id="${id}"`).test(bar), `操作栏里有 #${id}`);
   }
-  const rowStart = bar.indexOf('class="row action-row"');
+  // 2026-10-22：这些动作已经全部搬进「点击处气泡」（probeQuickHtml），
+  // 工具栏里只留搜索。DOM 仍在这个隐藏容器里（测试与旧逻辑按 id 引用），
+  // 所以断言改成「都在同一个隐藏容器里」。
+  const rowStart = bar.indexOf('class="ab-actions-hidden"');
   const rowEnd = bar.indexOf('</div>', rowStart);
-  const row = bar.slice(rowStart, rowEnd);
+  const row = rowStart < 0 ? '' : bar.slice(rowStart, rowEnd);
   for (const id of ['searchNearbyBtn', 'clearProbeBtn', 'playHitBtn', 'resultFlyBtn']) {
-    chk(new RegExp(`id="${id}"`).test(row), `#${id} 在同一个 .row 里`);
+    chk(new RegExp(`id="${id}"`).test(row), `#${id} 在同一个隐藏容器里（显示交给气泡）`);
   }
+  chk(/data-pop="nearby"/.test(html) && /data-pop="frames"/.test(html)
+      && /data-pop="clear"/.test(html) && /data-pop="play"/.test(html)
+      && /data-pop="fly"/.test(html),
+    '五个动作都由点击处气泡承载（nearby/frames/clear/play/fly）');
   // 只断言「元素没了」，不断言字符串 —— 文件里还留着说明它已移除的注释
   chk(!/id="nearbyResult"/.test(html) && !/nearbyResult/.test(body),
     '旧的 #nearbyResult 卡片已移除（注释另计）');
@@ -1927,10 +1934,11 @@ console.log('\n=== 按钮尺寸一致性 ===');
   chk(/<button id="resultFlyBtn" class="secondary"[^>]*>Center map here<\/button>/.test(html),
     '“地图定位到该点”用 secondary 通用样式');
   {
-    const rowStart = html.indexOf('class="row action-row"');
-    const row = html.slice(rowStart, html.indexOf('</div>', rowStart));
+    // 2026-10-22：这两个按钮搬进点击处气泡，工具栏不再有 .row.action-row
+    const rowStart = html.indexOf('class="ab-actions-hidden"');
+    const row = rowStart < 0 ? '' : html.slice(rowStart, html.indexOf('</div>', rowStart));
     chk(/id="playHitBtn"/.test(row) && /id="resultFlyBtn"/.test(row),
-      '两个结果按钮和选点/搜索按钮在同一行');
+      '两个结果按钮与选点动作同在一个隐藏容器里（显示交给气泡）');
   }
 }
 

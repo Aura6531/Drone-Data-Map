@@ -1409,7 +1409,10 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             <input id="placeInput" type="text" data-i18n-placeholder="Search a place, e.g. Zhaoqing, Nan'an Street" placeholder="Search a place, e.g. Zhaoqing, Nan'an Street">
             <button id="placeSearchBtn" data-i18n="Search place">Search place</button>
           </div>
-          <div class="row action-row">
+          <!-- 五个「以此位置为依据」的动作都在**点击处的气泡**里（probeQuickHtml）。
+               这里保留 DOM（测试与旧逻辑还按 id 引用），但不显示 ——
+               用户 2026-10-22：「所有以此位置为依据的按钮都应该放到鼠标旁边」。 -->
+          <div class="ab-actions-hidden" style="display:none">
             <button id="searchNearbyBtn" data-i18n="Find flights at this position">Find flights at this position</button>
             <button id="findFramesBtn" title="Across every flight in this project, find the moments that saw this exact spot — and how clearly" data-i18n="Frames of this spot">Frames of this spot</button>
             <button id="clearProbeBtn" class="secondary" data-i18n="Clear selection">Clear selection</button>
