@@ -3608,11 +3608,18 @@ function setVideoCollapsed(v){
   vm.classList.toggle('collapsed',!!v);
 }
 
+// 用户刚主动点了播放：短时间内不要被有照片就把视频收起来的规则收掉。
+// 用时间窗而不是布尔量 —— 忘了复位也不会永久卡住。
+let videoKeepOpenUntil=0;
+function keepVideoOpenFor(ms){ videoKeepOpenUntil=Date.now()+(ms||8000); }
+
 function syncVideoCollapse(){
   const vm=document.getElementById('videoModal');
   const pn=document.getElementById('panoCard');
   const pc=document.getElementById('photoCard');
   if(!vm||vm.style.display==='none'){return}
+  // 刚点过播放 -> 保持展开（否则会出现后台在放、界面只有一条）
+  if(Date.now()<videoKeepOpenUntil){setVideoCollapsed(false);return}
   // 固定住就永远展开；否则右栏里还有全景/照片要看时，把视频收成一条
   if(videoPinned){setVideoCollapsed(false);return}
   const others=isShown(pn)||isShown(pc);
@@ -8517,6 +8524,14 @@ function openVideoFromPopup(encoded,autoPlay=true){
     videoTitle.textContent=data.video||'Video player';
     videoModal.style.display='flex';
 
+    // **用户明确要看这一段视频**（点照片跳转、点气泡按钮）——
+    // 必须把折叠成一条的面板展开，否则没画面只有声音（用户 2026-10-22 反馈）。
+    // 这里不做 syncVideoCollapse：那是右栏同时有照片时自动收视频的规则，
+    // 而现在是用户主动点的播放，应当以展开为准。
+    setVideoCollapsed(false);
+    keepVideoOpenFor(8000);
+    refreshMapSizeSoon();
+
     // 面板固定在右栏里，把占位说明收起来，再更新一次控件换行
     hide(videoSlot);
     applyVideoPanelLayout();
@@ -8529,7 +8544,7 @@ function openVideoFromPopup(encoded,autoPlay=true){
 
     startClip();
   }catch(e){
-    alert('Failed to open the video: '+e.message);
+    alert(t('Failed to open the video:')+' '+e.message);
   }
 }
 
