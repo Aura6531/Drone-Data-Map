@@ -1257,9 +1257,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                     fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
             </svg>
           </button>
-          <button id="foldLeftBtn" class="side-toggle fold-left" type="button"
-                  title="Collapse the left panel (give the width to the map)" data-i18n-title="Collapse the left panel (give the width to the map)"
-                  aria-label="Collapse the left panel" data-i18n-aria="Collapse the left panel">«</button>
         </div>
 
         <label class="ctrl-label" for="projectSelect" data-i18n="Select project">Select project</label>
@@ -3363,8 +3360,8 @@ function setLeftPinned(v,persist){
   const btn=document.getElementById('leftPinBtn');
   if(btn)btn.setAttribute('aria-pressed',leftPinned?'true':'false');
   if(persist)try{localStorage.setItem(LEFT_PIN_KEY,leftPinned?'1':'0')}catch(e){}
-  // 钉住就立刻展开（否则"固定"看着像没生效）
-  if(leftPinned)setLeftOpen(true,!!persist);
+  // 固定 = 展开；取消固定 = 收起（图钉是**唯一**的开关，见用户 2026-10-22）
+  setLeftOpen(leftPinned,!!persist);
   // 只有真的存在地图时才排定时器 —— 测试沙箱里没有 map，
   // 排了会让 test_boot 的"轮询次数有上限"多算一次（实测 61 -> 62）
   if(map)setTimeout(()=>{try{map.invalidateSize()}catch(e){}},60);
@@ -3382,8 +3379,9 @@ function setLeftOpen(open,persist){
   // 之后窄屏（含测试里的 885px 那档）读到的都是"展开"，
   // 左栏该折的没折，地图被挤到 258px。
   if(persist)try{localStorage.setItem('droneMap.leftOpen',open?'1':'0')}catch(e){}
-  // 地图容器尺寸变了，Leaflet 要重算，否则瓦片错位/出现灰边
-  setTimeout(()=>{try{if(map)map.invalidateSize()}catch(e){}},60);
+  // 地图容器尺寸变了，Leaflet 要重算，否则瓦片错位/出现灰边。
+  // 没有 map 时（测试沙箱）不排定时器 —— 否则会多算一次 test_boot 的轮询次数。
+  if(map)setTimeout(()=>{try{map.invalidateSize()}catch(e){}},60);
 }
 
 function readLeftOpen(){
@@ -3401,18 +3399,18 @@ function initLeftRail(){
   const rail=leftRailEl();
   if(rail)rail.addEventListener('click',()=>setLeftOpen(true,true));
   // 收起按钮（展开时的出口）。原来没有它，展开后就收不回去了。
-  const fold=document.getElementById('foldLeftBtn');
-  // 手动收起 = 明确要关，顺手取消固定（否则会"关了又被钉开"，很别扭）
-  if(fold)fold.addEventListener('click',()=>{setLeftPinned(false,true);setLeftOpen(false,true)});
-
+  // 只有一个图钉按钮：固定（展开、变蓝）/ 取消固定（收起、褪色）
   const pin=document.getElementById('leftPinBtn');
   if(pin)pin.addEventListener('click',()=>setLeftPinned(!leftPinned,true));
   // Esc 也能收 —— 看完一个点、想回到"整屏地图"时最顺手
   document.addEventListener('keydown',e=>{
-    if(e.key==='Escape'&&!leftPinned
+    if(e.key==='Escape'
        &&!document.querySelector('.video-dialog[style*="display: flex"],.video-dialog[style*="display:flex"]')){
       const r=layoutRoot();
-      if(r&&!r.classList.contains('left-folded'))setLeftOpen(false,true);
+      if(r&&!r.classList.contains('left-folded')){
+        // 收起就顺手取消固定，别让图钉"假装还钉着"
+        if(leftPinned)setLeftPinned(false,true); else setLeftOpen(false,true);
+      }
     }
   });
 

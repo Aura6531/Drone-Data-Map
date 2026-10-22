@@ -1536,12 +1536,12 @@ chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
   chk(/class="card-head"/.test(head), '标签开关在 .card-head 标题行里');
   chk(head.indexOf('<h2>Project</h2>') < head.indexOf('id="sideToggle"'),
     '标题在左、按钮在右');
-  // 新加的「收起左栏」按钮：没有它的话，展开之后就再也收不回去了
-  // （原来全页只有 setLeftOpen(true)，没有 false）。
-  chk(/id="foldLeftBtn"/.test(html), '标题行里有「收起左栏」按钮');
-  chk(/foldLeftBtn[\s\S]{0,200}setLeftOpen\(false/.test(body)
-    || /getElementById\('foldLeftBtn'\)[\s\S]{0,160}setLeftOpen\(false/.test(body),
-    '收起按钮真的调了 setLeftOpen(false)');
+  // 2026-10-22：取消独立的「收起」按钮 —— 左栏只留一个图钉：
+  //   未固定 = 收起；点一下固定（变蓝、展开）；再点一下取消固定并收起。
+  chk(/id="leftPinBtn"/.test(html), '标题行里有「固定侧栏」图钉按钮');
+  chk(!/id="foldLeftBtn"/.test(html), '不再有独立的「收起」按钮（图钉兼任）');
+  chk(/setLeftPinned\(!leftPinned/.test(body) && /setLeftOpen\(leftPinned/.test(body),
+    '图钉真的是两态开关（点击切换 + 固定/收起联动）');
   const st = (html.match(/\.side-toggle\{[^}]*\}/) || [''])[0];
   chk(!/position:absolute/.test(st), '不再是绝对定位（那会让它单独占一行）');
   // 左栏所有按钮要一致：切换按钮和 .card-tools button 用同一套尺寸/字号
