@@ -1582,9 +1582,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <!-- 正射影像叠加层：把项目里的 GeoTIFF 正射影像当瓦片底图贴在地图上。
                金字塔在后台建（几分钟），建好之后缩放就是读文件（实测 3 ms / 块）。
                没有 .tif 时按钮本身不出现，不占位置。 -->
-          <button id="orthoBtn" class="coverage-toggle-btn" type="button"
-                  aria-pressed="false" hidden
-                  title="Overlay this project's orthomosaic (GeoTIFF) on the map" data-i18n-title="Overlay this project's orthomosaic (GeoTIFF) on the map" data-i18n="Ortho">Ortho</button>
+          <!-- 「正射影像」按钮已删除：与左栏「已加载 → 正射影像」的勾选完全重复，
+               加载/卸载都走左栏那一处；这里的 orthoStatus 只负责显示金字塔进度/结果。 -->
           <span id="orthoStatus" class="photo-sub" hidden></span>
           <button id="coverageToggleBtn" class="coverage-toggle-btn" type="button"
                   aria-pressed="false"
@@ -6199,7 +6198,13 @@ let orthoList=[];
 let orthoPicked=null;
 let orthoPollTimer=0;
 
-function orthoBtnEl(){return document.getElementById('orthoBtn')}
+function orthoBtnEl(){
+  // 按钮已删除（功能并入左栏勾选）。返回一个「什么都不做」的替身，
+  // 免得原来那些 btn.setAttribute / classList 调用报错。
+  return {
+    setAttribute(){}, classList:{add(){},remove(){}}, hidden:true, title:''
+  };
+}
 function orthoStatusEl(){return document.getElementById('orthoStatus')}
 
 function setOrthoStatus(text){
@@ -6285,6 +6290,13 @@ async function toggleOrtho(){
 
   if(bounds){
     try{map.fitBounds(L.latLngBounds(bounds),{padding:[20,20],maxZoom:levels[1]})}catch(e){}
+  }
+
+  // 金字塔已经建好就直接用，不必再请求 build（那条接口对已完成的路径会返回 400，
+  // 前端会把 400 的响应当成「服务端返回了网页」，显示成莫名其妙的报错）
+  if(entry.ready){
+    setOrthoStatus(t('Pyramid ready')+' · '+(entry.tiles||0)+' '+t('tiles'));
+    return;
   }
 
   // 后台建金字塔（已建好会立刻返回 cached）
@@ -7391,8 +7403,7 @@ if(photoCloseBtn)photoCloseBtn.addEventListener('click',event=>{event?.stopPropa
 if(photoMapBtn)photoMapBtn.addEventListener('click',event=>{event?.stopPropagation?.();flyToPhotoGroup()});
 
 // 正射影像叠加层
-const orthoBtn=document.getElementById('orthoBtn');
-if(orthoBtn)orthoBtn.addEventListener('click',()=>{toggleOrtho()});
+// 「正射影像」按钮已删除，加载/卸载统一由左栏勾选控制
 
 // 导出文件名：标记点_<项目名>_<日期>.kml
 function markerKmlFileName(){
@@ -9391,9 +9402,22 @@ function renderLoadedPanel(){
               if(orthoLayer&&orthoLayer.getBounds)map.fitBounds(orthoLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM});
             }catch(e){}
           },
-          onToggle:(on)=>{ loadedUiState.ortho[key]=on; loadedUiSave();
-            try{ if(on){ if(typeof orthoApply==='function')orthoApply(); } else if(orthoLayer){ map.removeLayer(orthoLayer); orthoLayer=null; } }catch(e){}
-            renderLoadedPanel(); },
+          onToggle:(on)=>{
+            loadedUiState.ortho[key]=on; loadedUiSave();
+            try{
+              if(on){
+                // 勾上 = 加载并显示（没建完会顺带建，进度显示在状态行与这一行）
+                orthoPicked=it;
+                if(!orthoLayer)toggleOrtho();
+              }else if(orthoLayer){
+                map.removeLayer(orthoLayer);
+                orthoLayer=null;
+                if(orthoPollTimer){clearInterval(orthoPollTimer);orthoPollTimer=0}
+                setOrthoStatus('');
+              }
+            }catch(e){}
+            renderLoadedPanel();
+          },
           onRemove:async()=>{
             // 从「已加载」清除：撤图层、记住别再自动加载，磁盘文件不动
             const pick=await askRemoveOptions(it.name);
