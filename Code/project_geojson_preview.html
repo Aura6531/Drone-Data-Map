@@ -5606,6 +5606,15 @@ function photoTooltip(group){
 // 这正是用户要关掉的行为。距离是客观的：6 m 就是 6 m。
 const PHOTO_CLUSTER_MAX_METERS=6;
 
+// 聚合阈值随缩放递减；到 z19 就完全不聚合 ——
+// 否则两张照片本来只差两三米，放多大都还是"2"（用户 2026-10-22 反馈）。
+function photoClusterMeters(zoom){
+  const z=Number(zoom)||0;
+  if(z>=19)return 0;                       // 不聚合：一张照片一个点
+  if(z>=17)return 3;                       // 中近距离：只并真正重叠的
+  return PHOTO_CLUSTER_MAX_METERS;         // 远处：6 m（避免把不同目标并成一个数）
+}
+
 // 两点间的近似地面距离（米）。用等距圆柱近似，十几公里内误差 < 0.1%。
 function photoMetersBetween(aLat,aLng,bLat,bLng){
   const M_PER_DEG_LAT=111320;
@@ -5720,7 +5729,7 @@ function renderPhotoLayer(){
   photoLayer=L.layerGroup();
 
   const zoom=map.getZoom();
-  const clusters=clusterPhotoGroups(photoGroups);
+  const clusters=clusterPhotoGroups(photoGroups,photoClusterMeters(zoom));
   let singles=0;
 
   clusters.forEach(cl=>{
