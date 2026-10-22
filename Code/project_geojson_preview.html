@@ -840,6 +840,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    为什么不用 Leaflet.markercluster：项目里没有这个库，而且我们要的行为很窄 ——
    只对照片组、只在 z<17 聚合、点它只放大。自己写 40 行比引一个插件更可控
    （也省得和现有 .photo-dot 的图标样式打架）。 */
+/* 航迹流向箭头：一张小箭头图元，按线段方位角旋转（见 decimateForArrows） */
+.track-arrow{background:none;border:none}
+.track-arrow svg{display:block;filter:drop-shadow(0 0 1px rgba(15,23,42,.45))}
 .photo-cluster{background:none;border:none}
 /* 聚合数字的大小要和普通照片点（20px）对得上 —— 34px 会把画面压满
    （用户 2026-10-22：「聚合之后的数字图标太大，跟普通照片的图标大小统一即可」） */
@@ -2709,6 +2712,42 @@ function nearestPointTime(feature, clickLatLng){
 const TRACK_LINE_WEIGHT=5;
 const TRACK_HIT_WEIGHT=18;
 
+// 按地面距离抽稀：与**上一个已保留点**的距离超过 `meters` 就保留一个，并给出前进方位角。
+// coords 是 GeoJSON 的 [lon,lat] 数组。方位角 0 = 正北，顺时针为正。
+//
+// 这里**必须**和"上一个保留点"比距离，不能用累加器 + 复位：
+// 实测 3.6 万点的航迹上，累加器版本会把 260 m 缩成 ~15 m 一个，箭头密成一条带子
+// （因为点间距极不均匀：大量重复点之后夹着几米的跳跃）。
+function decimateForArrows(coords,meters){
+  const out=[];
+  if(!coords||coords.length<2)return out;
+  const dist=(a,b)=>Math.hypot(
+    (b.lat-a.lat)*110540,
+    (b.lng-a.lng)*Math.cos(a.lat*Math.PI/180)*111320
+  );
+  let lastKept=L.latLng(coords[0][1],coords[0][0]);
+  for(let i=1;i<coords.length;i++){
+    const p=L.latLng(coords[i][1],coords[i][0]);
+    if(dist(lastKept,p)>=meters){
+      const dy=p.lat-lastKept.lat;
+      const dx=(p.lng-lastKept.lng)*Math.cos(lastKept.lat*Math.PI/180);
+      out.push({lat:p.lat,lng:p.lng,bearing:Math.atan2(dx,dy)*180/Math.PI});
+      lastKept=p;
+    }
+  }
+  return out;
+}
+
+// 12px 的小箭头，按方位角旋转（SVG 里箭头默认朝右，所以要再减 90°）
+function trackArrowIcon(bearing){
+  const deg=Number.isFinite(bearing)?bearing-90:0;
+  const html='<svg width="12" height="12" viewBox="0 0 12 12" '
+    +`style="transform:rotate(${deg.toFixed(1)}deg)">`
+    +'<path d="M3.2 2.6 L9.4 6 L3.2 9.4" fill="none" stroke="rgba(255,255,255,.66)" '
+    +'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  return L.divIcon({className:'track-arrow',html,iconSize:[12,12],iconAnchor:[6,6]});
+}
+
 function addGeo(data,index,name,fileInfo){
   const color=colors[index%colors.length];
 
@@ -2777,6 +2816,22 @@ function addGeo(data,index,name,fileInfo){
   }
 
   layer.addTo(layerGroup);
+
+  // 流向箭头：每 ~260 m 抽一个点，按线段方位角放一枚小箭头。
+  // 抽稀而不是全量 —— 3 万多个点上挂箭头会糊成一条带子，也卡。
+  try{
+    for(const feature of (data.features||[])){
+      const g=feature&&feature.geometry;
+      if(!g||g.type!=='LineString'||!(g.coordinates||[]).length)continue;
+      for(const arrow of decimateForArrows(g.coordinates,260)){
+        L.marker([arrow.lat,arrow.lng],{
+          icon:trackArrowIcon(arrow.bearing),
+          interactive:false,
+          keyboard:false,
+        }).addTo(layerGroup);
+      }
+    }
+  }catch(e){ /* 箭头只是装饰，画不出来不影响航迹本身 */ }
 
   // 隐形粗线：透明但「有描边」，所以照样能被鼠标命中。
   // 它的宽度就是实际的点选范围；指到它上面时 Leaflet 会给出 pointer 光标，
