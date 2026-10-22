@@ -841,13 +841,16 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    只对照片组、只在 z<17 聚合、点它只放大。自己写 40 行比引一个插件更可控
    （也省得和现有 .photo-dot 的图标样式打架）。 */
 .photo-cluster{background:none;border:none}
+/* 聚合数字的大小要和普通照片点（20px）对得上 —— 34px 会把画面压满
+   （用户 2026-10-22：「聚合之后的数字图标太大，跟普通照片的图标大小统一即可」） */
 .photo-cluster-num{display:flex;align-items:center;justify-content:center;
-                   width:34px;height:34px;border-radius:50%;
+                   width:22px;height:22px;border-radius:50%;
                    background:#2563eb;color:#fff;
                    border:2px solid #fff;
-                   box-shadow:0 2px 8px rgba(37,99,235,.45);
-                   font-size:12px;font-weight:700;line-height:1;
-                   font-variant-numeric:tabular-nums}
+                   box-shadow:0 1px 4px rgba(37,99,235,.45);
+                   font-size:11px;font-weight:700;line-height:1;
+                   font-variant-numeric:tabular-nums;
+                   box-sizing:border-box}
 .photo-cluster:hover .photo-cluster-num{background:#1d4ed8}
 .pano-badge{position:absolute;top:6px;left:6px;z-index:2;
             padding:2px 7px;border-radius:999px;
@@ -5682,8 +5685,8 @@ function photoClusterIcon(count){
   return L.divIcon({
     className:'photo-cluster',
     html:`<span class="photo-cluster-num">${count}</span>`,
-    iconSize:[34,34],
-    iconAnchor:[17,17]
+    iconSize:[22,22],
+    iconAnchor:[11,11]
   });
 }
 
