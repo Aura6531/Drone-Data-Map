@@ -1129,8 +1129,10 @@ console.log('\n=== 轨迹线点不中：叠一条隐形粗线接鼠标 ===');
   chk((fn.match(/loadedTracks\.push\(/g) || []).length === 1,
     'loadedTracks 只登记一次（两条线都登记会让检索出现重复轨迹）',
     String((fn.match(/loadedTracks\.push\(/g) || []).length) + ' 次');
-  chk(/layer\.addTo\(layerGroup\)/.test(fn) && /hit\.addTo\(layerGroup\)/.test(fn),
-    '两条线都进 layerGroup（清空图层时一起清掉）');
+  // 2026-10-22：每条航迹包进独立 trackGroup（面板可单独显隐），再挂到 layerGroup
+  chk(/layer\.addTo\(trackGroup\)/.test(fn) && /hit\.addTo\(trackGroup\)/.test(fn)
+    && /trackGroup\.addTo\(layerGroup\)/.test(fn),
+    '两条线都进 trackGroup，trackGroup 挂到 layerGroup（清空时一起清）');
   // 弹窗与点击挂到隐形线上，点选范围才生效
   chk(/layer\.bindPopup\(/.test(fn) && /layer\.on\('click'/.test(fn),
     '弹窗与点击挂在隐形线上（这样才能在 18px 范围内点中）');

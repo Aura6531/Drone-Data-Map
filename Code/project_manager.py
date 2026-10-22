@@ -8656,6 +8656,24 @@ class ProjectManagerHandler(
             self.path
         ).path
 
+        if path == "/api/project/ui-state":
+            # 左栏「已加载」的显隐状态。用户要求存在 project.json 里（多台机器来回导数据）。
+            try:
+                body = self.read_json()
+                project_name = (body.get("project_name") or "").strip()
+                state = body.get("ui") or {}
+
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+
+                project["ui"] = state
+                save_project(project_name, project)
+                json_response(self, {"success": True})
+            except Exception as e:
+                json_response(self, {"success": False, "error": str(e)}, status=400)
+            return
+
         # 切换语言：前端切一次就通知后端，之后**没有请求上下文**的调用
         # （Windows 文件选择对话框）也会跟着用这个语言。
         if path == "/api/lang":

@@ -863,6 +863,22 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 树卡片要按内容长高（否则 flex-basis:0 会把它压成一条，树溢出到下一张卡下面） */
 #treeCard{flex:1 1 auto;min-height:360px;display:flex;flex-direction:column;overflow:hidden}
 #fileTree{flex:1 1 auto;min-height:200px}
+/* ===== 「已加载」分组列表 ===== */
+.loaded-groups{flex:1 1 auto;min-height:80px;overflow:auto;margin-top:6px;
+    display:flex;flex-direction:column;gap:6px}
+.ld-group{border:1px solid #e2e8f0;border-radius:9px;overflow:hidden;background:#fff}
+.ld-head{display:flex;align-items:center;gap:6px;padding:4px 8px;background:#f8fafc;
+    font-size:12px;font-weight:700;color:#334155}
+.ld-head .ld-count{margin-left:auto;font-weight:500;color:#64748b;font-size:11px}
+.ld-row{display:flex;align-items:center;gap:6px;padding:3px 8px;font-size:12px}
+.ld-row:hover{background:#f1f5f9}
+.ld-row .ld-name{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    cursor:pointer;color:#1d4ed8}
+.ld-row .ld-name:hover{text-decoration:underline}
+.ld-row.hidden .ld-name{color:#94a3b8;text-decoration:line-through}
+.ld-ico{width:16px;flex:0 0 16px;text-align:center}
+.ld-empty{font-size:11px;color:#94a3b8;padding:6px 8px}
+
 .tree-row{display:flex;align-items:center;gap:5px;padding:2px 6px;border-radius:6px;
     cursor:default;white-space:nowrap}
 .tree-row:hover{background:#f1f5f9}
@@ -1413,6 +1429,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <!-- 缺哪些文件就在这里说一句（原来是列表上方一条带「补齐」按钮的提示，
              但补齐无非就是点这个按钮 —— 它本来就是缺什么生成什么。）
              下面的小字也复用这块：检测结果 + 每一步的进度。 -->
+        <!-- 已加载内容：按类别分组的图层管理器（视频 / 照片 / 位置点 / 正射 / 覆盖） -->
+        <div id="loadedGroups" class="loaded-groups"></div>
         <div id="missingHint" class="missing-hint" style="display:none"></div>
         <div id="flowStatus" class="detect-result" style="display:none"></div>
         <!-- 日期 / 类型筛选：并成一行（原来上下两行太占高度） -->
@@ -2977,7 +2995,15 @@ function addGeo(data,index,name,fileInfo){
     }
   }
 
-  layer.addTo(layerGroup);
+  // 每条航迹一个独立图层组：「已加载」面板里能单独勾选显隐
+  const trackGroup=L.layerGroup();
+  layer.addTo(trackGroup);
+  trackGroup.addTo(layerGroup);
+  // 记到刚登记的那条航迹上，「已加载」面板据此单独显隐
+  if(loadedTracks.length){
+    const just=loadedTracks[loadedTracks.length-1];
+    if(just&&!just.group)just.group=trackGroup;
+  }
 
   // 流向箭头统一由 renderTrackArrows() 按**当前缩放**重建（间距是屏幕像素级的）。
   // 原来在这里按固定 260 m 建一次，缩小后箭头会挤成一条链。
@@ -3023,7 +3049,7 @@ function addGeo(data,index,name,fileInfo){
     }
   });
 
-  hit.addTo(layerGroup);
+  hit.addTo(trackGroup);
 
   // 航迹加载后，把各自的遥测预取回来 —— A+B 检索要用它算画面中心与可见性
   // （已缓存的会直接命中，不会重复请求）
@@ -8662,6 +8688,116 @@ function openVideoFromPopup(encoded,autoPlay=true){
 }
 
 /* ============================================================
+   左栏「已加载」：按类别分组的图层管理器
+   ============================================================ */
+// 显隐状态（path/label -> bool）。存 project.json 的 ui 字段里。
+let loadedUiState={videos:{},photos:{},markers:{},ortho:{},coverage:{}};
+
+function loadedUiSave(){
+  try{
+    jsonPost('/api/project/ui-state',{project_name:projectSelect.value,ui:loadedUiState});
+  }catch(e){}
+}
+
+function ldRow(opts){
+  const row=document.createElement('div');
+  row.className='ld-row'+(opts.shown?'':' hidden');
+  const box=document.createElement('input');
+  box.type='checkbox';
+  box.className='tree-check';
+  box.checked=!!opts.shown;
+  box.addEventListener('change',()=>{
+    opts.onToggle(box.checked);
+  });
+  row.appendChild(box);
+  const ico=document.createElement('span');
+  ico.className='ld-ico';
+  ico.textContent=opts.icon||'·';
+  row.appendChild(ico);
+  const name=document.createElement('span');
+  name.className='ld-name';
+  name.textContent=opts.name;
+  name.title=`${t('Jump to')} ${opts.name}`;
+  name.addEventListener('click',()=>{ try{opts.onGo()}catch(e){} });
+  row.appendChild(name);
+  return row;
+}
+
+function ldGroup(title,items,onAll){
+  const wrap=document.createElement('div');
+  wrap.className='ld-group';
+  const head=document.createElement('div');
+  head.className='ld-head';
+
+  const shown=items.filter(i=>i.shown).length;
+  const all=document.createElement('input');
+  all.type='checkbox';
+  all.className='tree-check';
+  all.checked=shown>0&&shown===items.length;
+  all.indeterminate=shown>0&&shown<items.length;
+  all.addEventListener('change',()=>onAll(all.checked));
+  head.appendChild(all);
+
+  const label=document.createElement('span');
+  label.textContent=title;
+  head.appendChild(label);
+
+  const count=document.createElement('span');
+  count.className='ld-count';
+  count.textContent=`(${shown}/${items.length})`;
+  head.appendChild(count);
+
+  wrap.appendChild(head);
+  for(const it of items)wrap.appendChild(ldRow(it));
+  return wrap;
+}
+
+function renderLoadedPanel(){
+  const box=document.getElementById('loadedGroups');
+  if(!box)return;
+  box.innerHTML='';
+
+  // —— 视频（每条航迹一个图层组）——
+  const vids=loadedTracks.map(tr=>{
+    const key=tr.fileInfo&&tr.fileInfo.relative_path||tr.name||'';
+    const shown=loadedUiState.videos[key]!==false;
+    if(tr.group){
+      if(shown){ if(!map.hasLayer(tr.group))tr.group.addTo(layerGroup); }
+      else{ try{ layerGroup.removeLayer(tr.group); }catch(e){} }
+    }
+    return {
+      name:tr.video||tr.name||key,
+      icon:(function(){ const k=streamKindOf(tr.video||''); return k==='thermal'?'🔥':k==='pano'?'🌐':'🎬'; })(),
+      shown, key,
+      onGo:()=>{ try{ map.fitBounds(tr.group.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
+      onToggle:(on)=>{ loadedUiState.videos[key]=on; loadedUiSave(); renderLoadedPanel(); scheduleTrackArrows(); },
+    };
+  });
+  if(vids.length){
+    box.appendChild(ldGroup(t('Videos'),vids,(on)=>{
+      vids.forEach(v=>{ loadedUiState.videos[v.key]=on; });
+      loadedUiSave(); renderLoadedPanel(); scheduleTrackArrows();
+    }));
+  }
+
+  // —— 照片（整层开关；单条显隐下一步做）——
+  const pg=(typeof photoGroups!=='undefined')&&photoGroups.length?photoGroups.length:0;
+  if(pg){
+    const shown=!!photoLayerOn;
+    box.appendChild(ldGroup(t('Photos'),[{
+      name:`${pg} ${t('photo groups')}`,
+      icon:'🖼', shown,
+      onGo:()=>{ try{ if(photoLayerOn)togglePhotoLayer(); }catch(e){} },
+      onToggle:(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
+    }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); }));
+  }
+
+  if(!box.children.length){
+    box.innerHTML=`<div class="ld-empty">${esc(t('Nothing loaded yet — import data above.'))}</div>`;
+  }
+}
+
+/* ============================================================
    左栏「数据文件」浏览器 + 左下角任务日志
    ============================================================ */
 const taskLogLines=[];
@@ -8844,7 +8980,7 @@ function updateTreeHint(){
   const hint=document.getElementById('treeSelHint');
   if(!hint)return;
   const n=treeState.checked.size;
-  hint.textContent=n?`${t('Selected')} ${n}`:'';
+  hint.textContent=n?`${n} ${t('selected')}`:'';
 }
 
 async function importTreeSelection(){
