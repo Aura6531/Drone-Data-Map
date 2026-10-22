@@ -1426,8 +1426,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
              找不到就直接报错），没有任何路径会现读 MP4 里的字幕流 ——
              所以「生成 SRT」不是可选中间态，而是硬前置。既然三步必须连着走，
              就让它们是一个动作，进度写在下面的小字里。 -->
-        <div class="row flow-actions">
-          <button id="buildTracksBtn" data-i18n="Build tracks">Build tracks</button>
+        <!-- 平时隐藏：导入数据时已经自动跑完整流程（检测 → SRT → GeoJSON → 上图）。
+             只有检测到「有缺失」时才把它显示出来，作为补救入口 -->
+        <div class="row flow-actions" id="flowActions" style="display:none">
+          <button id="buildTracksBtn" class="secondary"
+                  data-i18n="Rebuild tracks">Rebuild tracks</button>
         </div>
         <!-- 缺哪些文件就在这里说一句（原来是列表上方一条带「补齐」按钮的提示，
              但补齐无非就是点这个按钮 —— 它本来就是缺什么生成什么。）
@@ -2673,7 +2676,12 @@ async function scanGeoJSON(){
 async function refreshMissingHint(name){
   if(!missingHint)return;
 
-  if(!name||name==='No projects'){hide(missingHint);return}
+  const actionsEl=document.getElementById('flowActions');
+  if(!name||name==='No projects'){
+    hide(missingHint);
+    if(actionsEl)actionsEl.style.display='none';
+    return;
+  }
 
   try{
     const {srt,geo}=await collectPending(name);
@@ -2682,12 +2690,20 @@ async function refreshMissingHint(name){
     if(srt.length)parts.push(`${srt.length} ${t('missing SRT files')}`);
     if(geo.length)parts.push(`${geo.length} ${t('missing GeoJSON files')}`);
 
-    if(!parts.length){hide(missingHint);return}
+    const actions=document.getElementById('flowActions');
+    if(!parts.length){
+      hide(missingHint);
+      if(actions)actions.style.display='none';   // 不缺就收起补救按钮
+      return;
+    }
 
     missingHint.textContent=parts.join('、');
     missingHint.style.display='block';
+    if(actions)actions.style.display='flex';     // 有缺失才把「重新生成航迹」露出来
   }catch(e){
     hide(missingHint);
+    const a=document.getElementById('flowActions');
+    if(a)a.style.display='none';
   }
 }
 

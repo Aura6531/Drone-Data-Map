@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Rebuild tracks": "重新生成航迹",
     "Remove from this project (files on disk are kept)": "移出本项目（磁盘文件保留）",
     "Removed from the project (files on disk are kept).": "已移出本项目（磁盘文件保留）。",
     "Positions": "位置点",

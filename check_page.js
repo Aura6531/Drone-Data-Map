@@ -744,8 +744,11 @@ console.log('\n=== 单按钮「Build tracks」：跑完变绿 ===');
   const start = html.indexOf('class="row flow-actions"');
   const row = html.slice(start, html.indexOf('</div>', start));
   chk(/id="buildTracksBtn"/.test(row), '这一排只有「Build tracks」一个按钮');
-  chk(/<button id="buildTracksBtn"[^>]*>Build tracks<\/button>/.test(html),
-    '检测 / 生成 SRT / 生成 GeoJSON 合并成一个动作（GeoJSON 硬依赖同名 .srt，本来就不能分开走）');
+  // 2026-10-22：导入数据已自动跑完整流程；按钮改名「Rebuild tracks」并默认隐藏，
+  // 只有检测到缺失时才显示（补救入口）。
+  chk(/<button id="buildTracksBtn"[^>]*>[^<]*Rebuild tracks[^<]*<\/button>/.test(html)
+    && /id="flowActions"[^>]*display:none/.test(html),
+    '「重新生成航迹」是补救入口：默认隐藏，有缺失才出现');
   // 设计变更：三个独立按钮已合并 —— 断言它们确实不在（文件里只剩解释性注释）
   chk(!/id="detectBtn"|id="makeSrtBtn"|id="makeGeoBtn"/.test(html),
     '旧的「检测字幕 / 生成 SRT / 生成 GeoJSON」三个按钮已删除');
