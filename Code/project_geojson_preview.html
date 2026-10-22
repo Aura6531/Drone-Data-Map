@@ -11012,7 +11012,15 @@ projectSelect.addEventListener('change',()=>{
   // 流程状态那行也跟着清掉（换了项目，上一条的进度就没意义了）
   if(flowStatusEl){flowStatusEl.style.display='none';flowStatusEl.innerHTML=''}
   if(buildTracksBtn)buildTracksBtn.classList.remove('done');
-  scanGeoJSON();
+  // 刷新页面/换项目后，航迹要自动上图：否则「已加载 → 视频」是空的，
+  // 用户得先点一个照片（那会顺带加载匹配航迹）才「神奇地」出现。
+  scanGeoJSON().then(()=>{
+    try{
+      if(geoFiles.length && !loadedTracks.length){
+        setTimeout(()=>{ try{ ensureAllLoaded(); }catch(e){} },300);
+      }
+    }catch(e){}
+  }).catch(()=>{});
   refreshFlowStates();
   // 换项目了，标记点也跟着换
   loadProjectMarkers();
