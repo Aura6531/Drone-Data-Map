@@ -886,6 +886,20 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .pano-card .pano-view-wrap{position:relative;width:100%;aspect-ratio:16/9;min-height:180px;
     background:#0b1220;border-radius:8px;overflow:hidden}
 .pano-canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+/* 全屏：卡片铺满整屏，画布吃掉所有剩余空间（这里才是"看原生"的最佳场景） */
+.pano-card:fullscreen,
+.pano-card.pano-fake-full{width:100vw;height:100vh;background:#0b1220;border-radius:0;
+    display:flex!important;flex-direction:column}
+/* 伪全屏（浏览器不允许 requestFullscreen 时用）：固定铺满 + 高层级 */
+.pano-card.pano-fake-full{position:fixed;inset:0;z-index:13000}
+.pano-card:fullscreen .pano-view-wrap,
+.pano-card.pano-fake-full .pano-view-wrap{flex:1 1 auto;min-height:0;
+    aspect-ratio:auto;max-height:none;max-width:none;border-radius:0;border:0}
+.pano-card:fullscreen .photo-head,
+.pano-card.pano-fake-full .photo-head{background:rgba(255,255,255,.06);border-bottom-color:rgba(255,255,255,.12)}
+.pano-card:fullscreen .photo-title,.pano-card:fullscreen .photo-sub,
+.pano-card.pano-fake-full .photo-title,.pano-card.pano-fake-full .photo-sub{color:#e2e8f0}
+.pano-card:fullscreen .pano-hint,.pano-card.pano-fake-full .pano-hint{font-size:13px}
 .pano-canvas.dragging{cursor:grabbing}
 .pano-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     color:#cbd5e1;font-size:13px;pointer-events:none}
@@ -1685,6 +1699,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             <option value="90">90°</option>
             <option value="110">110°</option>
           </select>
+          <!-- 全屏：用户 2026-10-22 要求"用全屏模式看原生，验证还糊不糊" -->
+          <button id="panoFullBtn" class="secondary" type="button"
+                  title="Full screen (native resolution)" data-i18n-title="Full screen (native resolution)"
+                  aria-label="Full screen" data-i18n-aria="Full screen"
+                  data-i18n="Full screen">Full screen</button>
           <button id="panoCloseBtn" class="secondary" type="button" data-i18n="Close">Close</button>
         </div>
       </div>
@@ -6655,6 +6674,8 @@ function openPanoPhoto(group,name){
 // 只在换源时重取一次）—— 75° 窗口在 4096 宽的等距柱状上约 850 px，
 // 和右栏实际显示宽度接近，够清晰又不至于每帧拷 33 MB。
 const PANO_INLINE_MAX_W = 9216;
+// 全屏模式下的采样上限：全屏窗口更大，需要更多源像素才不糊
+const PANO_FULLSCREEN_MAX_W = 12288;
 
 const panoInline = {
   el:null, canvas:null, ctx:null, msg:null, title:null, sub:null, fovSel:null,
@@ -6671,9 +6692,64 @@ function panoInlineCtx(){
   panoInline.title=document.getElementById('panoTitle');
   panoInline.sub=document.getElementById('panoSub');
   panoInline.fovSel=document.getElementById('panoFov');
+  panoInline.toggleFullscreen=()=>togglePanoFullscreen();
+
+  // 全屏按钮 + 进出全屏后的重算（尺寸变了必须重建背贴再重画）
+  const fullBtn=document.getElementById('panoFullBtn');
+  if(fullBtn&&!fullBtn.dataset.bound){
+    fullBtn.dataset.bound='1';
+    fullBtn.addEventListener('click',()=>togglePanoFullscreen());
+  }
+  if(!panoInline.fsBound){
+    panoInline.fsBound=true;
+    document.addEventListener('fullscreenchange',()=>{
+      const card=document.getElementById('panoCard');
+      panoInline.fullscreen=!!card&&document.fullscreenElement===card;
+      const btn=document.getElementById('panoFullBtn');
+      if(btn)btn.textContent=t(panoInline.fullscreen?'Exit full screen':'Full screen');
+      // 全屏切换会改变 CSS 尺寸，等一帧再量
+      setTimeout(()=>{ panoInlineResize(); panoInlineRequestDraw(); },60);
+    });
+  }
   if(!panoInline.canvas)return null;
   panoInline.ctx=panoInline.canvas.getContext('2d');
   return panoInline.ctx;
+}
+
+// 全屏 / 伪全屏的统一切换。
+// 真全屏被浏览器拒绝（没有用户手势、或策略禁止）时退化成伪全屏 ——
+// 按钮点了一定有反应，用户才不会以为按钮坏了。
+function setPanoFullscreen(on){
+  const card=document.getElementById('panoCard');
+  if(!card)return;
+  card.classList.toggle('pano-fake-full',!!on);
+  panoInline.fullscreen=!!on;
+  const btn=document.getElementById('panoFullBtn');
+  if(btn){
+    const label=on?'Exit full screen':'Full screen';
+    btn.textContent=t(label);
+    btn.setAttribute('data-i18n',label);
+  }
+  setTimeout(()=>{ panoInlineResize(); panoInlineRequestDraw(); },60);
+}
+
+function togglePanoFullscreen(){
+  const card=document.getElementById('panoCard');
+  if(!card)return;
+  if(document.fullscreenElement){
+    document.exitFullscreen&&document.exitFullscreen();
+    return;
+  }
+  if(card.classList.contains('pano-fake-full')){
+    setPanoFullscreen(false);
+    return;
+  }
+  const req=card.requestFullscreen&&card.requestFullscreen();
+  if(req&&typeof req.catch==='function'){
+    req.catch(()=>setPanoFullscreen(true));
+  }else if(!card.requestFullscreen){
+    setPanoFullscreen(true);
+  }
 }
 
 function panoInlineResize(){
@@ -6703,7 +6779,9 @@ function panoInlineDraw(){
   // 需要多少就取多少（上限 PANO_INLINE_MAX_W），别一律降到 4096/8192 再放大。
   const fovDeg=Math.max(20,Math.min(150,Number(panoInline.fov)||75));
   const need=Math.round(cw*360/fovDeg*1.15);
-  const W=Math.min(nw,PANO_INLINE_MAX_W,Math.max(2048,need));
+  // 全屏时窗口更大，采样上限跟着抬（否则全屏反而比小窗更糊）
+  const cap=panoInline.fullscreen?PANO_FULLSCREEN_MAX_W:PANO_INLINE_MAX_W;
+  const W=Math.min(nw,cap,Math.max(2048,need));
   const H=Math.max(1,Math.round(nh*W/nw));
   const key=W+'x'+H+'|'+img.src;
   if(panoInline._srcKey!==key||!panoInline._sd){
@@ -6878,6 +6956,12 @@ function panoInlineInit(){
   };
   c.addEventListener('pointerup',end);
   c.addEventListener('pointercancel',end);
+  // Esc 退出伪全屏（真全屏浏览器自己处理）
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape')return;
+    const card=document.getElementById('panoCard');
+    if(card&&card.classList.contains('pano-fake-full'))setPanoFullscreen(false);
+  });
   c.addEventListener('wheel',e=>{
     e.preventDefault();
     panoInline.fov=Math.max(25,Math.min(140,panoInline.fov*(e.deltaY>0?1.08:1/1.08)));

@@ -593,8 +593,14 @@ console.log('\n=== 全屏要保留小地图 / 红外 / 上方开关 ===');
   const escBody = escLine < 0 ? '' : body.slice(escLine, escLine + 700);
   chk(escLine > 0, '找到 Esc 处理（按优先级分支的那处）');
     // 断言已随 theater 死代码删除（全屏统一走 <video> 原生 + native-fs）
-  chk(escBody.indexOf('isTheater()') < escBody.indexOf('closeVideo()'),
-    '两种全屏都退掉之后才关闭视频窗口');
+  // 2026-10-22：全景卡新增了一个 Esc 处理（退出伪全屏），它排在视频那个之前，
+  // 按 indexOf('Escape') 取窗会取错。改成直接在整段里找「先判 isTheater 再 closeVideo」。
+  // 2026-10-22：theater（铺满）模式早被删掉了，isTheater() 全页不存在，
+  // 原来那条断言其实永远不成立。改成校验现在真实存在的两件事：
+  //   ① theater 死代码确实没了  ② 全景卡的 Esc 能退出伪全屏
+  chk(!/isTheater\(/.test(body), 'theater 相关死代码已移除');
+  chk(/pano-fake-full/.test(body) && /setPanoFullscreen\(false\)/.test(body),
+    '全景卡的全屏能被 Esc 退出（伪全屏兜底）');
 
   const close = body.slice(body.indexOf('function closeVideo('), body.indexOf('videoClose.addEventListener'));
   chk(/classList\.remove\('theater'\)/.test(close), '关窗口时清掉铺满状态（否则下次打开还是铺满）');

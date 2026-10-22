@@ -82,6 +82,9 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Full screen": "全屏",
+    "Exit full screen": "退出全屏",
+    "Full screen (native resolution)": "全屏（原生分辨率）",
     "Zoom lens": "变焦",
     "Full-color night vision": "全彩夜视",
     "16:9 · wide lens (the default view)": "16:9 · 广角镜头（默认视角）",
