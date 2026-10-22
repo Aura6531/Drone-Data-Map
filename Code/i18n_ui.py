@@ -82,6 +82,17 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Point details": "该点信息",
+    "(far away — there may be no flight data near this position)": "（离得很远 —— 这附近可能没有飞行数据）",
+    "Ground distance": "地面距离",
+    "(frame center)": "（画面中心）",
+    "Match": "匹配方式",
+    "Visible in frame": "画面内可见",
+    "Nearest drone position": "最近的无人机位置",
+    "In frame": "画面位置",
+    "Video type": "视频类型",
+    "Segment end": "航段结束",
+    "Height above take-off": "相对起飞点高度",
     "DJI videos in this project": "个 DJI 视频",
     "of them carry a telemetry subtitle stream": "个带遥测字幕流",
     "already have an SRT file": "个已有 SRT 文件",

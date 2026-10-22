@@ -9090,12 +9090,7 @@ function showProbeQuick(latlng){
   try{
     if(!map||typeof L==='undefined')return;
     const coord=`${latlng.lng.toFixed(6)}, ${latlng.lat.toFixed(6)}`;
-    const html='<div class="probe-pop">'
-      +`<div class="probe-pop-coord">${esc(coord)}</div>`
-      +`<button type="button" data-pop="nearby">${esc(t('Find flights at this position'))}</button>`
-      +`<button type="button" data-pop="frames">${esc(t('Frames of this spot'))}</button>`
-      +`<button type="button" class="secondary" data-pop="clear">${esc(t('Clear selection'))}</button>`
-      +'</div>';
+    const html=probeQuickHtml(coord);
     if(!probeQuickPopup){
       // autoPan 打开：靠边的点也不至于让气泡跑出可视区；
       // 顶部留 130px 给地图上的工具栏，否则气泡会被工具条压住。
@@ -9103,19 +9098,55 @@ function showProbeQuick(latlng){
         autoPan:true,autoPanPadding:[24,130],keepInView:true});
     }
     probeQuickPopup.setLatLng(latlng).setContent(html).openOn(map);
-    const box=probeQuickPopup.getElement();
-    if(box){
-      box.querySelectorAll('button[data-pop]').forEach(b=>{
-        b.addEventListener('click',ev=>{
-          ev.preventDefault();ev.stopPropagation();
-          const act=b.dataset.pop;
-          if(act==='nearby'){searchNearby()}
-          else if(act==='frames'){searchFramesOfSpot()}
-          else{clearProbe();clearHighlight();hideNearbyResult()}
-        });
-      });
-    }
+    bindProbeQuick();
   }catch(e){}
+}
+
+// 气泡内容：坐标 + 这个点的动作。
+// 检索出结果之后再多两个（播放 / 定位到该点）—— 用户 2026-10-22：
+// 「这两个按钮应该跟着这个点出现，而不是留在左上角」。
+function probeQuickHtml(coord){
+  const extra=hitPayload
+    ? `<button type="button" class="play-btn pop-play" data-pop="play">▶ ${esc(t('Play video here'))}</button>`
+    : '';
+  const extra2=(hitPayload&&hitFocusLatLng)
+    ? `<button type="button" class="secondary" data-pop="fly">${esc(t('Center map here'))}</button>`
+    : '';
+  return '<div class="probe-pop">'
+    +`<div class="probe-pop-coord">${esc(coord||'')}</div>`
+    +extra+extra2
+    +`<button type="button" data-pop="nearby">${esc(t('Find flights at this position'))}</button>`
+    +`<button type="button" data-pop="frames">${esc(t('Frames of this spot'))}</button>`
+    +`<button type="button" class="secondary" data-pop="clear">${esc(t('Clear selection'))}</button>`
+    +'</div>';
+}
+
+// 检索出结果后刷新气泡内容（保持它开着，别让用户再点一次）
+function refreshProbeQuick(){
+  try{
+    if(!probeQuickPopup||!probeLatLng)return;
+    const coord=`${probeLatLng.lng.toFixed(6)}, ${probeLatLng.lat.toFixed(6)}`;
+    probeQuickPopup.setContent(probeQuickHtml(coord));
+    bindProbeQuick();
+  }catch(e){}
+}
+
+function bindProbeQuick(){
+  const box=probeQuickPopup&&probeQuickPopup.getElement();
+  if(!box)return;
+  box.querySelectorAll('button[data-pop]').forEach(b=>{
+    if(b.dataset.bound)return;
+    b.dataset.bound='1';
+    b.addEventListener('click',ev=>{
+      ev.preventDefault();ev.stopPropagation();
+      const act=b.dataset.pop;
+      if(act==='nearby'){searchNearby()}
+      else if(act==='frames'){searchFramesOfSpot()}
+      else if(act==='play'){if(hitPayload)openVideoFromPopup(hitPayload)}
+      else if(act==='fly'){if(hitFocusLatLng&&map)map.setView(hitFocusLatLng,TRACK_FOCUS_ZOOM)}
+      else{clearProbe();clearHighlight();hideNearbyResult()}
+    });
+  });
 }
 
 function closeProbeQuick(){
@@ -11101,25 +11132,28 @@ function renderNearbyResult(group){
   // 这里只切显示并记下要用的载荷，不再重建 DOM、不再挂一次性监听。
   hitPayload=encoded;
   hitFocusLatLng=hit.pointLatLng;
-  playHitBtn.style.display='';
-  resultFlyBtn.style.display='';
+  // 2026-10-22：这两个按钮搬进点击处的气泡（见 probeQuickHtml），
+  // 左上角那两颗保留 DOM 以防测试/旧逻辑引用，但不再显示。
+  playHitBtn.style.display='none';
+  resultFlyBtn.style.display='none';
+  refreshProbeQuick();
 
   // 次要内容放到地图下面：其他视频、该点信息
   altVideos.innerHTML=othersHtml;
   altVideos.style.display=group.others.length?'block':'none';
 
   hitDetail.innerHTML=`
-    <div class="hit-detail-title">Point details${far?' <span class="warn">(far away — there may be no flight data near this position)</span>':''}</div>
+    <div class="hit-detail-title">${esc(t('Point details'))}${far?' <span class="warn">'+esc(t('(far away — there may be no flight data near this position)'))+'</span>':''}</div>
     <div class="hit-chips">
-      <span class="hit-chip"><span class="k">Ground distance</span><span class="v">${distText}${hit.inFrame?' (frame center)':''}</span></span>
-      <span class="hit-chip"><span class="k">Match</span><span class="v">${hit.inFrame?'Visible in frame':'Nearest drone position'}</span></span>
-      <span class="hit-chip"><span class="k">In frame</span><span class="v">${hit.inFrame?esc(hit.framePos||'center'):'-'}</span></span>
-      <span class="hit-chip"><span class="k">Video type</span><span class="v">${esc(streamLabelOf(hit.track.fileInfo.relative_path))}</span></span>
-      <span class="hit-chip"><span class="k">Segments</span><span class="v">${esc(props.segment_index??'-')}</span></span>
-      <span class="hit-chip"><span class="k">Video time</span><span class="v">${formatTime(hit.time)}</span></span>
-      <span class="hit-chip"><span class="k">Segment end</span><span class="v">${formatTime(hit.track.videoEnd)}</span></span>
-      <span class="hit-chip"><span class="k">Height above take-off</span><span class="v" id="hitHeight">${hit.height!=null&&Number.isFinite(hit.height)?hit.height.toFixed(1)+' m':'-'}</span></span>
-      <span class="hit-chip"><span class="k">Video file</span><span class="v">${esc(hit.track.video||'-')}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('Ground distance'))}</span><span class="v">${distText}${hit.inFrame?' '+esc(t('(frame center)')):''}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('Match'))}</span><span class="v">${esc(hit.inFrame?t('Visible in frame'):t('Nearest drone position'))}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('In frame'))}</span><span class="v">${hit.inFrame?esc(hit.framePos||t('center')):'-'}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('Video type'))}</span><span class="v">${esc(streamLabelOf(hit.track.fileInfo.relative_path))}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('segments'))}</span><span class="v">${esc(props.segment_index??'-')}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('Video time'))}</span><span class="v">${formatTime(hit.time)}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('Segment end'))}</span><span class="v">${formatTime(hit.track.videoEnd)}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('Height above take-off'))}</span><span class="v" id="hitHeight">${hit.height!=null&&Number.isFinite(hit.height)?hit.height.toFixed(1)+' m':'-'}</span></span>
+      <span class="hit-chip"><span class="k">${esc(t('Video file'))}</span><span class="v">${esc(hit.track.video||'-')}</span></span>
     </div>`;
 
   hitDetail.style.display='block';

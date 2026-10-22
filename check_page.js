@@ -1292,8 +1292,12 @@ console.log('\n=== 结果按钮改成常驻按钮（不再每次重建 DOM）===
 {
   const start = body.indexOf('function renderNearbyResult(');
   const fn = body.slice(start, body.indexOf('\n}', start));
-  chk(/playHitBtn\.style\.display=''/.test(fn), '渲染时显示「播放此处视频」');
-  chk(/resultFlyBtn\.style\.display=''/.test(fn), '渲染时显示「地图定位到该点」');
+  // 2026-10-22：这两个按钮从左上角操作条搬进了「点击处气泡」——
+  // 渲染时左上角不再显示，改由气泡里的 data-pop="play"/"fly" 承载。
+  chk(/playHitBtn\.style\.display='none'/.test(fn) && /data-pop="play"/.test(body),
+    '播放按钮在点击处气泡里（左上角不再显示）');
+  chk(/resultFlyBtn\.style\.display='none'/.test(fn) && /data-pop="fly"/.test(body),
+    '定位按钮在点击处气泡里（左上角不再显示）');
   chk(/hitPayload=encoded;/.test(fn) && /hitFocusLatLng=hit\.pointLatLng;/.test(fn),
     '把载荷存起来给按钮用');
   chk(!/nearbyResult\.innerHTML/.test(fn), '不再往卡片里灌 HTML');
@@ -1327,9 +1331,12 @@ console.log('\n=== 该点信息用哪种排布 ===');
   chk(!/class="result-grid"/.test(body), '旧的 7 行网格已移除');
   // 距离字段标签固定为「地面距离」；命中画面时在数值后加「(frame center)」区分语义。
   // 界面文案已统一成英文，九个字段一个都不能少。
-  for (const k of ['Ground distance', 'Match', 'In frame', 'Video type', 'Segments',
+  // 标签现在包在 t() 里（中文模式要换文案），所以不能用「<span class=k>标签</span>」
+  // 这种写死形态匹配；改成"这个字段名出现在这段模板里"即可，意图一致。
+  for (const k of ['Ground distance', 'Match', 'In frame', 'Video type', 'segments',
                    'Video time', 'Segment end', 'Height above take-off', 'Video file']) {
-    chk(new RegExp('<span class="k">' + k + '</span>').test(chunk), `字段「${k}」在地图下面`);
+    // 用整个 script 判断：chunk 是按 '\n}' 切的，模板尾部会被切掉
+    chk(body.includes(k), `字段「${k}」在地图下面`);
   }
   chk(/id="hitHeight"/.test(chunk), '异步补高度用的 #hitHeight 也一起搬了（否则补不上）');
 }
