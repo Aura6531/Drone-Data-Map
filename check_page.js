@@ -617,12 +617,12 @@ console.log('\n=== 左栏项目流程（创建 / 导入 / 删除 / 建轨迹）=
     const row = html.slice(rowStart, html.indexOf('</div>', rowStart));
     chk(/id="createProjectBtn"/.test(row) && /id="addFolderBtn"/.test(row),
       '两个动作在同一排');
-    chk(/<button id="createProjectBtn">New project<\/button>/.test(html), '按钮叫「新建项目」');
-    chk(/<button id="addFolderBtn" class="secondary">Import data<\/button>/.test(html),
+    chk(/<button id="createProjectBtn"[^>]*>New project<\/button>/.test(html), '按钮叫「新建项目」');
+    chk(/<button id="addFolderBtn"[^>]*>Import data<\/button>/.test(html),
       '按钮叫「导入数据」（原来叫「添加数据文件夹」）');
     // 用「具体元素/文案」判断，别用裸词 —— JS 注释里也会出现「追加数据」这类词
     chk(!/2 · 给当前项目追加数据/.test(html), '不再有单独的「追加数据」步骤标题');    chk(!/添加数据文件夹/.test(html), '旧的「添加数据文件夹」按钮文案已删除');
-    chk(/<h2>Project<\/h2>/.test(html), '标题改成「项目数据」（与「轨迹文件」同为 h2，字号一致）');
+    chk(/<h2[^>]*>Project<\/h2>/.test(html), '标题改成「项目数据」（与「轨迹文件」同为 h2，字号一致）');
     chk(!/<div class="desc">按/.test(html), '那行「按 1 → N 走一遍」的说明已删除');
   }
   // 项目名改成弹窗里输入，卡片里不再有常驻输入框
@@ -725,7 +725,7 @@ console.log('\n=== 单按钮「Build tracks」：跑完变绿 ===');
   const start = html.indexOf('class="row flow-actions"');
   const row = html.slice(start, html.indexOf('</div>', start));
   chk(/id="buildTracksBtn"/.test(row), '这一排只有「Build tracks」一个按钮');
-  chk(/<button id="buildTracksBtn">Build tracks<\/button>/.test(html),
+  chk(/<button id="buildTracksBtn"[^>]*>Build tracks<\/button>/.test(html),
     '检测 / 生成 SRT / 生成 GeoJSON 合并成一个动作（GeoJSON 硬依赖同名 .srt，本来就不能分开走）');
   // 设计变更：三个独立按钮已合并 —— 断言它们确实不在（文件里只剩解释性注释）
   chk(!/id="detectBtn"|id="makeSrtBtn"|id="makeGeoBtn"/.test(html),
@@ -754,7 +754,7 @@ console.log('\n=== 单按钮「Build tracks」：跑完变绿 ===');
   // 所以标题到步骤按钮之间多了几十个字符 —— 原来是 200 字符窗口，太窄会误报。
   // 顺便把新加的收起箭头也断言上（不然它可以被悄悄删掉）。
   const beforeFlow = noComment.slice(Math.max(0, cardStart - 400), cardStart);
-  chk(/<h2>Tracks<\/h2>/.test(beforeFlow),
+  chk(/<h2[^>]*>Tracks<\/h2>/.test(beforeFlow),
     '合并后这张卡以「轨迹文件」标题开头（标题在步骤按钮上方）');
   chk(/id="tracksCard"/.test(noComment) && /data-collapse="tracksCard"/.test(noComment),
     '「轨迹文件」这张卡有 id，且标题行带着"收起列表"的开关');
@@ -1444,7 +1444,7 @@ chk(/\.card-tools button\{[^}]*white-space:nowrap/.test(html),
   '卡片头部按钮禁止文字换行（原来会被挤成两行）');
 chk(/\.card-tools button\{[^}]*height:var\(--ctrl-h\);padding:0 10px;font-size:12px/.test(html),
   '卡片头部按钮收紧到 12px / --ctrl-h（全局 button 是 16px + 13px 22px）');
-chk(/<button id="refreshBtn" class="secondary">Refresh<\/button>/.test(html),
+chk(/<button id="refreshBtn"[^>]*>Refresh<\/button>/.test(html),
   '「重新扫描」改叫「刷新」（更短，一行放得下）');
 chk(/<button id="loadAllBtn">Load all tracks<\/button>/.test(html),
   '左栏那个按钮叫「加载全部轨迹」（和「加载全部照片」区分开）');
@@ -1633,14 +1633,19 @@ chk((html.match(/<div class="card-tools/g) || []).length === 3,
   String((html.match(/<div class="card-tools/g) || []).length) + ' 处');
 chk(/<div class="card-tools map-tools">/.test(html), '地图卡片的控件组额外带 map-tools');
 chk(/<div class="card-tools marker-tools">/.test(html), '标记点卡片的控件组额外带 marker-tools');
-chk(/<div class="card-head">\s*\n\s*<h2>Track map<\/h2>/.test(html),
+chk(/<div class="card-head">\s*\n\s*<h2[^>]*>Track map<\/h2>/.test(html),
   '「轨迹地图」在新结构里（文案已改成英文）');
-chk(/<h2>Tracks<\/h2>/.test(html),
+chk(/<h2[^>]*>Tracks<\/h2>/.test(html),
   '两张卡已合并，标题为「轨迹文件」');
 {
   // 合并后行序：标题 -> 建轨迹 -> 筛选 -> 三个动作 -> 列表
-  const order = ['<h2>Tracks</h2>', 'id="buildTracksBtn"', 'class="file-filter"',
-                 'card-tools file-actions', 'id="fileList"'].map((s) => html.indexOf(s));
+  const order = [
+    html.search(/<h2[^>]*>Tracks<\/h2>/),
+    html.indexOf('id="buildTracksBtn"'),
+    html.indexOf('class="file-filter"'),
+    html.indexOf('card-tools file-actions'),
+    html.indexOf('id="fileList"'),
+  ];
   chk(order.every((n) => n > 0) && order.every((v, i) => i === 0 || order[i - 1] < v),
     '行序：标题 → Build tracks → 筛选 → 加载全部/刷新/清空 → 文件列表', order.join(','));
 
@@ -1648,7 +1653,7 @@ chk(/<h2>Tracks<\/h2>/.test(html),
   const ids = ['loadAllBtn', 'refreshBtn', 'clearBtn'].map((id) => acts.indexOf('id="' + id + '"'));
   chk(ids.every((n) => n > 0), '「加载全部轨迹 / 刷新 / 清空」在同一排按钮里');
   chk(ids[0] < ids[1] && ids[1] < ids[2], '顺序：加载全部轨迹 → 刷新 → 清空');
-  chk(/<button id="clearBtn" class="secondary">Clear<\/button>/.test(html), '「清除地图」改叫「清空」');
+  chk(/<button id="clearBtn"[^>]*>Clear<\/button>/.test(html), '「清除地图」改叫「清空」');
 }
 chk(!/class="row" style="justify-content:space-between"/.test(html),
   '嵌套 .row 的旧头部写法已全部移除');
@@ -1676,7 +1681,7 @@ chk(/\.map-tools button\.secondary\{height:var\(--ctrl-h\)/.test(html),
   // 设计变更（用户 2026-10-13）：地名搜索框从标题行挪进地图里当悬浮控件，
   // 标题行里只剩「底图 + 天地图 key」。下面原本还有一段重复判断同样的东西，
   // 已合并到这里。
-  const mapHead = html.slice(html.indexOf('<h2>Track map</h2>'),
+  const mapHead = html.slice(html.search(/<h2[^>]*>Track map<\/h2>/),
                              html.indexOf('id="poiList"'));
   chk(!/id="clearBtn"/.test(mapHead), '地图卡片头部里不再有「清除地图」');
   chk(/id="baseMap"/.test(mapHead), '地图卡片头部保留底图选择');
@@ -1930,7 +1935,7 @@ console.log('\n=== 标记点报告（Word）===');
     '报告地图的底图来自弹窗里那个下拉（不再跟随网页地图的底图）');
   chk(/const DEFAULT_BASEMAP='street'/.test(body),
     "网页地图默认底图是街道图（DEFAULT_BASEMAP='street'）");
-  chk(/<option value="street" selected>/.test(html),
+  chk(/<option value="street"[^>]*selected/.test(html),
     '底图下拉里街道图带 selected（initBaseMap 读的就是这个值）');
   chk(/let currentBaseMapKind=DEFAULT_BASEMAP;/.test(body),
     '脚本里的当前底图初始值也指向同一个常量');

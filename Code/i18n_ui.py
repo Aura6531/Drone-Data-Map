@@ -82,6 +82,14 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Ortho": "正射影像",
+    "OpenStreetMap": "开放街图（OSM）",
+    "Tianditu key": "天地图 key",
+    "Searching…": "搜索中…",
+    "missing SRT files": "个 SRT 缺失",
+    "missing GeoJSON files": "个 GeoJSON 缺失",
+    "▶ Play video here": "▶ 在此播放视频",
+    "Center map here": "以此为中心",
     "Search a place, e.g. Zhaoqing, Nan'an Street": "搜索地点，例如 肇庆、南岸街道",
     "Search place": "搜索地点",
     "Find flights at this position": "查找经过此处的架次",
