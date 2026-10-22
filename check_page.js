@@ -720,7 +720,10 @@ console.log('\n=== 只处理 DJI 标准素材，其它如实跳过 ===');
   chk(fn.indexOf('if(!DJI_VIDEO_RE') < fn.indexOf('if(!video.srt)srt.push'),
     '跳过判在收清单之前（否则非 DJI 素材会被塞进待办）');
   chk(/if\(!video\.srt\)srt\.push/.test(fn), '缺 SRT 的进 SRT 清单');
-  chk(/if\(!have\.has/.test(fn), '缺 GeoJSON 的进 GeoJSON 清单');
+  // 2026-10-22：改成按「飞行名」判断（后端生成的是合并航迹），
+  // 并同时接受合并名与旧的分路名 —— 同一个飞行只报一次缺失。
+  chk(/mergedOk\|\|splitOk/.test(fn) && /seenFlight/.test(fn),
+    '缺 GeoJSON 的进清单（按飞行名判、同一飞行只报一次）');
   const jobs = body.slice(body.indexOf('async function runJobs('), body.indexOf('async function runAutoPipeline('));
   chk(/failed\.push\(/.test(jobs) && /catch\(e\)/.test(jobs), '单个失败不影响其它（记下来继续跑）');
 }

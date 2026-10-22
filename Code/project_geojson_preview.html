@@ -8616,13 +8616,26 @@ async function collectPending(name){
   const srt=[];
   const geo=[];
   const other=[];
+  // 同一个飞行（V/S/T 三路）只需要报一次「缺 GeoJSON」——
+  // 后端生成的是**合并航迹** `<飞行名>.geojson`，不含 _V/_S/_T。
+  const seenFlight=new Set();
 
   (media.folders||[]).forEach(folder=>{
     (folder.videos||[]).forEach(video=>{
       const stem=stemOf(video.relative_path);
       if(!DJI_VIDEO_RE.test(stem)){other.push({folder,video});return}
       if(!video.srt)srt.push({folder,video});
-      if(!have.has(folder.name+'|'+(stem+'.geojson').toLowerCase()))geo.push({folder,video});
+
+      // 找文件时两种名字都算数：合并航迹（新）与分路航迹（旧数据）
+      const flight=flightStemOfForMatch(stem)||stem.toLowerCase();
+      const mergedOk=have.has(folder.name+'|'+(flight+'.geojson'));
+      const splitOk=have.has(folder.name+'|'+(stem+'.geojson').toLowerCase());
+      if(mergedOk||splitOk)return;
+
+      const key=folder.name+'|'+flight;
+      if(seenFlight.has(key))return;
+      seenFlight.add(key);
+      geo.push({folder,video});
     });
   });
 
