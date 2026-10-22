@@ -2445,7 +2445,15 @@ function initMap(){
   // **视频开着也照样换选点**（用户 2026-10-13 定的）：
   //   点完这个点就是新的选点，马上可以按新位置搜索；
   //   但右侧正在播的视频**不动** —— 只有真的点开某一帧，才换播放内容。
-  map.on('click',e=>{
+  // 右键：在鼠标位置新建位置点
+map.on('contextmenu',(e)=>{
+  try{
+    L.DomEvent.preventDefault(e);
+    openMarkerCreate(e.latlng);
+  }catch(err){}
+});
+
+map.on('click',e=>{
     setProbe(e.latlng,'map click','');
     // 他是想看**这个位置**，别把视野收回飞机上（只影响本次，不改跟随模式）
     followSuppressedByProbe=true;
@@ -5229,6 +5237,52 @@ function openMarkerEdit(id){
   if(nameEl){nameEl.focus();if(nameEl.select)nameEl.select()}
 }
 
+// 地图右键：在鼠标位置新建位置点（不需要目标点计算）
+let newMarkerLatLng=null;
+
+function openMarkerCreate(latlng){
+  newMarkerLatLng={lat:Number(latlng.lat),lng:Number(latlng.lng)};
+  editingMarkerId='';
+
+  const modal=document.getElementById('markerEditModal');
+  if(!modal)return;
+
+  const title=modal.querySelector('.mini-modal-title');
+  if(title)title.textContent=t('New marker');
+
+  const nameEl=document.getElementById('markerEditName');
+  if(nameEl)nameEl.value=nextMarkerName();
+
+  const catEl=document.getElementById('markerEditCategory');
+  if(catEl){catEl.value='';catEl.style.display='none';}
+
+  const selEl=document.getElementById('markerEditCategorySel');
+  if(selEl){
+    const cats=markerCategories();
+    selEl.innerHTML=cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')
+      +`<option value="__new__">${esc(t('+ New category…'))}</option>`;
+    selEl.value='__new__';
+    if(catEl){catEl.value='';catEl.style.display='';}
+    if(!selEl.dataset.bound){
+      selEl.dataset.bound='1';
+      selEl.addEventListener('change',()=>{
+        const v=selEl.value;
+        const c=document.getElementById('markerEditCategory');
+        if(v==='__new__'){ if(c){ c.value=''; c.style.display=''; c.focus(); } }
+        else if(c){ c.value=v; c.style.display='none'; }
+        updateMarkerEditHint();
+      });
+    }
+  }
+
+  const errEl=document.getElementById('markerEditError');
+  if(errEl)errEl.style.display='none';
+
+  updateMarkerEditHint();
+  modal.style.display='flex';
+  if(nameEl){nameEl.focus();if(nameEl.select)nameEl.select()}
+}
+
 function updateMarkerEditHint(){
   const el=document.getElementById('markerEditCategoryHint');
   const catEl=document.getElementById('markerEditCategory');
@@ -5248,6 +5302,35 @@ function closeMarkerEdit(){
 }
 
 async function confirmMarkerEdit(){
+  // 新建模式（地图右键）：没有 editingMarkerId，位置来自 newMarkerLatLng
+  if(!editingMarkerId&&newMarkerLatLng){
+    const nameEl=document.getElementById('markerEditName');
+    const catEl=document.getElementById('markerEditCategory');
+    const errEl=document.getElementById('markerEditError');
+    const name=String((nameEl&&nameEl.value)||'').trim()||nextMarkerName();
+    if(markerNameTaken(name)){
+      if(errEl){errEl.textContent=`A marker named “${name}” already exists. Please pick another name.`;errEl.style.display='block'}
+      return;
+    }
+    const mark={
+      id:'m'+Date.now(),
+      name,
+      lat:newMarkerLatLng.lat,
+      lng:newMarkerLatLng.lng,
+      created:new Date().toISOString()
+    };
+    const category=String((catEl&&catEl.value)||'').trim();
+    if(category){ mark.category=category; storeMarkerCategory(category); }
+
+    projectMarkers.push(mark);
+    newMarkerLatLng=null;
+    closeMarkerEdit();
+    drawProjectMarkers();
+    await saveProjectMarkers();
+    taskLog(t('Marker added.')+` “${name}”`,'ok');
+    return;
+  }
+
   const m=projectMarkers.find(x=>x&&x.id===editingMarkerId);
   if(!m)return;
 
