@@ -9568,7 +9568,7 @@ function renderLoadedPanel(){
         const key=it.name||it.file||'ortho';
         const shown=loadedUiState.ortho[key]!==false && (orthoLayer!=null || loadedUiState.ortho[key]===true);
         return {
-          name:key, icon:'🗺', shown, key, orthoPath:it.path,
+          name:key, iconHtml:ICON_TILE, shown, key, orthoPath:it.path,
           onGo:async()=>{
             // 点了就把它显示出来：没建金字塔会顺带建（进度显示在顶部与这一行）
             try{
@@ -9723,6 +9723,15 @@ const ICON_PHOTO='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="t
   +'<rect x="1" y="2" width="14" height="12" rx="2.2" fill="url(#ldPhotoGrad)"/>'
   +'<circle cx="11.2" cy="5.9" r="1.5" fill="#ffffff"/>'
   +'<path d="M1.6 13.4 L6.9 7.1 L12.2 13.4 Z" fill="#ffffff" fill-opacity="0.95"/>'
+  +'</svg>';
+
+// 「正射影像」图标：方方正正的瓦片（2×2 + 角上一块小瓦片，示意金字塔）
+const ICON_TILE='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">'
+  +'<rect x="1" y="1" width="6.4" height="6.4" rx="0.6" fill="#3f8f4f"/>'
+  +'<rect x="8.6" y="1" width="6.4" height="6.4" rx="0.6" fill="#57b06a"/>'
+  +'<rect x="1" y="8.6" width="6.4" height="6.4" rx="0.6" fill="#57b06a"/>'
+  +'<rect x="8.6" y="8.6" width="6.4" height="6.4" rx="0.6" fill="#7ac887"/>'
+  +'<rect x="12.2" y="12.2" width="2.8" height="2.8" rx="0.4" fill="#ffffff" fill-opacity="0.85"/>'
   +'</svg>';
 
 const TREE_ICON={folder:'📁',video:'🎬',thermal:'🔥',osv:'🌐',pano:'🌐',photo:'🖼',kml:'📐',meta:'·',other:'?'};
