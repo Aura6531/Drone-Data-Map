@@ -82,6 +82,9 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Search reference point — drag to adjust": "搜索参考点 —— 可拖动调整",
+    "Nearest track point": "最近的航迹点",
+    "photos — click to show them below": "张照片 —— 点击在下方查看",
     "Some tiles failed to load for": "以下底图的瓦片有几块没加载出来：",
     "With Tianditu, check that the tk in tianditu_key.txt is valid and within quota; you can also switch to OpenStreetMap.": "用天地图的话，检查 tianditu_key.txt 里的 tk 是否有效、是否超额；也可以改用开放街图。",
     "Pin the left panel (keep it expanded)": "固定侧栏（保持展开）",

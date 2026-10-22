@@ -5573,12 +5573,15 @@ function photoTooltip(group){
 
   const lines=[
     `${photoGroupTimeText(group)} · ${photoShotText(group)}`,
-    `Target ${Number(group.lat).toFixed(6)}, ${Number(group.lon).toFixed(6)}`,
-    group.accuracy==='measured'?'Position: measured (laser rangefinder)':'Position: approximate (flat-ground estimate)'
+    `${t('Target')} ${Number(group.lat).toFixed(6)}, ${Number(group.lon).toFixed(6)}`,
+    group.accuracy==='measured'
+      ?t('Position: measured (laser rangefinder)')
+      :t('Position: approximate (flat-ground estimate)')
   ];
 
-  if(group.count>1)lines.push(`${group.count} photos — click to show them below`);
-  else lines.push('Click to show below');
+  // 带数字的句子拆成「数字 + t(固定段)」—— 前端 t() 不支持参数替换
+  if(group.count>1)lines.push(`${group.count} ${t('photos — click to show them below')}`);
+  else lines.push(t('Click to show below'));
 
   return lines.join('\n');
 }
@@ -9316,7 +9319,7 @@ function showProbePanel(latlng,source,label){
   if(!probeMarker){
     if(!iconsUsable())return;
     probeMarker=L.marker(latlng,{draggable:true,icon:probeIcon}).addTo(map);
-    probeMarker.bindTooltip('Search reference point — drag to adjust',{direction:'top'});
+    probeMarker.bindTooltip(t('Search reference point — drag to adjust'),{direction:'top'});
     probeMarker.on('dragend',()=>{
       hideNearbyResult();clearHighlight();
       showProbePanel(probeMarker.getLatLng(),probeSource.textContent,probeText);
@@ -11169,7 +11172,7 @@ async function searchNearby(){
     highlightLayers.push(
       L.circleMarker(hit.primary.pointLatLng,{radius:10,color:'#b45309',weight:3,fillColor:'#fbbf24',fillOpacity:.9,bubblingMouseEvents:false})
         .addTo(map)
-        .bindTooltip(`Nearest track point  ${formatTime(hit.primary.time)}`,{direction:'top'})
+        .bindTooltip(t('Nearest track point')+'  '+formatTime(hit.primary.time),{direction:'top'})
     );
 
     map.fitBounds(L.latLngBounds([probeLatLng,hit.primary.pointLatLng]).pad(0.35),{maxZoom:TRACK_FIT_MAX_ZOOM});
