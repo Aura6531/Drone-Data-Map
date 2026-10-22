@@ -155,8 +155,11 @@ chk(abs(pano360.DEFAULT_COVER_PITCH - (-10.0)) < 1e-9,
 
 html = (CODE / "project_geojson_preview.html").read_text(encoding="utf-8")
 import re as _re
-m = _re.search(r"pano360_player\.html\?pitch=(-?\d+(?:\.\d+)?)&fov=", html)
-chk(m is not None, "前端 openPanoPhoto() 打开查看器时带了 pitch=", str(m and m.group(0)))
+# 2026-10-22：360 全景照片改成**右栏内联查看**（不再开 pano360_player.html 新页面），
+# 所以不能再去匹配播放器 URL；断言的意图是"点开第一眼的俯仰角与封面一致"，
+# 改成检查内联查看器初始化时把 pitch 设成 DEFAULT_COVER_PITCH（-10）。
+m = _re.search(r"panoInline\.pitch\s*=\s*(-?\d+(?:\.\d+)?)", html)
+chk(m is not None, "前端内联查看器初始化带了 pitch=", str(m and m.group(0)))
 if m:
     chk(abs(float(m.group(1)) - pano360.DEFAULT_COVER_PITCH) < 1e-9,
         "前端带的 pitch 与 pano360.DEFAULT_COVER_PITCH 相等",

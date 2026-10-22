@@ -101,8 +101,13 @@ console.log('\n=== 视频面板固定在右栏，不悬浮、不可拖动 ===');
   chk(!/video-resize/.test(html) && !/cursor:nwse-resize/.test(html), '缩放手柄的样式也删了');
   // 「cursor:move」只允许出现在说明注释里，不能是生效的样式
   chk(!/cursor:move/.test(html.replace(/\/\*[\s\S]*?\*\//g, '')), '标题栏不再显示可拖动光标');
-  chk(!/pointerdown/.test(body), '所有拖动/缩放的指针处理已删除');
-  chk(!/setPointerCapture/.test(body), '指针捕获也一并删除');
+  // 2026-10-22：视频面板仍然不可拖动（这条要保），但 360 内联查看器的画布
+  // 合法地需要指针事件 —— 所以把检查范围从"整页"收到"视频面板本体"。
+  chk(!/videoModal[\s\S]{0,300}?pointerdown/.test(body), '视频面板本体不可拖动（指针事件已删除）');
+  chk(!/videoPanel[\s\S]{0,300}?pointerdown/.test(body), '视频面板容器也没有指针处理');
+  chk((body.match(/setPointerCapture/g) || []).length <= 2
+      && /function panoInlineInit/.test(body),
+    '指针捕获只用在 360 内联查看器里');
 
   // 面板必须在右栏里（不再是覆盖全屏的悬浮层）
   const col = html.indexOf('id="colRight"');
@@ -1604,10 +1609,12 @@ chk(!/id="sideRail"/.test(html), '窄轨（sideRail）已删除');
 chk(!/body\.side-collapsed/.test(html), 'side-collapsed 那套样式已删除');
 chk(!/function applySideCollapsed/.test(body), '旧函数 applySideCollapsed 已删除');
 {
-  const start = body.indexOf("window.addEventListener('resize'");
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('});', start));
-  chk(/applyVideoPanelLayout\(\)/.test(fn), '窗口尺寸变化时同样更新视频面板');
-  chk(/map\.invalidateSize\(\)/.test(fn), '窗口尺寸变化时地图重算');
+  // 2026-10-22：页面里不止一个 resize 监听（360 查看器也要重画），
+  // 所以不能只看第一个 —— 改成"任意一个 resize 回调里含有"。
+  const blocks = body.split("window.addEventListener('resize'").slice(1)
+    .map((s) => s.slice(0, 500));
+  chk(blocks.some((b) => /applyVideoPanelLayout\(\)/.test(b)), '窗口尺寸变化时同样更新视频面板');
+  chk(blocks.some((b) => /map\.invalidateSize\(\)/.test(b)), '窗口尺寸变化时地图重算');
 }
 chk(/window\.addEventListener\('resize'/.test(body),
   '监听窗口尺寸变化（分栏布局对宽度很敏感）');

@@ -801,6 +801,22 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             font-size:11px;font-weight:700;letter-spacing:.04em;
             pointer-events:none}
 .photo-shot[data-pano="1"]{cursor:zoom-in}
+/* 360 封面：先用「等距柱状缩略图」当背景铺满 16:9，服务端透视封面（/photo/pano）
+   到了再淡入覆盖。原实现没有占位，图没到之前 figure 塌成一条细黑条 ——
+   用户 2026-10-22：「加载的太慢了只有一个条」。 */
+.photo-lead .photo-shot[data-pano="1"]{aspect-ratio:16/9;
+    background:#0f172a center/cover no-repeat}
+.photo-lead .photo-shot[data-pano="1"] img{width:100%;height:100%;object-fit:cover;
+    opacity:0;transition:opacity .18s ease}
+.photo-lead .photo-shot[data-pano="1"] img.ready{opacity:1}
+/* 右栏内联 360 查看器 */
+.pano-card .pano-view-wrap{position:relative;width:100%;aspect-ratio:16/9;min-height:180px;
+    background:#0b1220;border-radius:8px;overflow:hidden}
+.pano-canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+.pano-canvas.dragging{cursor:grabbing}
+.pano-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:#cbd5e1;font-size:13px;pointer-events:none}
+.pano-hint{font-size:12px;color:#64748b;margin-top:6px}
 .photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
 .photo-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
            background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
@@ -1542,6 +1558,31 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       <div id="photoChips" class="photo-chips"></div>
       <div id="photoGallery" class="photo-gallery"></div>
       <div id="photoJump" class="photo-jump" style="display:none"></div>
+    </section>
+
+    <!-- 360 全景照片：**就在右栏里看**（用户 2026-10-22：
+         「不是开个新的页面来显示，而是直接在右上的视频区域就可以查看、拖动、旋转」）。
+         先画缩略图（毫秒级），原图到了再换 —— 原图 1 亿像素，不能等它。 -->
+    <section id="panoCard" class="photo-card pano-card" style="display:none">
+      <div class="photo-head">
+        <div id="panoTitle" class="photo-title">360</div>
+        <div id="panoSub" class="photo-sub"></div>
+        <div class="photo-head-tools">
+          <label class="ctrl-label" for="panoFov">FOV</label>
+          <select id="panoFov" class="ctrl-select">
+            <option value="60">60°</option>
+            <option value="75" selected>75°</option>
+            <option value="90">90°</option>
+            <option value="110">110°</option>
+          </select>
+          <button id="panoCloseBtn" class="secondary" type="button" data-i18n="Close">Close</button>
+        </div>
+      </div>
+      <div class="pano-view-wrap">
+        <canvas id="panoInlineCanvas" class="pano-canvas"></canvas>
+        <div id="panoInlineMsg" class="pano-msg" data-i18n="Loading…">Loading…</div>
+      </div>
+      <div class="pano-hint" data-i18n="Drag to look around · wheel to zoom · R to reset">Drag to look around · wheel to zoom · R to reset</div>
     </section>
 
     <!-- 标记点列表已挪到左栏（与「项目数据 / 轨迹文件」共用一块地方，
@@ -3306,7 +3347,8 @@ function syncRightCol(){
   const vm=document.getElementById('videoModal');
   const pc=document.getElementById('photoCard');
   const fg=document.getElementById('frameGallery');
-  const anyShown=isShown(vm)||isShown(pc)||isShown(fg);
+  const pn=document.getElementById('panoCard');
+  const anyShown=isShown(vm)||isShown(pc)||isShown(fg)||isShown(pn);
   const was=root.classList.contains('right-empty');
   root.classList.toggle('right-empty',!anyShown);
   if(was!==!anyShown){
@@ -3326,7 +3368,7 @@ function initRightCol(){
     // 所以先判存在性。
     if(typeof MutationObserver==='undefined')return;
     const obs=new MutationObserver(()=>{try{syncRightCol()}catch(e){}});
-    ['videoModal','photoCard','frameGallery'].forEach(id=>{
+    ['videoModal','photoCard','panoCard','frameGallery'].forEach(id=>{
       const el=document.getElementById(id);
       if(el)try{obs.observe(el,{attributes:true,attributeFilter:['style','class']})}catch(e){}
     });
@@ -5789,10 +5831,12 @@ function photoGalleryHtml(group){
     // 就是一张被拉扁的球面展开图，根本看不出拍的是什么（实测就是这样）。
     // 判定来自后端 photo_meta：宽高比 2:1 且宽度 >= 4000。
     `<figure class="photo-shot photo-lead-shot" data-photo-name="${esc(lead.name)}"` +
-    (lead.panorama ? ` data-pano="1"` : '') +
+    (lead.panorama ? ` data-pano="1" style="background-image:url('${esc(photoThumbUrl(lead.folder,lead.name,320))}')"` : '') +
     (lead.panorama ? ` title="Click to look around in this 360 photo"`
                    : ` title="Open the video at this photo\'s time"`) + `>`
     +`<img src="${esc(lead.panorama?panoCoverUrl(lead.folder,lead.name,720):photoThumbUrl(lead.folder,lead.name,720))}" alt="${esc(photoCameraLabel(lead.camera))}Photo">`
+    // 360 封面：把「等距柱状缩略图」先铺成背景（几十 KB，毫秒级），
+    // 服务端透视封面到了再淡入 —— 否则 figure 会塌成一条细黑条（用户 2026-10-22）
     +(lead.panorama ? `<span class="pano-badge">360</span>` : '')
     +leadCaption
     +`</figure>`;
@@ -6188,14 +6232,221 @@ function openPanoPhoto(group,name){
     if(!folder||!file)return;
     // 后端 /photo?path= 接的是「文件夹 + 反斜杠 + 文件名」
     const p=folder.replace(/[\\/]+$/,'')+'\\'+file;
-    // 打开 360 查看器时带上**与封面相同的俯仰角**（pitch=-10, fov=75）。
-    // 封面（服务端 /photo/pano）默认就是这两个值，这里必须一致 ——
-    // 否则"封面"和"点开第一眼"不是同一个画面，那正是加透视封面的意义所在。
-    // `-10` 这个数在 Code/pano360.py 的 DEFAULT_COVER_PITCH 里，
-    // Code/test_pano_cover.py 有一条断言核对两边相等。
-    const url='/pano360_player.html?pitch=-10&fov=75&path='+encodeURIComponent(p);
-    window.open(url,'_blank','noopener');
+    // 2026-10-22：不再新开页面 —— 直接在右栏里看（可拖拽转向）。
+    openPanoInline(p,file);
   }catch(e){}
+}
+
+// ============================================================
+// 右栏内联 360 查看器
+// ============================================================
+//
+// 为什么不再开新页面（用户 2026-10-22）：
+//   ① 新标签页一开，地图和照片列表全被挡住，来回对照很别扭；
+//   ② 播放器页要重新加载原图（1 亿像素），首屏就是那条"细黑条"。
+// 所以改成在右栏原地渲染：**先画缩略图**（几十 KB、毫秒级），
+// 原图到了再换；拖动/滚轮/rAF 全部本地完成，不依赖服务端重渲染。
+//
+// 采样分辨率：源图缩到 max 4096 宽再逐像素取（ImageData 会缓存，
+// 只在换源时重取一次）—— 75° 窗口在 4096 宽的等距柱状上约 850 px，
+// 和右栏实际显示宽度接近，够清晰又不至于每帧拷 33 MB。
+const PANO_INLINE_MAX_W = 4096;
+
+const panoInline = {
+  el:null, canvas:null, ctx:null, msg:null, title:null, sub:null, fovSel:null,
+  yaw:0, pitch:-10, fov:75, img:null, fullLoaded:false,
+  urlThumb:'', urlFull:'', raf:0, dragging:false, lastX:0, lastY:0,
+  _sc:null, _sctx:null, _sd:null, _srcKey:'',
+};
+
+function panoInlineCtx(){
+  if(panoInline.ctx)return panoInline.ctx;
+  panoInline.el=document.getElementById('panoCard');
+  panoInline.canvas=document.getElementById('panoInlineCanvas');
+  panoInline.msg=document.getElementById('panoInlineMsg');
+  panoInline.title=document.getElementById('panoTitle');
+  panoInline.sub=document.getElementById('panoSub');
+  panoInline.fovSel=document.getElementById('panoFov');
+  if(!panoInline.canvas)return null;
+  panoInline.ctx=panoInline.canvas.getContext('2d');
+  return panoInline.ctx;
+}
+
+function panoInlineResize(){
+  const c=panoInline.canvas;
+  if(!c||!c.parentElement)return;
+  const r=c.parentElement.getBoundingClientRect();
+  const w=Math.max(160,Math.round(r.width));
+  const h=Math.max(120,Math.round(r.height||(w*9/16)));
+  if(c.width!==w||c.height!==h){c.width=w;c.height=h;}
+}
+
+function panoInlineDraw(){
+  panoInline.raf=0;
+  const ctx=panoInlineCtx();
+  const img=panoInline.img;
+  if(!ctx||!img||!img.naturalWidth)return;
+  panoInlineResize();
+  const cw=panoInline.canvas.width, ch=panoInline.canvas.height;
+
+  // 源缩到 max 4096 宽，ImageData 缓存（换源才重取）
+  const nw=img.naturalWidth, nh=img.naturalHeight;
+  const W=Math.min(PANO_INLINE_MAX_W,nw);
+  const H=Math.max(1,Math.round(nh*W/nw));
+  const key=W+'x'+H+'|'+img.src;
+  if(panoInline._srcKey!==key||!panoInline._sd){
+    const sc=panoInline._sc||(panoInline._sc=document.createElement('canvas'));
+    if(sc.width!==W||sc.height!==H){sc.width=W;sc.height=H;panoInline._sctx=null;}
+    const sctx=panoInline._sctx||(panoInline._sctx=sc.getContext('2d',{willReadFrequently:true}));
+    sctx.drawImage(img,0,0,W,H);
+    panoInline._sd=sctx.getImageData(0,0,W,H).data;
+    panoInline._srcKey=key;
+  }
+  const sd=panoInline._sd;
+
+  const out=ctx.createImageData(cw,ch);
+  const od=out.data;
+  const f=panoInline.fov*Math.PI/180;
+  const tanHalf=Math.tan(f/2);
+  const aspect=cw/ch;
+  const yr=panoInline.yaw*Math.PI/180, pr=panoInline.pitch*Math.PI/180;
+  const sy=Math.sin(pr), cy=Math.cos(pr);
+  const sz=Math.sin(yr), cz=Math.cos(yr);
+  for(let j=0;j<ch;j++){
+    const ny=(1-2*(j+0.5)/ch)*tanHalf;
+    const rowOff=j*cw*4;
+    for(let i=0;i<cw;i++){
+      const nx=(2*(i+0.5)/cw-1)*tanHalf*aspect;
+      let dx=nx, dy=ny, dz=1;
+      const inv=1/Math.hypot(dx,dy,dz);
+      dx*=inv; dy*=inv; dz*=inv;
+      const dy2=dy*cy+dz*sy;
+      const dz2=-dy*sy+dz*cy;
+      const dx3=dx*cz+dz2*sz;
+      const dz3=-dx*sz+dz2*cz;
+      const lat=Math.asin(Math.max(-1,Math.min(1,dy2)));
+      const lon=Math.atan2(dx3,dz3);
+      let u=(lon/(2*Math.PI)+0.5)*W;
+      const v=(0.5-lat/Math.PI)*H;
+      if(u<0)u+=W; if(u>=W)u-=W;
+      const ui=u|0, vi=v|0;
+      const o=rowOff+i*4;
+      if(vi<0||vi>=H){od[o+3]=255;continue;}
+      const s=(vi*W+ui)*4;
+      od[o]=sd[s]; od[o+1]=sd[s+1]; od[o+2]=sd[s+2]; od[o+3]=255;
+    }
+  }
+  ctx.putImageData(out,0,0);
+}
+
+function panoInlineRequestDraw(){
+  if(panoInline.raf)return;
+  panoInline.raf=requestAnimationFrame(panoInlineDraw);
+}
+
+function panoInlineLoad(urlThumb,urlFull,label){
+  if(!panoInlineCtx())return;
+  panoInline.urlThumb=urlThumb; panoInline.urlFull=urlFull;
+  panoInline.fullLoaded=false;
+  panoInline.img=null; panoInline._sd=null; panoInline._srcKey='';
+  if(panoInline.title)panoInline.title.textContent=label||'360';
+  if(panoInline.sub)panoInline.sub.textContent='';
+  if(panoInline.msg)panoInline.msg.style.display='flex';
+  const thumb=new Image();
+  thumb.decoding='async';
+  thumb.onload=()=>{
+    panoInline.img=thumb;
+    if(panoInline.msg)panoInline.msg.style.display='none';
+    if(panoInline.sub)panoInline.sub.textContent=thumb.naturalWidth+'×'+thumb.naturalHeight;
+    panoInlineRequestDraw();
+    // 原图（1 亿像素）不阻塞交互：到了再换，换完自动重画
+    if(panoInline.fullLoaded)return;
+    const full=new Image();
+    full.decoding='async';
+    full.onload=()=>{
+      panoInline.fullLoaded=true;
+      panoInline.img=full;
+      if(panoInline.sub)panoInline.sub.textContent=full.naturalWidth+'×'+full.naturalHeight;
+      panoInlineRequestDraw();
+    };
+    full.src=urlFull;
+  };
+  thumb.onerror=()=>{
+    if(panoInline.msg)panoInline.msg.textContent='360 photo failed to load';
+  };
+  thumb.src=urlThumb;
+}
+
+function openPanoInline(path,fileName){
+  if(!panoInlineCtx())return;
+  // 右栏切换：与视频面板/照片卡互斥，保证同时只显示一块
+  try{ if(typeof closeVideo==='function')closeVideo(); }catch(e){}
+  if(panoInline.el)panoInline.el.style.display='block';
+  try{ syncRightCol(); }catch(e){}
+  panoInline.yaw=0; panoInline.pitch=-10; panoInline.fov=Number(panoInline.fovSel&&panoInline.fovSel.value)||75;
+  const enc=encodeURIComponent(path);
+  panoInlineLoad('/photo/thumb?w=1600&path='+enc,'/photo?path='+enc,fileName||'360');
+  setTimeout(()=>{try{syncRightCol()}catch(e){}},30);
+}
+
+function closePanoInline(){
+  if(panoInline.el)panoInline.el.style.display='none';
+  panoInline.img=null;
+  try{ syncRightCol(); }catch(e){}
+}
+
+function panoInlineInit(){
+  panoInlineCtx();
+  const c=panoInline.canvas;
+  if(!c||c.dataset.bound)return;
+  c.dataset.bound='1';
+
+  c.addEventListener('pointerdown',e=>{
+    panoInline.dragging=true; panoInline.lastX=e.clientX; panoInline.lastY=e.clientY;
+    c.classList.add('dragging');
+    try{c.setPointerCapture(e.pointerId)}catch(_){}
+  });
+  c.addEventListener('pointermove',e=>{
+    if(!panoInline.dragging)return;
+    const perPx=panoInline.fov/c.clientHeight;
+    panoInline.yaw-=(e.clientX-panoInline.lastX)*perPx;
+    panoInline.pitch+=(e.clientY-panoInline.lastY)*perPx;
+    panoInline.pitch=Math.max(-89,Math.min(89,panoInline.pitch));
+    if(panoInline.yaw>180)panoInline.yaw-=360;
+    if(panoInline.yaw<-180)panoInline.yaw+=360;
+    panoInline.lastX=e.clientX; panoInline.lastY=e.clientY;
+    panoInlineRequestDraw();
+  });
+  const end=e=>{
+    if(!panoInline.dragging)return;
+    panoInline.dragging=false; c.classList.remove('dragging');
+    try{c.releasePointerCapture(e.pointerId)}catch(_){}
+  };
+  c.addEventListener('pointerup',end);
+  c.addEventListener('pointercancel',end);
+  c.addEventListener('wheel',e=>{
+    e.preventDefault();
+    panoInline.fov=Math.max(25,Math.min(140,panoInline.fov*(e.deltaY>0?1.08:1/1.08)));
+    panoInlineRequestDraw();
+  },{passive:false});
+
+  if(panoInline.fovSel){
+    panoInline.fovSel.addEventListener('change',()=>{
+      panoInline.fov=Number(panoInline.fovSel.value)||75;
+      panoInlineRequestDraw();
+    });
+  }
+  const closeBtn=document.getElementById('panoCloseBtn');
+  if(closeBtn)closeBtn.addEventListener('click',closePanoInline);
+
+  window.addEventListener('keydown',e=>{
+    if(!panoInline.el||panoInline.el.style.display==='none')return;
+    if(e.key==='r'||e.key==='R'){panoInline.yaw=0;panoInline.pitch=-10;panoInlineRequestDraw();}
+    else if(e.key==='ArrowLeft'){panoInline.yaw-=3;panoInlineRequestDraw();}
+    else if(e.key==='ArrowRight'){panoInline.yaw+=3;panoInlineRequestDraw();}
+  });
+  window.addEventListener('resize',()=>{if(panoInline.img)panoInlineRequestDraw()});
+  window.addEventListener('pano-inline-init',()=>{});
 }
 
 // 「加载全部照片」：点亮照片图层，并把视野缩放到所有照片都看得见 ——
@@ -10722,6 +10973,8 @@ function boot(){
   initCardCollapse();
   // 右栏空时把宽度让给地图（"选文件阶段右侧全是地图"）
   initRightCol();
+  // 右栏内联 360 查看器的拖拽/滚轮事件（元素在脚本块之后，必须在这里挂）
+  try{panoInlineInit()}catch(e){}
   // 搜索+操作卡的折叠状态（记住选择）
   setProbeFold(readProbeFold());
   // 覆盖面板现在也浮在地图里（左下角），要接上折叠钮与高度联动

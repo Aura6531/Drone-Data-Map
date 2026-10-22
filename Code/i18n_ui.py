@@ -164,7 +164,6 @@ UI_ZH: dict[str, str] = {
     # 注意：只留一条 "Loading…"。曾经同时收了 "Loading…" 与 "loading…"，
     # 生成的 JSON 就有**重复键**，严格解析器（PowerShell 的 ConvertFrom-Json、
     # 部分严格 JSON 库）会直接报错。字典的键必须唯一。
-    "Loading…": "加载中…",
     "Playback aborted": "播放已中止",
     "Network error: the video data could not be fetched": "网络错误：取不到视频数据",
     "Decode error: the video data is damaged": "解码错误：视频数据损坏",
@@ -189,8 +188,10 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 弹框 / 通用 ----------------
     "Language": "语言",
-    "Close": "关闭",
     "Cancel": "取消",
+    "Close": "关闭",
+    "Loading…": "加载中…",
+    "Drag to look around · wheel to zoom · R to reset": "拖动查看四周 · 滚轮缩放 · R 复位",
     "Save": "保存",
     "OK": "确定",
     "Yes": "是",
