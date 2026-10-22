@@ -354,6 +354,19 @@ def photo_seq(meta):
 CAMERA_ORDER = {"ZoomCamera": 0, "WideCamera": 1, "InfraredCamera": 2}
 
 
+def _stamp_seconds(stamp):
+    """把 `YYYYMMDD_HHMMSS` 解析成秒数；解析不了给 None。"""
+    s = str(stamp or "")
+    if len(s) < 15 or "_" not in s:
+        return None
+    try:
+        import datetime
+
+        return datetime.datetime.strptime(s[:15], "%Y%m%d_%H%M%S").timestamp()
+    except (ValueError, OSError):
+        return None
+
+
 def group_photos(metas, max_gap_m=8.0):
     """把「同一目标点」的多张照片合并成一组（用户要求：地图上合并成一个点）。
 
@@ -382,13 +395,35 @@ def group_photos(metas, max_gap_m=8.0):
         seq = photo_seq(meta)
         folder = str(pathlib.Path(meta["path"]).parent)
 
-        # 认不出序号的（文件名不合规范）退回「同一秒」，至少不比以前差
-        key = (folder, seq) if seq else (folder, stamp + "#stamp")
+        # 认不出序号的（文件名不合规范）不能退回「同一秒」——
+        # 非 DJI 命名的照片（如「东城南站 全景1.JPG」）既没有序号、EXIF 时刻又
+        # 常常缺失/相同，退回会让几十张互不相干的照片并成一组（实测 55 张）。
+        # 现在退回「去掉流后缀的文件名」：DJI 的 _V/_T 对仍会合并，
+        # 任意命名的文件各归各的。
+        if seq:
+            # 同一文件夹里可能混着**不同日期**的素材（例如「全景上传」文件夹
+            # 把好几次飞行的照片放一起，序号都是 0001/0002）——
+            # 只按 (文件夹, 序号) 会把不同日子的照片并成一组（实测 11 张）。
+            # 加上日期：同一次按快门的 V/T 对时刻只差 1 秒，日期一致，不受影响。
+            day = (stamp or "")[:10]
+            key = (folder, seq, day)
+        else:
+            stem = pathlib.Path(meta["path"]).stem
+            flight = re.sub(r"_[VST]$", "", stem, flags=re.IGNORECASE).lower()
+            key = (folder, "#name", flight)
 
         placed = False
 
+        stamp_sec = _stamp_seconds(stamp)
+
         for group in groups:
             if group["key"] != key:
+                continue
+
+            # 同一次快门的多张只差 1 秒；差得多的（同一天不同时刻拍的全景，
+            # 序号可能都是 0001）必须分开（实测差了 1 小时还被并成一组）。
+            g_sec = group.get("stamp_sec")
+            if stamp_sec is not None and g_sec is not None and abs(stamp_sec - g_sec) > 5:
                 continue
 
             group["members"].append((meta, target))
@@ -408,6 +443,7 @@ def group_photos(metas, max_gap_m=8.0):
                 "key": key,
                 "folder": folder,
                 "stamp": stamp,
+                "stamp_sec": stamp_sec,
                 "lat": target["lat"],
                 "lon": target["lon"],
                 "accuracy": target["accuracy"],

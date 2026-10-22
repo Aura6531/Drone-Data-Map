@@ -1182,17 +1182,21 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
       if (vtOnly) chk(notV.length === 0, '每组的第一张（大图）都是 _V',
         notV.length ? notV.slice(0, 3).map(g => g.members[0].name).join(', ') : '');
 
-      // ③ 序号不再被拆到两个组里
+      // ③ 同一次拍摄（同一飞行名，去掉 _V/_S/_T）不能被拆到两个组里。
+      // 2026-10-22：分组规则加了「时刻必须接近 ≤5 秒」—— 同一文件夹里不同时刻拍的
+      // 素材序号可能相同（实测差 1 小时的全景），此时**允许**分成不同组；
+      // 但「同一次快门」的 V/T 对必须落在同一组，这才是这条断言的本意。
       const seen = new Map();
       let dup = 0;
       for (let i = 0; i < groups.length; i++) {
         for (const m of groups[i].members) {
-          const k = m.folder + '|' + seqOf(m.name);
+          const k = m.folder + '|'
+            + String(m.name).replace(/\.[^.]+$/, '').replace(/_[VST]$/i, '');
           if (seen.has(k) && seen.get(k) !== i) dup++;
           seen.set(k, i);
         }
       }
-      chk(dup === 0, '同一文件夹 + 同一序号只出现在一个组里（不再拆错）', dup + ' 处重复');
+      chk(dup === 0, '同一次拍摄（同一飞行名）的照片只出现在一个组里', dup + ' 处重复');
 
       // ④ 组数 = 照片数 / 2，且升序（前端按这个顺序编号「第 N / M 个目标点」）
       if (vtOnly) chk(groups.length * 2 === d.counts.photos,
