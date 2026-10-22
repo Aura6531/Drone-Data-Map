@@ -9355,7 +9355,10 @@ function renderLoadedPanel(){
 
   // —— 正射影像 ——
   try{
-    const list=(typeof orthoList!=='undefined'&&orthoList)?orthoList:[];
+    // 只列真正的正射影像：dsm / gsddsm 是高程模型（kind='unsupported'），
+    // 用户明确「只需要看正射，不需要显示它们」
+    const list=(typeof orthoList!=='undefined'&&orthoList)
+      ? orthoList.filter(o=>o&&o.kind==='ortho'&&o.source) : [];
     if(list.length){
       const items=list.filter(Boolean).map((it)=>{
         const key=it.name||it.file||'ortho';
