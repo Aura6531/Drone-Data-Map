@@ -82,6 +82,10 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Some tiles failed to load for": "以下底图的瓦片有几块没加载出来：",
+    "With Tianditu, check that the tk in tianditu_key.txt is valid and within quota; you can also switch to OpenStreetMap.": "用天地图的话，检查 tianditu_key.txt 里的 tk 是否有效、是否超额；也可以改用开放街图。",
+    "Pin the left panel (keep it expanded)": "固定侧栏（保持展开）",
+    "Pin the left panel": "固定侧栏",
     "The server returned a web page instead of data": "服务端返回的是网页而不是数据",
     "(Thrown inside a cross-origin script; the browser hides the details. crossorigin has been added to CDN scripts — refresh to see the real cause; if it still only says “Script error”, it is most likely inside the map library. Please report it with the steps you took.)": "（异常抛在跨域脚本里，浏览器把细节抹掉了。我们已给 CDN 脚本加 crossorigin —— 刷新一次就能看到真实原因；如果仍只显示「Script error」，多半在地图库内部，请把复现步骤一起反馈。）",
     "unknown": "未知",
