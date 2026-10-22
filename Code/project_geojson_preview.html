@@ -5408,22 +5408,29 @@ function photoTooltip(group){
 }
 
 // ============================================================
-// 照片点的聚合（按缩放级别）
+// 照片点的聚合（按**地面距离**，与缩放无关）
 // ============================================================
 //
-// 为什么需要：一个项目里可能有一两百张全景照片（实测一批 150 张 -> 39 组）。
-// 缩到 z11 时这 39 个点会挤在几十像素内互相盖住，点不中任何一个。
+// 历史：最早按「屏幕像素半径 60px、z<17 才合并」聚合。问题是"挤在一起"是屏幕现象 ——
+// z12~z14 看项目时，相距两三百米的不同目标也被并成 13 / 5 / 4 的数字圆圈，
+// 想点单个目标就点不到（用户 2026-10-22 提了两张图指出这一点）。
 //
-// 行为约定（用户 2026-10-19 选的方案 A）：
-//   z <  PHOTO_CLUSTER_MAX_ZOOM  按屏幕像素半径合并成一个带数字的圆圈
-//   z >= PHOTO_CLUSTER_MAX_ZOOM  **一律不合并**，每个组一个点，保证一定点得到
-// 为什么选 A 而不是"一直聚合到全部分开"：A 的行为可预测（放到 17 级就一定能点到），
-// 而动态聚合会逼用户放到 21 级才点得到，来回缩放很烦。
+// 现在的约定（用户 2026-10-22）：
+//   **只有地面距离 ≤ PHOTO_CLUSTER_MAX_METERS 的组才合并**，缩放到哪一级都一样。
+//   即"拍摄目标几乎就在同一张照片上"的那几张（同一目标的变焦/广角/热成像）合成一个点，
+//   其余一律各画各的点 —— 行为可预测，也不再藏点。
 //
-// 聚合半径用**像素**不用米：「挤在一起」是屏幕上的现象 ——
-// z11 时 50 米也算同一点，z18 时 50 米已经是两块地。
-const PHOTO_CLUSTER_MAX_ZOOM=17;
-const PHOTO_CLUSTER_RADIUS_PX=60;
+// 为什么用地面距离而不是像素：像素半径会随缩放变化，等于"看不见就合并"，
+// 这正是用户要关掉的行为。距离是客观的：6 m 就是 6 m。
+const PHOTO_CLUSTER_MAX_METERS=6;
+
+// 两点间的近似地面距离（米）。用等距圆柱近似，十几公里内误差 < 0.1%。
+function photoMetersBetween(aLat,aLng,bLat,bLng){
+  const M_PER_DEG_LAT=111320;
+  const dLat=(bLat-aLat)*M_PER_DEG_LAT;
+  const dLng=(bLng-aLng)*M_PER_DEG_LAT*Math.cos(((aLat+bLat)/2)*Math.PI/180);
+  return Math.sqrt(dLat*dLat+dLng*dLng);
+}
 
 // Web Mercator 像素坐标（与 Leaflet 的 project() 同一套公式）。
 // 不依赖 map 实例 —— 抽成纯函数才能直接单测。
@@ -5450,11 +5457,9 @@ function photoCoord(v){
 //   groups: [{lat, lon}, ...]（照片组，不是单张照片）
 //   返回:   [{lat, lng, count, idxs}]，idxs 是原数组下标
 // count===1 的就是单点（按原来的图标画），count>1 的画成数字圆圈。
-function clusterPhotoGroups(groups,zoom,radiusPx,maxZoom){
-  const zmax=Number.isFinite(maxZoom)?maxZoom:PHOTO_CLUSTER_MAX_ZOOM;
-  const r=Number.isFinite(radiusPx)?radiusPx:PHOTO_CLUSTER_RADIUS_PX;
+function clusterPhotoGroups(groups,maxMeters){
+  const lim=Number.isFinite(maxMeters)?maxMeters:PHOTO_CLUSTER_MAX_METERS;
   const list=Array.isArray(groups)?groups:[];
-  const z=Number.isFinite(zoom)?zoom:0;
 
   // 先筛出有坐标的（坏数据照旧不画）
   const pts=[];
@@ -5462,19 +5467,18 @@ function clusterPhotoGroups(groups,zoom,radiusPx,maxZoom){
     const g=list[i];
     const lat=photoCoord(g&&g.lat), lng=photoCoord(g&&g.lon);
     if(!Number.isFinite(lat)||!Number.isFinite(lng))continue;
-    pts.push({i,lat,lng,xy:photoPixelAt(lat,lng,z)});
+    pts.push({i,lat,lng});
   }
 
-  // 到了最高聚合层级：一律不合并
-  if(z>=zmax){
+  // 阈值 <= 0 等价于"完全不聚合"（留一个显式开关，排查时好对比）
+  if(!(lim>0)){
     return pts.map(p=>({lat:p.lat,lng:p.lng,count:1,idxs:[p.i]}));
   }
 
-  // 贪心：以未分配的每一点为锚，把半径内的吞进来。
-  // n 是"照片组"的数量（通常是几十），O(n^2) 完全够用；
-  // 锚点不重算质心 —— 结果可预测，也不会因为中心漂移导致抖动。
+  // 贪心：以未分配的每一点为锚，把**地面距离**在阈值内的吞进来。
+  // n 是"照片组"的数量（通常几十），O(n^2) 完全够用；
+  // 聚合点取成员均值 —— 结果可预测，也不会因中心漂移而抖动。
   const used=new Array(pts.length).fill(false);
-  const r2=r*r;
   const out=[];
   for(let a=0;a<pts.length;a++){
     if(used[a])continue;
@@ -5483,9 +5487,7 @@ function clusterPhotoGroups(groups,zoom,radiusPx,maxZoom){
     let sLat=pts[a].lat, sLng=pts[a].lng;
     for(let b=a+1;b<pts.length;b++){
       if(used[b])continue;
-      const dx=pts[b].xy[0]-pts[a].xy[0];
-      const dy=pts[b].xy[1]-pts[a].xy[1];
-      if(dx*dx+dy*dy<=r2){
+      if(photoMetersBetween(pts[a].lat,pts[a].lng,pts[b].lat,pts[b].lng)<=lim){
         used[b]=true;
         idxs.push(pts[b].i);
         sLat+=pts[b].lat; sLng+=pts[b].lng;
@@ -5536,7 +5538,7 @@ function renderPhotoLayer(){
   photoLayer=L.layerGroup();
 
   const zoom=map.getZoom();
-  const clusters=clusterPhotoGroups(photoGroups,zoom);
+  const clusters=clusterPhotoGroups(photoGroups);
   let singles=0;
 
   clusters.forEach(cl=>{
@@ -5573,11 +5575,11 @@ function renderPhotoLayer(){
         .filter(g=>g&&Number.isFinite(Number(g.lat))&&Number.isFinite(Number(g.lon)))
         .map(g=>[Number(g.lat),Number(g.lon)]);
       if(!pts.length)return;
-      // +3 级保证一定"有进展"（否则一簇点可能放大一级还挤在一起），
-      // 但不超过"不再聚合"的层级 —— 到那一级就必然能点到单个点。
+      // 放大到能看清里面：+3 级保证"有进展"，上限用 Leaflet 的 21 级。
+      // （旧的实现还卡在"不聚合的层级"，现在聚合只跟地面距离有关，没有那个层级了。）
       map.fitBounds(L.latLngBounds(pts),{
         padding:[60,60],
-        maxZoom:Math.min(zoom+3,PHOTO_CLUSTER_MAX_ZOOM)
+        maxZoom:Math.min(zoom+3,21)
       });
     });
     marker.bindTooltip(
