@@ -333,7 +333,12 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 照片卡里的 360 展开图：原始比例 2:1 撑满整栏太占地方，限高后用缩略图就够看 */
 /* 360 大图：按用户 2026-10-22 画的红框大小（约 280×158），不再整行铺开 */
 .photo-lead .photo-shot[data-pano="1"]{width:min(280px,100%);height:158px}
-.pano-card .pano-view-wrap{max-height:340px}
+/* 全景卡按内容收缩（`.photo-card` 默认 flex:1 1 auto 会把卡片拉满整栏，
+   而画布只有 16:9 那一条，下半截就空着 —— 用户 2026-10-22 反馈的"空这么大" */
+/* 特异性要压过后面那条 .photo-card{flex:1 1 auto}（同权重、后者在后） */
+.photo-card.pano-card{flex:0 0 auto;min-height:0}
+/* 画布保持 16:9，但高度不超过视口的 52%（宽窗口时别把整栏吃掉） */
+.pano-card .pano-view-wrap{max-height:min(52vh,620px)}
 
 /* 右侧控件：不受全局 .row 的 flex-wrap:wrap 影响，强制单行 */
 .row.video-head-tools{flex:0 0 auto;flex-wrap:nowrap;gap:6px}
@@ -863,7 +868,11 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .pano-canvas.dragging{cursor:grabbing}
 .pano-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     color:#cbd5e1;font-size:13px;pointer-events:none}
-.pano-hint{font-size:12px;color:#64748b;margin-top:6px}
+.pano-hint{position:absolute;left:10px;bottom:8px;z-index:2;
+    font-size:12px;color:#e2e8f0;margin:0;padding:4px 9px;border-radius:7px;
+    background:rgba(12,20,36,.55);border:1px solid rgba(255,255,255,.14);
+    -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+    pointer-events:none;white-space:nowrap}
 .photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
 .photo-cap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
            background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
@@ -1649,8 +1658,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
       <div class="pano-view-wrap">
         <canvas id="panoInlineCanvas" class="pano-canvas"></canvas>
         <div id="panoInlineMsg" class="pano-msg" data-i18n="Loading…">Loading…</div>
+        <!-- 操作提示做成画面内的浮层（半透明底板），不再单独占一行 -->
+        <div class="pano-hint" data-i18n="Drag to look around · wheel to zoom · R to reset">Drag to look around · wheel to zoom · R to reset</div>
       </div>
-      <div class="pano-hint" data-i18n="Drag to look around · wheel to zoom · R to reset">Drag to look around · wheel to zoom · R to reset</div>
     </section>
 
     <!-- 标记点列表已挪到左栏（与「项目数据 / 轨迹文件」共用一块地方，
