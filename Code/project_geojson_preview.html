@@ -9644,6 +9644,22 @@ function renderLoadedPanelInner(){
         const head=document.createElement('div');
         head.className='ld-chead';
 
+        // 分类级折叠（与位置点一致）：+ / −，状态记在 collapsedGroups
+        const kindKey='photos/'+k;
+        const kCollapsed=collapsedGroups.has(kindKey);
+        const ktog=document.createElement('button');
+        ktog.type='button';
+        ktog.className='ld-exp'+(kCollapsed?'':' open');
+        ktog.textContent=kCollapsed?'+':'−';
+        ktog.title=kCollapsed?t('Expand'):t('Collapse');
+        ktog.addEventListener('click',()=>{
+          if(collapsedGroups.has(kindKey))collapsedGroups.delete(kindKey);
+          else collapsedGroups.add(kindKey);
+          saveCollapsedGroups();
+          renderLoadedPanel();
+        });
+        head.appendChild(ktog);
+
         const kbox=document.createElement('input');
         kbox.type='checkbox';
         kbox.className='tree-check';
@@ -9684,7 +9700,7 @@ function renderLoadedPanelInner(){
         head.appendChild(kcount);
 
         list.appendChild(head);
-        idxs.forEach(i=>list.appendChild(makePhotoRow(photoGroups[i],i)));
+        if(!kCollapsed)idxs.forEach(i=>list.appendChild(makePhotoRow(photoGroups[i],i)));
       }
       grp.appendChild(list);
     }
