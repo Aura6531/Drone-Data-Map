@@ -2400,8 +2400,14 @@ function filteredGeoFiles(){
   // 「日期/类型筛选」那块已经隐藏（功能并入「已加载」）。
   // 如果仍按隐藏下拉里的旧值过滤，会出现「明明有 GeoJSON 却一条都不加载」，
   // 左栏「视频」分组因此空着 —— 用户会以为刷新后数据没了。
-  const legacy=document.getElementById('legacyTrackTools');
-  const filtersHidden=legacy&&getComputedStyle(legacy).display==='none';
+  let filtersHidden=false;
+  try{
+    // 测试沙箱里没有 document / getComputedStyle，这里要容错
+    if(typeof document!=='undefined'&&document.getElementById&&typeof getComputedStyle==='function'){
+      const legacy=document.getElementById('legacyTrackTools');
+      filtersHidden=!!(legacy&&getComputedStyle(legacy).display==='none');
+    }
+  }catch(e){ filtersHidden=false; }
   if(filtersHidden)return geoFiles.map((f,index)=>({f,index}));
 
   return geoFiles
