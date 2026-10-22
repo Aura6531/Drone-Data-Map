@@ -3315,10 +3315,32 @@ function syncDroneMarker(explicitVideoSeconds){
   ){
     bearing=telemetry.yaw[telemetryIndex];
   }else{
-    bearing=bearingAt(track.coords,index);
+    // 没有遥测（或该帧缺 yaw）时退回按航迹方向算。但悬停/极慢时相邻点只差几厘米，
+    // 方向会随机乱跳 —— 所以只有**真的移动了**（>1.5 m）才更新，否则保持上一次的朝向。
+    // 用户 2026-10-22：无人机只是变了焦，图标却转了好几圈。
+    const anchor=clip&&clip._bearingAnchor;
+    const moved=anchor?map.distance(anchor,latlng):Infinity;
+    if(!Number.isFinite(droneBearing)||moved>1.5){
+      const b=bearingAt(track.coords,index);
+      if(b!==null){
+        bearing=b;
+        if(clip)clip._bearingAnchor=latlng;
+      }
+    }
   }
 
-  if(bearing!==null)droneBearing=bearing;
+  if(bearing!==null){
+    // 角度解缠：把新朝向换算成"离上一次最近"的等价角。
+    // 否则 179° -> -179° 会被 CSS 的 transform 过渡按数值插值，绕远路转 359°（用户看到的"转好几圈"）。
+    let b=Number(bearing);
+    if(Number.isFinite(droneBearing)){
+      b=droneBearing+(((b-droneBearing)%360)+540)%360-180;
+      // 单帧最大 35°：脏数据/瞬移不应该把图标甩飞
+      const STEP=35;
+      if(Math.abs(b-droneBearing)>STEP)b=droneBearing+Math.sign(b-droneBearing)*STEP;
+    }
+    droneBearing=b;
+  }
 
   // 只改内层 transform，避免每次都重建图标 DOM
   const el=droneMarker.getElement();

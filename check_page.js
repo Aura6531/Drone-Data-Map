@@ -375,8 +375,11 @@ chk(/function\s+telemetryIndexAt\s*\(/.test(body), 'function telemetryIndexAt()'
   chk(iYaw >= 0, '箭头朝向取字幕里的云台朝向 gb_yaw', `@${iYaw}`);
   chk(iFallback >= 0, '没有字幕数据时退回航迹航向', `@${iFallback}`);
   chk(iYaw >= 0 && iFallback >= 0 && iYaw < iFallback, '云台朝向优先，航迹航向只是兜底');
-  chk(/else\{\s*\n\s*bearing=bearingAt\(track\.coords,index\);\s*\n\s*\}/.test(fn),
-    '航迹航向确实放在 else 分支里（不是无条件覆盖）');
+  // 2026-10-22：兜底分支里加了「只有真的移动了才更新」的闸门（悬停时不再乱转），
+  // 所以断言改成看结构：else 分支里仍然调用 bearingAt，并且带移动判定。
+  chk(/else\{[\s\S]{0,400}bearingAt\(track\.coords,index\)/.test(fn)
+    && /moved>1\.5/.test(fn),
+    '航迹航向放在 else 分支里，且有「移动超过 1.5 m 才更新」的闸门');
   chk(/SRT 里只有云台姿态/.test(fn), '注释写明了 SRT 没有机体朝向这件事');
 }
 chk(/M20 3 L34 34 L20 26 L6 34 Z/.test(body), '箭头 0° 时朝上（正北），顺时针为正');
