@@ -4885,6 +4885,9 @@ function drawProjectMarkers(){
   videoMarkLayer.clearLayers();
 
   for(const m of projectMarkers){
+    // 「已加载」里取消勾选的点不该画出来（显隐状态存在 project.json 的 ui.markers）
+    const shown=!loadedUiState||!loadedUiState.markers||loadedUiState.markers[m.name]!==false;
+    if(!shown)continue;
     addVideoMark(L.latLng(m.lat,m.lng),m.name);
   }
 
@@ -9666,7 +9669,11 @@ function renderLoadedPanel(){
           // 分类已经显示在上一层的分组标题里，行内不再重复贴标签
           name:key, icon:'📍', shown, key,
           onGo:()=>{ try{ map.setView([Number(m.lat),Number(m.lng)],Math.max(map.getZoom(),17)); }catch(e){} },
-          onToggle:(on)=>{ loadedUiState.markers[key]=on; loadedUiSave(); renderLoadedPanel(); },
+          onToggle:(on)=>{
+            loadedUiState.markers[key]=on; loadedUiSave();
+            try{ drawProjectMarkers(); }catch(e){}
+            renderLoadedPanel();
+          },
         };
       });
       // 按分类分组（保持原有顺序；没有分类的归到「未分类」）
@@ -9680,10 +9687,14 @@ function renderLoadedPanel(){
       const cats=order.map(name=>({name,items:byCat.get(name)}));
       box.appendChild(ldCategoryGroup(t('Positions'),cats,(on)=>{
         items.forEach(i=>{ loadedUiState.markers[i.key]=on; });
-        loadedUiSave(); renderLoadedPanel();
+        loadedUiSave();
+        try{ drawProjectMarkers(); }catch(e){}
+        renderLoadedPanel();
       },'positions',(cat,on)=>{
         cat.items.forEach(i=>{ loadedUiState.markers[i.key]=on; });
-        loadedUiSave(); renderLoadedPanel();
+        loadedUiSave();
+        try{ drawProjectMarkers(); }catch(e){}
+        renderLoadedPanel();
       }));
     }
   }catch(e){}
