@@ -904,6 +904,18 @@ def _com_multi_folder_dialog(title="选择无人机数据文件夹（按住 Ctrl
         call(dialog, 2, ctypes.c_ulong)()
 
 
+_dialog_lock = threading.Lock()
+
+
+def _destroy_quietly(root):
+    """销毁 tk 根窗口；已经销毁过就什么也不做（双击关闭会走到两次）。"""
+
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
+
 def select_folder_windows():
 
     result = {
@@ -915,14 +927,29 @@ def select_folder_windows():
         root = tk.Tk()
         root.withdraw()
 
+        # 置顶 + 抓焦点：否则对话框可能被别的窗口压在下面，
+        # 而它又是模态的 —— 表现就是「界面完全没法点」。
         root.attributes(
             "-topmost",
             True
+        )
+        root.lift()
+        try:
+            root.focus_force()
+        except Exception:
+            pass
+
+        # 兜底：5 分钟没人理它（或被别的窗口挡住），自己关掉，
+        # 让后端的这个请求返回 None，前端就能恢复。
+        root.after(
+            300000,
+            lambda: _destroy_quietly(root)
         )
 
         try:
 
             selected = filedialog.askdirectory(
+                parent=root,
                 title="选择无人机数据文件夹",
                 mustexist=True
             )
@@ -931,16 +958,24 @@ def select_folder_windows():
                 result["path"] = selected
 
         finally:
-            root.destroy()
+            _destroy_quietly(root)
 
-    thread = threading.Thread(
-        target=open_dialog
-    )
+    # 一次只开一个对话框：两个根窗口叠在一起会互相抢焦点，最后谁都没响应
+    if not _dialog_lock.acquire(blocking=False):
+        return None
 
-    thread.start()
-    thread.join()
+    try:
+        thread = threading.Thread(
+            target=open_dialog
+        )
 
-    return result["path"]
+        thread.start()
+        thread.join()
+
+        return result["path"]
+
+    finally:
+        _dialog_lock.release()
 
 
 def select_files_windows():

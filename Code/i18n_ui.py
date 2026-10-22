@@ -82,6 +82,9 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "The folder dialog timed out. It may be hidden behind another window — please try again.": "文件夹对话框超时了（可能被别的窗口挡住了），请重试。",
+    "A folder dialog is already open. Finish it first.": "已经有一个文件夹对话框开着，请先处理它。",
+    "Waiting for the folder dialog…": "正在等待文件夹选择…",
     "Loaded": "已加载",
     "This project has no folders yet. Import a data folder first.": "这个项目还没有文件夹 —— 先用上面的「导入数据」。",
     "This project has no GeoJSON yet — import data above (tracks are generated automatically).": "这个项目还没有 GeoJSON —— 用上面的「导入数据」，航迹会自动生成。",

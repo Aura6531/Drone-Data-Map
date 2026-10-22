@@ -10357,13 +10357,28 @@ if(addFolderBtn)addFolderBtn.addEventListener('click',()=>{
   pickFolder();   // 没有弹窗时退回原来的直接选文件夹
 });
 
+let folderPicking=false;   // 已经有一个"选文件夹"在进行中
+
 async function pickFolder(quiet){
+  // 再点一次不要再发一个请求：后端的原生对话框是模态的，
+  // 两个请求会各自开一个根窗口互相抢焦点 —— 表现就是「整个界面没法点」。
+  if(folderPicking){
+    taskLog(t('A folder dialog is already open. Finish it first.'),'err');
+    return;
+  }
+  folderPicking=true;
+
   const old=addFolderBtn?addFolderBtn.textContent:'';
   if(addFolderBtn){addFolderBtn.disabled=true;addFolderBtn.textContent=t('Choose a folder in the dialog…')}
   closeImportDialog();
+  taskLog(t('Waiting for the folder dialog…'),'info');
+
+  // 超时兜底：对话框被别的窗口挡住时，不能让页面一直挂着
+  const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+  const timer=ctrl?setTimeout(()=>ctrl.abort(),300000):0;
 
   try{
-    const picked=await api('/api/project/select-folder');
+    const picked=await api('/api/project/select-folder',ctrl?{signal:ctrl.signal}:{});
 
     // 可以一次选多个文件夹（Windows 原生对话框按住 Ctrl / Shift 多选）
     const paths=(picked&&picked.paths)||((picked&&picked.path)?[picked.path]:[]);
@@ -10385,6 +10400,8 @@ async function pickFolder(quiet){
       }
     }
 
+    taskLog(`${t('Imported')} ${done} ${t('folder(s)')}`,failed.length?'err':'ok');
+
     if(paths.length>1){
       await scanGeoJSON();      // 逐个导入时先不刷，最后统一刷一次文件列表
       show(projectNotice,
@@ -10394,8 +10411,15 @@ async function pickFolder(quiet){
       show(projectNotice,'Import failed: '+failed[0],true);
     }
   }catch(e){
-    if(!quiet)show(projectNotice,'Folder selection was cancelled.',true);
+    // 超时（对话框被别的窗口挡住）时给一句能指导行动的话，别只说"取消"
+    if(e&&e.name==='AbortError'){
+      taskLog(t('The folder dialog timed out. It may be hidden behind another window — please try again.'),'err');
+    }else if(!quiet){
+      show(projectNotice,'Folder selection was cancelled.',true);
+    }
   }finally{
+    if(timer)clearTimeout(timer);
+    folderPicking=false;
     if(addFolderBtn){addFolderBtn.disabled=false;addFolderBtn.textContent=old}
   }
 }
