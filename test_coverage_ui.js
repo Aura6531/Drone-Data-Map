@@ -424,8 +424,9 @@ console.log('\n=== 搜索+主要操作悬浮在地图里（地图高度大幅扩
   // 可折叠：选完点之后能收起来看地图
   chk(/id="probeFoldBtn"/.test(inside), '有折叠按钮');
   chk(/function setProbeFold/.test(html), '有 setProbeFold');
-  chk(/\.action-bar\.folded \.action-row\{display:none\}/.test(html),
-    '折叠时收掉按钮行');
+  // 2026-10-22：搜索行与三个检索按钮合进 `.ab-search`，折叠收掉整行
+  chk(/\.action-bar\.folded \.ab-search/.test(html),
+    '折叠时收掉按钮行（.ab-search）');
   chk(!/\.action-bar\.folded \.search-bar\{display:none\}/.test(html),
     '折叠后**搜索框仍然可用**（否则等于把搜索藏了）');
   // clearProbe 不能把整条卡藏掉（那样搜索也没了）

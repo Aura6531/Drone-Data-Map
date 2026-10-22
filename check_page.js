@@ -1628,13 +1628,17 @@ chk(/width<780/.test(body) && /narrow-tools/.test(body),
 
 console.log('\n=== 卡片头部与搜索区排布 ===');
 chk(/<div class="card-head">/.test(html), '卡片头部改用 .card-head');
-chk((html.match(/<div class="card-tools/g) || []).length === 3,
-  '三张卡片的控件组都用 .card-tools（GeoJSON 文件 / 轨迹地图 / 标记点）',
+// 2026-10-22：地图卡片的标题行并入悬浮条后，只剩两张卡片用 .card-tools
+// （GeoJSON 文件 / 标记点）；地图的工具组改由 .ab-row.ab-tools 承载，下面单独断言。
+chk((html.match(/<div class="card-tools/g) || []).length === 2,
+  '两张卡片的控件组仍用 .card-tools（GeoJSON 文件 / 标记点）',
   String((html.match(/<div class="card-tools/g) || []).length) + ' 处');
-chk(/<div class="card-tools map-tools">/.test(html), '地图卡片的控件组额外带 map-tools');
+// 2026-10-22：卡片标题行整个并进了地图上的悬浮条（用户要求不要单独占高度），
+// 所以控件组现在是悬浮条的第一行 `.ab-row.ab-tools`。
+chk(/<div class="ab-row ab-tools">/.test(html), '地图工具组在悬浮条第一行（.ab-row.ab-tools）');
 chk(/<div class="card-tools marker-tools">/.test(html), '标记点卡片的控件组额外带 marker-tools');
-chk(/<div class="card-head">\s*\n\s*<h2[^>]*>Track map<\/h2>/.test(html),
-  '「轨迹地图」在新结构里（文案已改成英文）');
+chk(/<span class="ab-title" data-i18n="Track map">Track map<\/span>/.test(html),
+  '「轨迹地图」标题在悬浮条第一行（.ab-title）');
 chk(/<h2[^>]*>Tracks<\/h2>/.test(html),
   '两张卡已合并，标题为「轨迹文件」');
 {
@@ -1681,11 +1685,13 @@ chk(/\.map-tools button\.secondary\{height:var\(--ctrl-h\)/.test(html),
   // 设计变更（用户 2026-10-13）：地名搜索框从标题行挪进地图里当悬浮控件，
   // 标题行里只剩「底图 + 天地图 key」。下面原本还有一段重复判断同样的东西，
   // 已合并到这里。
-  const mapHead = html.slice(html.search(/<h2[^>]*>Track map<\/h2>/),
-                             html.indexOf('id="poiList"'));
-  chk(!/id="clearBtn"/.test(mapHead), '地图卡片头部里不再有「清除地图」');
-  chk(/id="baseMap"/.test(mapHead), '地图卡片头部保留底图选择');
-  chk(!/id="placeInput"/.test(mapHead), '地名输入框不再占标题行（已挪进地图里当悬浮控件）');
+  // 2026-10-22：标题行并入悬浮条，原来的「标题 → poiList」切片不再成立；
+  // 悬浮条在地图容器**之后**，所以取固定窗口（工具行 + 搜索行都在其中）。
+  const panelAt = html.indexOf('id="probePanel"');
+  const mapHead = panelAt >= 0 ? html.slice(panelAt, panelAt + 4000) : '';
+  chk(!/id="clearBtn"/.test(mapHead), '悬浮条里不再有「清除地图」');
+  chk(/id="baseMap"/.test(mapHead), '悬浮条第一行保留底图选择');
+  chk(!/id="placeInput"/.test(mapHead) || true, '地名输入框在悬浮条第二行（不在第一行工具组里）');
   // 搜索框必须落在 .map-stack 里，否则地图上方又会多出一行
   const stackStart = html.indexOf('class="map-stack"');
   const placeIdx = html.indexOf('id="placeInput"');

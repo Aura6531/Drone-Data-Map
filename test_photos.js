@@ -677,13 +677,15 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   //   ① 加载全部照片（贴左，就在「轨迹地图」标题正下方，不留空）
   //   ② 计数（它是按钮的说明，紧跟按钮右边）
   //   ③ 底图 + 天地图key（推到这一行最右边）
-  const toolsRow = html.slice(html.indexOf('card-tools map-tools'),
-                              html.indexOf('id="mapNotice"'));
+  // 2026-10-22：这一行从卡片标题行搬进了地图上的悬浮条（`.ab-row.ab-tools`），
+  // 取法是「工具行起点 + 固定窗口」。
+  const toolsAt = html.indexOf('ab-row ab-tools');
+  const toolsRow = toolsAt >= 0 ? html.slice(toolsAt, toolsAt + 3000) : '';
   chk(/id="photoLayerBtn"/.test(toolsRow) && /id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow),
-    '三个控件在同一行（.card-tools.map-tools）');
+    '三个控件在同一行（.ab-row.ab-tools）');
   chk(toolsRow.indexOf('id="photoLayerBtn"') < toolsRow.indexOf('id="photoLayerCount"')
-      && toolsRow.indexOf('id="photoLayerCount"') < toolsRow.indexOf('class="map-tools-right"'),
-    '顺序：加载全部照片 -> 计数（它的说明） -> 底图组');
+      && toolsRow.indexOf('id="photoLayerCount"') < toolsRow.indexOf('id="orthoBtn"'),
+    '顺序：加载全部照片 -> 计数（它的说明） -> 后面才是正射/底图');
   chk(/\.card-tools\.map-tools\{[^}]*margin-left:0/.test(html),
     '这一行 margin-left:0 —— 否则被 .card-tools 的 auto 推到中间（实测偏 61px），'
     +'就不是「贴着左边、在标题正下方」了');

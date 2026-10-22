@@ -426,18 +426,28 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
      · 宽屏一行排开（省高度），窄屏自动换行（省不了高度但保证能用）
    ------------------------------------------------------------ */
 .action-bar{position:absolute;left:10px;top:10px;z-index:810;
-            max-width:min(900px,calc(100% - 20px));
-            display:flex;align-items:center;flex-wrap:wrap;gap:12px;
-            padding:9px 12px;border-radius:9px;
+            max-width:min(860px,calc(100% - 20px));
+            display:flex;flex-direction:column;align-items:stretch;gap:8px;
+            padding:8px 12px;border-radius:9px;
             background:rgba(255,255,255,.55);
             -webkit-backdrop-filter:blur(7px) saturate(1.7);
             backdrop-filter:blur(7px) saturate(1.7);
             border:1px solid rgba(148,163,184,.34);
             box-shadow:0 1px 8px rgba(15,23,42,.10)}
-/* 折叠状态：只留搜索那一行 —— 收起后地图几乎全露出来 */
-.action-bar.folded .probe-line,
-.action-bar.folded .action-row{display:none}
-.action-bar .ab-toggle{position:static;order:9;flex:0 0 auto;margin-left:2px;width:22px;height:24px;
+/* 折叠状态：只留工具那一行 —— 收起后地图几乎全露出来 */
+.action-bar.folded .ab-search,
+.action-bar.folded .probe-line{display:none}
+/* 悬浮条里的两行 */
+.ab-row{display:flex;align-items:center;gap:12px;min-width:0;flex-wrap:nowrap}
+.ab-title{font-weight:700;font-size:15px;color:#0f172a;white-space:nowrap;flex:0 0 auto}
+.ab-tools{overflow:hidden}
+.ab-tools button{height:32px;padding:0 12px;font-size:13px;white-space:nowrap;flex:0 0 auto}
+.ab-tools .ctrl-label{font-size:13px;color:#475569;white-space:nowrap;flex:0 0 auto}
+.ab-tools select{max-width:150px;flex:0 0 auto}
+.ab-tools .photo-tools{display:inline-flex;align-items:center;gap:6px;min-width:0;flex:0 0 auto}
+.ab-tools .photo-sub{font-size:12px;color:#475569;white-space:nowrap}
+.ab-tools #probeFoldBtn{margin-left:auto;width:24px;height:24px}
+.action-bar .ab-toggle{position:static;flex:0 0 auto;width:24px;height:24px;
                        padding:0;border-radius:6px;border:1px solid rgba(148,163,184,.45);
                        background:rgba(255,255,255,.75);color:#475569;
                        font-size:13px;line-height:1;cursor:pointer;z-index:1}
@@ -1283,20 +1293,33 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 
   <section class="col col-mid">
     <section class="card card-fill">
-    <div class="card-head">
-      <h2 data-i18n="Track map">Track map</h2>
-      <div class="card-tools map-tools">
-        <!-- 一行两段（用户 2026-10-07 定的）：
-             ① 「加载全部照片」贴着左边（就在「轨迹地图」标题正下方）；
-             ② 「底图 + 天地图key」推到这一行最右边。
-             搜索框已挪进地图里当悬浮控件（用户 2026-10-13），这里不再占位。 -->
-        <button id="photoLayerBtn" class="photo-layer-btn" type="button" aria-pressed="false"
-                title="Show all photo points on the map and zoom to fit them (click again to hide)" data-i18n="Load all photos">Load all photos</button>
-        <span class="photo-tools">
-          <span id="photoLayerCount" class="photo-sub"></span><span id="photoLayerCountExtra"
-                class="photo-sub"></span>
-        </span>
-        <div class="map-tools-right">
+    <!-- 这张卡**没有标题行**：标题和全部工具按钮都并进地图上的悬浮条，
+         把这一行的高度还给地图（用户 2026-10-22：
+         「这几个按钮也合并到地图上面的悬浮按钮中去，不用单独占页面的高度」）。 -->
+
+    <div id="poiList" class="poi-list"></div>
+
+    <div id="mapNotice" class="notice" style="display:none"></div>
+
+    <!-- 地图 + 图层叠成一层：图例浮在地图左下角，不再单独占一行把地图挤矮 -->
+    <div class="map-stack">
+      <div id="map" class="map-wrap"></div>
+
+      <!-- 搜索 + 主要操作：**悬浮在地图上**。
+           用户 2026-10-13：「把搜索框和我们最大的几个按钮做进地图里面，成为悬浮按钮，
+           这样地图的面积就能大幅扩张」。
+           原来它们在地图上方各占一块（实测搜索那行 36px、选点+按钮块 176px），
+           地图只剩 311px 高；挪进来后这些高度全部还给地图。 -->
+      <div id="probePanel" class="action-bar">
+        <!-- 第一行：标题 + 地图工具（原卡片标题行，整体搬进来） -->
+        <div class="ab-row ab-tools">
+          <span class="ab-title" data-i18n="Track map">Track map</span>
+          <button id="photoLayerBtn" class="photo-layer-btn" type="button" aria-pressed="false"
+                  title="Show all photo points on the map and zoom to fit them (click again to hide)" data-i18n="Load all photos">Load all photos</button>
+          <span class="photo-tools">
+            <span id="photoLayerCount" class="photo-sub"></span><span id="photoLayerCountExtra"
+                  class="photo-sub"></span>
+          </span>
           <!-- 正射影像叠加层：把项目里的 GeoTIFF 正射影像当瓦片底图贴在地图上。
                金字塔在后台建（几分钟），建好之后缩放就是读文件（实测 3 ms / 块）。
                没有 .tif 时按钮本身不出现，不占位置。 -->
@@ -1315,42 +1338,29 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           </select>
           <button id="keyBtn" class="key-btn" type="button"
                   title="Tianditu key: the app works without one; paste it here later and it takes effect on save" data-i18n="Tianditu key">Tianditu key</button>
+          <!-- 折叠按钮：放到这一行末尾（不再绝对定位压住最后一个按钮） -->
+          <button id="probeFoldBtn" class="ab-toggle" type="button" aria-pressed="false"
+                  title="Collapse these controls to see more of the map">–</button>
         </div>
-      </div>
-    </div>
 
-    <div id="poiList" class="poi-list"></div>
-
-    <div id="mapNotice" class="notice" style="display:none"></div>
-
-    <!-- 地图 + 图层叠成一层：图例浮在地图左下角，不再单独占一行把地图挤矮 -->
-    <div class="map-stack">
-      <div id="map" class="map-wrap"></div>
-
-      <!-- 搜索 + 主要操作：**悬浮在地图上**。
-           用户 2026-10-13：「把搜索框和我们最大的几个按钮做进地图里面，成为悬浮按钮，
-           这样地图的面积就能大幅扩张」。
-           原来它们在地图上方各占一块（实测搜索那行 36px、选点+按钮块 176px），
-           地图只剩 311px 高；挪进来后这些高度全部还给地图。 -->
-      <div id="probePanel" class="action-bar">
-        <!-- 折叠按钮：选完点通常就不再需要这几个大按钮了，收起来看地图。
-             放右上角，不和搜索框的"Search place"挤在一起。 -->
-        <button id="probeFoldBtn" class="ab-toggle" type="button" aria-pressed="false"
-                title="Collapse these controls to see more of the map">–</button>
-        <div class="search-bar">
-          <input id="placeInput" type="text" data-i18n-placeholder="Search a place, e.g. Zhaoqing, Nan'an Street" placeholder="Search a place, e.g. Zhaoqing, Nan'an Street">
-          <button id="placeSearchBtn" data-i18n="Search place">Search place</button>
+        <!-- 第二行：搜索 + 三个检索按钮（用户要求"一整条，不用上下两排"） -->
+        <div class="ab-row ab-search">
+          <div class="search-bar">
+            <input id="placeInput" type="text" data-i18n-placeholder="Search a place, e.g. Zhaoqing, Nan'an Street" placeholder="Search a place, e.g. Zhaoqing, Nan'an Street">
+            <button id="placeSearchBtn" data-i18n="Search place">Search place</button>
+          </div>
+          <div class="row action-row">
+            <button id="searchNearbyBtn" data-i18n="Find flights at this position">Find flights at this position</button>
+            <button id="findFramesBtn" title="Across every flight in this project, find the moments that saw this exact spot — and how clearly" data-i18n="Frames of this spot">Frames of this spot</button>
+            <button id="clearProbeBtn" class="secondary" data-i18n="Clear selection">Clear selection</button>
+            <button id="playHitBtn" class="play-btn" style="display:none" data-i18n="▶ Play video here">▶ Play video here</button>
+            <button id="resultFlyBtn" class="secondary" style="display:none" data-i18n="Center map here">Center map here</button>
+          </div>
         </div>
+
         <div class="probe-line" id="probeLine" style="display:none">
           Selected position (<span id="probeSource">map click</span>)：
           <span id="probeCoord" class="probe-coord"></span><span id="probeLabel"></span>
-        </div>
-        <div class="row action-row">
-          <button id="searchNearbyBtn" data-i18n="Find flights at this position">Find flights at this position</button>
-          <button id="findFramesBtn" title="Across every flight in this project, find the moments that saw this exact spot — and how clearly" data-i18n="Frames of this spot">Frames of this spot</button>
-          <button id="clearProbeBtn" class="secondary" data-i18n="Clear selection">Clear selection</button>
-          <button id="playHitBtn" class="play-btn" style="display:none" data-i18n="▶ Play video here">▶ Play video here</button>
-          <button id="resultFlyBtn" class="secondary" style="display:none" data-i18n="Center map here">Center map here</button>
         </div>
       </div>
 
