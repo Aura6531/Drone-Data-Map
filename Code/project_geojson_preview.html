@@ -9455,7 +9455,12 @@ function taskLog(text,kind){
   const now=new Date();
   const stamp=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   // 成功的消息自动过期（保留 3 条），失败的一直留着直到下一次操作
-  taskLogLines.unshift({text,kind:kind||'info',stamp});
+  // 同一句话连着重播就别叠三条了（自动流程会重复触发同一条提示）
+  if(taskLogLines.length&&taskLogLines[0].text===text){
+    taskLogLines[0].stamp=stamp;
+  }else{
+    taskLogLines.unshift({text,kind:kind||'info',stamp});
+  }
   if(kind!=='err'&&taskLogLines.length>3)taskLogLines.length=3;
   if(kind==='err'){
     // 出错时只保留错误 + 前面一条，方便对照
