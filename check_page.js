@@ -494,7 +494,7 @@ chk(/\.follow-label,\.ctrl-label\{[^}]*flex:0 0 auto/.test(html),
 chk(/\.toggle-btn\{[^}]*flex:0 0 auto/.test(html), '开关按钮不参与收缩');
 chk(!/for="followMode"/.test(html),
   '去掉了独立的「地图跟随」标签，改把说明写进选项（少占约 64px）');
-chk(/<option value="fit">Follow · Fit<\/option>/.test(html), '选项自带「跟随」前缀，去掉标签也不歧义');
+chk(/<option value="fit"[^>]*>Follow · Fit<\/option>/.test(html), '选项自带「跟随」前缀，去掉标签也不歧义');
 chk(/\.row\.video-head-tools\{flex:0 0 auto;flex-wrap:nowrap;gap:6px\}/.test(html),
   '右侧控件单行、间距收紧到 6px');
 

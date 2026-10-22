@@ -1486,22 +1486,22 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
             <div id="videoInfo" class="video-info"></div>
           </div>
           <div class="row video-head-tools">
-            <button id="crosshairToggle" class="toggle-btn" type="button" aria-pressed="true" title="Center crosshair: show / hide">Crosshair</button>
-            <button id="footprintToggle" class="toggle-btn" type="button" aria-pressed="true" title="Camera field of view: show / hide (ground area covered by the frame)">FOV</button>
-            <button id="thermalToggle" class="toggle-btn" type="button" hidden aria-pressed="true" title="Sync thermal view: show / hide (bottom-left of the frame)">IR</button>
-            <button id="mapPipToggle" class="toggle-btn" type="button" aria-pressed="true" title="Mini map: show / hide (bottom-right, follows the drone)">Mini map</button>
-            <button id="speedToggle" class="toggle-btn" type="button" aria-pressed="false" title="2× playback: on / off (applies to both video and thermal, and persists across videos)">2× speed</button>
+            <button id="crosshairToggle" class="toggle-btn" type="button" aria-pressed="true" title="Center crosshair: show / hide" data-i18n="Crosshair">Crosshair</button>
+            <button id="footprintToggle" class="toggle-btn" type="button" aria-pressed="true" title="Camera field of view: show / hide (ground area covered by the frame)" data-i18n="FOV">FOV</button>
+            <button id="thermalToggle" class="toggle-btn" type="button" hidden aria-pressed="true" title="Sync thermal view: show / hide (bottom-left of the frame)" data-i18n="IR">IR</button>
+            <button id="mapPipToggle" class="toggle-btn" type="button" aria-pressed="true" title="Mini map: show / hide (bottom-right, follows the drone)" data-i18n="Mini map">Mini map</button>
+            <button id="speedToggle" class="toggle-btn" type="button" aria-pressed="false" title="2× playback: on / off (applies to both video and thermal, and persists across videos)" data-i18n="2× speed">2× speed</button>
             <!-- 导出片段：以当前播放位置为中心，前 5 秒 + 后 5 秒（共 10 秒），1080p。
                  放在「2倍速」右边（用户 2026-10-07 指定的位置）。 -->
             <button id="clipBtn" class="toggle-btn" type="button"
-                    title="Export 5 seconds before and after the current frame (10s total), 1080p download">Export ±5s</button>
+                    title="Export 5 seconds before and after the current frame (10s total), 1080p download" data-i18n="Export ±5s">Export ±5s</button>
             <!-- 原来自制了一个「全屏」按钮，但它和浏览器自带控件那个重复，
                  而且原生那个是真铺满、零黑边（自制那条 theater 布局始终有黑边）。
                  所以按需求删掉自制按钮，全屏统一用视频控件里的那个。 -->
             <select id="followMode" class="follow-select" title="Map follow mode: Fit = keep both target and drone in view; Center = keep the drone centered; Off = map stays put">
-              <option value="fit">Follow · Fit</option>
-              <option value="center">Follow · Center</option>
-              <option value="off">No follow</option>
+              <option value="fit" data-i18n="Follow · Fit">Follow · Fit</option>
+              <option value="center" data-i18n="Follow · Center">Follow · Center</option>
+              <option value="off" data-i18n="No follow">No follow</option>
             </select>
             <button id="videoClose" class="video-close" type="button" title="Close (Esc)" aria-label="Close">
               <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
@@ -1563,9 +1563,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div id="photoSub" class="photo-sub"></div>
         <div class="photo-head-tools">
           <button id="photoMapBtn" class="secondary" type="button"
-                  title="Center the map on this photo">Locate</button>
+                  title="Center the map on this photo" data-i18n="Locate">Locate</button>
           <button id="photoCloseBtn" class="secondary" type="button"
-                  title="Collapse the photo panel (photo layer stays)">Collapse</button>
+                  title="Collapse the photo panel (photo layer stays)" data-i18n="Collapse">Collapse</button>
         </div>
       </div>
       <div id="photoChips" class="photo-chips"></div>
@@ -3475,15 +3475,23 @@ function compassText(deg){
     if(diff<bestDiff){bestDiff=diff;best=i}
   }
 
-  if(bestDiff<0.5)return 'due '+COMPASS_NAMES[best];
+  const DIR_ZH=['北','东','南','西'];
+  const DIR_EN=['north','east','south','west'];
+
+  // 测试沙箱里直接 eval 这个函数（没有 I18N_LANG）—— 必须判存在性，
+  // 否则 ReferenceError 会让 test_telemetry 整套炸掉。
+  const zh=(typeof I18N_LANG!=='undefined')&&I18N_LANG==='zh';
+  if(bestDiff<0.5)return zh?('正'+DIR_ZH[best]):('due '+COMPASS_NAMES[best]);
 
   // 从最近的基准方向往哪一侧偏
   const delta=((d-cardinals[best]+540)%360)-180;
-  // 英文里说「35° east of south」比「35° E of S」自然，所以这里用全称
-  const towardName=['north','east','south','west'][delta>0?(best+1)%4:(best+3)%4];
-  const baseName=['north','east','south','west'][best];
-
-  return `${Math.abs(delta).toFixed(0)}° ${towardName} of ${baseName}`;
+  const towardIdx=delta>0?(best+1)%4:(best+3)%4;
+  // 英文里说「35° east of south」比「35° E of S」自然，所以这里用全称；
+  // 中文说「南偏西 34°」（基准方向在前、偏向在后）。
+  if(zh){
+    return `${DIR_ZH[best]}偏${DIR_ZH[towardIdx]} ${Math.abs(delta).toFixed(0)}°`;
+  }
+  return `${Math.abs(delta).toFixed(0)}° ${DIR_EN[towardIdx]} of ${DIR_EN[best]}`;
 }
 
 // 画面中心那条视线打到地面的点，到无人机正下方地面点的水平距离。
@@ -3511,7 +3519,8 @@ function opticalFocalOf(focal,dzoom){
 
 function lensInfoOf(relativePath,focal,dzoom){
   if(isInfraredPath(relativePath)){
-    return {name:'IR',base:null,digital:null,total:null,text:'IR'};
+    return {name:'IR',base:null,digital:null,total:null,
+            text:(typeof t==='function')?t('IR'):'IR'};
   }
 
   const optical=opticalFocalOf(focal,dzoom);
@@ -3530,7 +3539,9 @@ function lensInfoOf(relativePath,focal,dzoom){
   const total=Math.round(band.base*digital*10)/10;
 
   // DJI App 的写法：整数倍率不带小数，其余保留一位，例如“长焦 7×”“长焦 9.1×”
-  const text=`${band.name} ${Number.isInteger(total)?total:total.toFixed(1)}×`;
+  // `t` 在测试沙箱里可能不存在（test_telemetry 只 eval 这个函数）—— 判存在性。
+  const nm=(typeof t==="function")?t(band.name):band.name;
+  const text=`${nm} ${Number.isInteger(total)?total:total.toFixed(1)}×`;
 
   return {name:band.name,base:band.base,digital,total,text};
 }
@@ -4864,7 +4875,13 @@ const PHOTO_CAM_NAMES={ZoomCamera:'Zoom',WideCamera:'Wide',InfraredCamera:'Therm
 // 不猜 —— 猜错了反而误导。
 function photoCameraLabel(camera){
   const key=String(camera||'');
-  return PHOTO_CAM_NAMES[key]||key||'Photo';
+  // 表里给的是英文显示名；'Zoom' 会与已有的 'zoom' 冲突，所以查表用后者。
+  // 注意：查不到译文（例如测试沙箱没有词表）时**必须退回英文显示名**。
+  const name=PHOTO_CAM_NAMES[key]||key||'Photo';
+  if(typeof t!=='function')return name;
+  const look=(name==='Zoom')?'zoom':name;
+  const tr=t(look);
+  return (tr&&tr!==look)?tr:name;
 }
 
 // 相机名 -> caption 上那个彩色小标签的类名
@@ -4956,8 +4973,8 @@ function photoShotText(g){
 
 // 展示区的标题：单个点就写它，多个点依次排列，省得算一堆两两距离
 function photoGroupLabel(gs,index){
-  if(gs.length<=1)return 'Photo panel below the map';
-  return `Photos · target ${index+1} of ${gs.length}`;
+  if(gs.length<=1)return t('Photo panel below the map');
+  return `${t('Photos · target')} ${index+1} ${t('of')} ${gs.length}`;
 }
 
 // 十六进制颜色 -> rgba()。照片点的光晕色由 JS 定，CSS 里没法从一个变量推另一个。
@@ -5828,7 +5845,7 @@ function photoGalleryHtml(group){
 
   const leadCaption=
     `<figcaption class="photo-cap">`
-    +`<span class="big">Large</span>`
+    +`<span class="big">${t('Large')}</span>`
     +`<span class="${photoCameraClass(lead.camera)}">${esc(photoCameraLabel(lead.camera))}</span>`
     +`<b>${esc(lead.name)}</b>`
     +(leadWarn?`<span class="warn">⚠ ${esc(lead.accuracy)}</span>`:'')
@@ -5934,7 +5951,7 @@ function photoJumpHtml(group,matches){
 
   let confidence='';
   if(best.inFrame){
-    confidence='<b>Target is inside this frame</b> — time and place both match.';
+    confidence='<b>'+t('Target is inside this frame')+'</b> — '+t('time and place both match.');
   }else if(Math.abs(best.gapSeconds)<=60){
     confidence='Time matches (within a minute), but the target is not visible in this frame. This is normal.';
   }else{
@@ -5943,10 +5960,10 @@ function photoJumpHtml(group,matches){
 
   const notes=list.filter(m=>m.inFrameKnown&&!m.inFrame).length;
 
-  return `<div class="photo-jump-title">Click to jump to that moment in the video`
-    +` (shot at <b>${esc(timeText)}</b>, matched by file-name time)</div>`
+  return `<div class="photo-jump-title">${esc(t('Click to jump to that moment in the video'))}`
+    +` (${esc(t('shot at'))} <b>${esc(timeText)}</b>, ${esc(t('matched by file-name time'))})</div>`
     +`<div class="photo-jump-row">${buttons}</div>`
-    +`<div class="photo-jump-note">Closest: <b>${esc(best.video)}</b>`
+    +`<div class="photo-jump-note">${t('Closest:')} <b>${esc(best.video)}</b>`
     +`  gap <b>${best.gapSeconds>=0?'+':''}${best.gapSeconds.toFixed(1)}s</b>`
     +(best.droneDistance!=null?`  drone distance <b>${Math.round(best.droneDistance)} m</b>`:'')
     +` — ${confidence}`
@@ -5964,12 +5981,12 @@ function photoCardChips(group){
 
   const chip=(k,v)=>`<span class="photo-chip"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></span>`;
 
-  return chip('Target',`${Number(group.lat).toFixed(6)}, ${Number(group.lon).toFixed(6)}`)
-    +chip('Taken at',photoTimeText(lead&&lead.name))
-    +chip('Photo',`${group.count} photos (${photoShotText(group)})`)
-    +chip('Distance',lead&&lead.distance!=null?`${lead.distance} m`:'-')
-    +chip('Pitch',lead&&lead.depression!=null?`${lead.depression}°`:'-')
-    +(warn?`<span class="photo-chip"><span class="k">Position quality</span><span class="v">⚠ ${esc(group.accuracy)}${note?' ('+esc(note)+')':''}</span></span>`:'');
+  return chip(t('Target'),`${Number(group.lat).toFixed(6)}, ${Number(group.lon).toFixed(6)}`)
+    +chip(t('Taken at'),photoTimeText(lead&&lead.name))
+    +chip(t('Photo'),`${group.count} ${t('shots')} (${photoShotText(group)})`)
+    +chip(t('Distance'),lead&&lead.distance!=null?`${lead.distance} m`:'-')
+    +chip(t('Pitch'),lead&&lead.depression!=null?`${lead.depression}°`:'-')
+    +(warn?`<span class="photo-chip"><span class="k">${esc(t('Position quality'))}</span><span class="v">⚠ ${esc(t(group.accuracy))}${note?' ('+esc(t(note))+')':''}</span></span>`:'');
 }
 
 // 打开（或切换）展示区
@@ -6144,7 +6161,7 @@ function jumpToPhotoVideo(m){
   openVideoFromPopup(encoded);
 
   if(videoInfo){
-    videoInfo.textContent=`Jumped to ${formatTime(m.startSeconds)} (shot at ${photoGroupTimeText(
+    videoInfo.textContent=`${t('Jumped to')} ${formatTime(m.startSeconds)} (${t('shot at')} ${photoGroupTimeText(
       photoGroups[photoSelected]||{})}  gap ${m.gapSeconds>=0?'+':''}${m.gapSeconds.toFixed(1)}s)`;
   }
 }
@@ -7840,7 +7857,7 @@ function startClip(){
     }
 
     videoPlayer.play().then(()=>{
-      videoStatus.textContent='Playing'+(clip&&clip.useProxy?' (transcoded clip)':' (original)');
+      videoStatus.textContent=t('Playing')+(clip&&clip.useProxy?(' '+t('(transcoded clip)')):(' '+t('(original)')));
     }).catch(()=>{
       videoStatus.textContent='Video loaded — press the player\'s play button.';
     });
