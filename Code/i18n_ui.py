@@ -83,8 +83,6 @@ UI_ZH: dict[str, str] = {
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
     "Wide angle": "广角",
-    "Zoom": "变焦",
-    "360": "360 全景",
     "Tracks were not loaded automatically — click “Load all tracks” if needed.": "航迹没能自动加载 —— 需要的话点一下「加载全部航迹」。",
     "New marker": "新建标记点",
     "Marker added.": "已添加标记点",
@@ -321,7 +319,6 @@ UI_ZH: dict[str, str] = {
     "Target is inside this frame": "目标就在这幅画面内",
     "time and place both match.": "时间与位置都对得上。",
     "Mid tele": "中长焦",
-    "Wide": "广角",
     "Tele": "长焦",
     "Ortho": "正射影像",
     "OpenStreetMap": "开放街图（OSM）",
