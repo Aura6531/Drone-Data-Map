@@ -5550,26 +5550,44 @@ function photoMatchesFor(group){
     // （界面上就是红色那条「视频加载失败」，路径尾巴还挂着 .geojson）。
     // track.video 来自 GeoJSON 的 properties.video（如 DJI_..._T.MP4），
     // 取不到时才退回按航迹路径换算。
-    const videoRel=track.video||videoPathFromGeojson(clip.info.relative_path);
+    // 这一架次**每一路**视频都要成为候选：
+    // `track.video` 只是参考路（一般是 _V），而 `_T` / `_S` 在 properties.videos 里。
+    // 只拿 track.video 的话，点热成像照片永远配不到热成像视频（会退回 _V）。
+    const rels=[];
+    const seenRel=new Set();
+    const addRel=v=>{
+      const s=String(v||'');
+      if(!s)return;
+      const k=s.toLowerCase();
+      if(seenRel.has(k))return;
+      seenRel.add(k);
+      rels.push(s);
+    };
+    if(track.videos&&typeof track.videos==='object'){
+      Object.keys(track.videos).forEach(k=>addRel(track.videos[k]));
+    }
+    addRel(track.video||videoPathFromGeojson(clip.info.relative_path));
 
-    // 遥测缺失时 votes 是 null：这时不把「画面内」当硬条件，
-    // 否则会凭空丢掉本来对得上的候选。
-    out.push({
-      video:videoRel,
-      relativePath:videoRel,
-      folderIndex:clip.info.folder_index,
-      folder:photoVideoFolderPath(group,clip.info.folder_index),
-      stream:streamLabelOf(videoRel),
-      index:m.index,
-      time:m.time,
-      gapSeconds:m.gapSeconds,
-      startSeconds:photoVideoStartSeconds(clip,photoFileTime(photoLeadName(group))),
-      droneDistance:m.droneDistance,
-      inFrame:votes===true,
-      inFrameKnown:votes!==null,
-      xImg:m.xImg,
-      yImg:m.yImg
-    });
+    for(const videoRel of rels){
+      // 遥测缺失时 votes 是 null：这时不把「画面内」当硬条件，
+      // 否则会凭空丢掉本来对得上的候选。
+      out.push({
+        video:videoRel,
+        relativePath:videoRel,
+        folderIndex:clip.info.folder_index,
+        folder:photoVideoFolderPath(group,clip.info.folder_index),
+        stream:streamLabelOf(videoRel),
+        index:m.index,
+        time:m.time,
+        gapSeconds:m.gapSeconds,
+        startSeconds:photoVideoStartSeconds(clip,photoFileTime(photoLeadName(group))),
+        droneDistance:m.droneDistance,
+        inFrame:votes===true,
+        inFrameKnown:votes!==null,
+        xImg:m.xImg,
+        yImg:m.yImg
+      });
+    }
   }
 
   // 空间上差得离谱的直接丢掉（时刻推算错位的信号），

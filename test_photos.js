@@ -1081,7 +1081,9 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
   // 候选构造必须把 .geojson 换成 .mp4 —— 这条错过一次：按钮能点，
   // 一按就是红字「指定文件不是 MP4/MOV 视频」，播放器全黑。
   const pmf = extractFn('photoMatchesFor');
-  chk(/const videoRel=track\.video\|\|videoPathFromGeojson\(clip\.info\.relative_path\)/.test(pmf),
+  // 2026-10-22：一架次的每一路视频都进候选（否则 _T 照片配不到 _T 视频）；
+  // 路径仍必须是 .mp4 —— 断言改成看 addRel(track.video || videoPathFromGeojson(...))
+  chk(/addRel\(track\.video\|\|videoPathFromGeojson\(clip\.info\.relative_path\)\)/.test(pmf),
     '候选的路径是视频路径（.mp4），不是航迹的 .geojson');
   chk(/relativePath:videoRel/.test(pmf), 'relativePath 用的是换算后的视频路径');
   chk(!/relativePath:String\(clip\.info\.relative_path\)/.test(pmf),
