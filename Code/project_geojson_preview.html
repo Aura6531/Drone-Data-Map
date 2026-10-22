@@ -909,14 +909,17 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
     pointer-events:none;white-space:nowrap}
 .photo-lead .photo-shot{box-shadow:0 3px 12px rgba(15,23,42,.16)}
-/* 说明条浮在图片底部（半透明底板），不再单独占一行高度 */
+/* 说明条浮在图片底部（浅色磨砂底板）。
+   踩过：这里曾经一半深色一半浅色两套声明写在一起，后者生效 ——
+   底色是浅的、文字却被 .photo-cap b 刷成白色 → 白字白底看不见（用户 2026-10-22）。
+   现在统一成浅底 + 深字，两种语言都读得清。 */
 .photo-cap{position:absolute;left:0;right:0;bottom:0;z-index:2;
-           background:rgba(15,23,42,.55);color:#e2e8f0;
+           background:rgba(248,250,252,.92);color:#334155;
            -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+           border-top:1px solid rgba(226,232,240,.9);
            display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:5px 8px;
-           background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}
-/* 相机标签上色：变焦 / 广角 / 热成像一眼分清（和大图上那个「大图」标记同色系） */
-.photo-cap b{color:#fff}
+           font-size:12px}
+.photo-cap b{color:#0f172a}
 .photo-cap .cam{font-weight:700;border-radius:999px;padding:1px 8px;font-size:11px}
 .photo-cap .cam-zoom{background:#dbeafe;color:#1d4ed8}
 .photo-cap .cam-wide{background:#dcfce7;color:#15803d}
