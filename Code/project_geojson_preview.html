@@ -9154,11 +9154,46 @@ function ldRow(opts){
   return row;
 }
 
-function ldGroup(title,items,onAll){
+// 折叠状态（按分组名记，存在 localStorage）
+const COLLAPSED_GROUPS_KEY='uavmap.collapsedGroups';
+let collapsedGroups=new Set();
+try{
+  collapsedGroups=new Set(JSON.parse(localStorage.getItem(COLLAPSED_GROUPS_KEY)||'[]'));
+}catch(e){}
+
+function saveCollapsedGroups(){
+  try{ localStorage.setItem(COLLAPSED_GROUPS_KEY,JSON.stringify([...collapsedGroups])); }catch(e){}
+}
+
+function ldGroup(title,items,onAll,opts={}){
   const wrap=document.createElement('div');
   wrap.className='ld-group';
   const head=document.createElement('div');
   head.className='ld-head';
+
+  // 多条目的组可以用 + 折叠
+  const collapsible=opts.collapsible!==false&&items.length>1;
+  const key=opts.key||title;
+  const collapsed=collapsible&&collapsedGroups.has(key);
+
+  if(collapsible){
+    const tog=document.createElement('button');
+    tog.type='button';
+    tog.className='ld-exp'+(collapsed?'':' open');
+    tog.textContent=collapsed?'+':'−';
+    tog.title=collapsed?t('Expand'):t('Collapse');
+    tog.addEventListener('click',()=>{
+      if(collapsedGroups.has(key))collapsedGroups.delete(key);
+      else collapsedGroups.add(key);
+      saveCollapsedGroups();
+      renderLoadedPanel();
+    });
+    head.appendChild(tog);
+  }else{
+    const pad=document.createElement('span');
+    pad.className='ld-exp-space';
+    head.appendChild(pad);
+  }
 
   const shown=items.filter(i=>i.shown).length;
   const all=document.createElement('input');
@@ -9179,7 +9214,9 @@ function ldGroup(title,items,onAll){
   head.appendChild(count);
 
   wrap.appendChild(head);
-  for(const it of items)wrap.appendChild(ldRow(it));
+  if(!collapsed){
+    for(const it of items)wrap.appendChild(ldRow(it));
+  }
   return wrap;
 }
 
@@ -9254,7 +9291,8 @@ function renderLoadedPanel(){
       onExpand:()=>{ photoListOpen=!photoListOpen; renderLoadedPanel(); },
       onGo:()=>{ try{ if(!photoLayerOn)setPhotoLayer(true); zoomToAllPhotos(); }catch(e){} },
       onToggle:(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
-    }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); });
+    }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
+    {collapsible:false});
 
     // 展开后逐条列出：勾选框控制这一个点在不在图上，点名称飞过去并打开该点
     if(photoListOpen){
