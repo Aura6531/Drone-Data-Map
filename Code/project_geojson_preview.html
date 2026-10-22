@@ -9148,9 +9148,23 @@ function renderLoadedPanel(){
         const cb=document.createElement('input');
         cb.type='checkbox';
         cb.className='tree-check';
-        cb.checked=!photoHidden.has(i);
+        // 和「地图上显不显示」保持一致：图层关着一律不勾，别让用户看到
+        // 一列勾选其实什么都没画出来
+        cb.checked=photoLayerOn&&!photoHidden.has(i);
         cb.addEventListener('change',()=>{
-          if(cb.checked)photoHidden.delete(i); else photoHidden.add(i);
+          if(cb.checked){
+            // 图层本来关着 -> 只显示这一个（其余自动隐藏），这就是"单选"
+            if(!photoLayerOn){
+              photoHidden=new Set();
+              photoGroups.forEach((_,k)=>{ if(k!==i)photoHidden.add(k); });
+              photoLayerOn=true;
+              applyPhotoLayerVisibility();
+            }else{
+              photoHidden.delete(i);
+            }
+          }else{
+            photoHidden.add(i);
+          }
           try{ renderPhotoLayer(); }catch(e){}
           renderLoadedPanel();
         });
