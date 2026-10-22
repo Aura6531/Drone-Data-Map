@@ -460,8 +460,19 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    「做成一个长条即可，不用上下两排。按钮之间多留点空间」） */
 .action-bar .action-row{flex:0 0 auto;flex-wrap:nowrap;gap:12px;margin:0}
 .action-bar .action-row button{height:32px;padding:0 14px;font-size:13px}
-.probe-line{font-size:12px;margin:0;flex:1 0 100%;color:#1f2937;
+/* 选中位置那行：原来是 flex:1 0 100%（独占一行）—— 一选点整条工具栏就多一排
+   （用户 2026-10-22：「一旦选择一个点，之后上面按钮又变成两排了」）。
+   现在做成**工具行里的紧凑小片**：单行、超长省略、不参与换行。 */
+.probe-line{font-size:12px;margin:0;color:#1f2937;flex:0 0 auto;
+            max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+            background:rgba(255,255,255,.72);border:1px solid rgba(148,163,184,.35);
+            border-radius:6px;padding:2px 7px;
             text-shadow:0 1px 2px rgba(255,255,255,.85)}
+/* 点击处的小气泡：这个点的三个动作就地可点 */
+.probe-pop{display:flex;flex-direction:column;gap:6px;min-width:168px}
+.probe-pop-coord{font-size:12px;color:#475569;font-family:Consolas,"Courier New",monospace}
+.probe-pop button{height:30px;padding:0 10px;font-size:12px}
+.leaflet-popup.probe-popup .leaflet-popup-content{margin:10px 12px}
 /* 折叠态（`.folded`）只留搜索那一行；展开态见 `.action-bar .action-row` */
 /* Zoom 键默认也在左上角，会被上面的悬浮卡盖住 —— 往下让开。
    让的距离要按卡片**展开**时的高度算（实测 88px 折叠 / 117px 展开，
@@ -1355,6 +1366,12 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <button id="keyBtn" class="key-btn" type="button"
                   title="Tianditu key: the app works without one; paste it here later and it takes effect on save" data-i18n="Tianditu key">Tianditu key</button>
           <!-- 折叠按钮：放到这一行末尾（不再绝对定位压住最后一个按钮） -->
+          <!-- 选中位置：就在工具行里，不再单独占一行 -->
+          <!-- 只放坐标（前缀太长会把小片挤成「Selected po…」）。
+               probeSource 保留为隐藏元素：JS 要读它当气泡/拖拽的来源标记。 -->
+          <span class="probe-line" id="probeLine" style="display:none">
+            <span id="probeSource" hidden>map click</span><span id="probeCoord" class="probe-coord"></span><span id="probeLabel"></span>
+          </span>
           <button id="probeFoldBtn" class="ab-toggle" type="button" aria-pressed="false"
                   title="Collapse these controls to see more of the map">–</button>
         </div>
@@ -1374,10 +1391,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           </div>
         </div>
 
-        <div class="probe-line" id="probeLine" style="display:none">
-          Selected position (<span id="probeSource">map click</span>)：
-          <span id="probeCoord" class="probe-coord"></span><span id="probeLabel"></span>
-        </div>
       </div>
 
       <!-- 图例：**只留这一个框**（原来有航迹色卡 / 覆盖色带 / 选中点结论三块，
@@ -8895,6 +8908,47 @@ followModeSelect.addEventListener('change',()=>{
    选点 / 地名搜索 / 按此位置检索飞行视频
    ============================================================ */
 
+// 点击处的小气泡：把「这个点」的三个动作就地放出来（用户 2026-10-22 的建议：
+// 「跟这个地点有关的按钮，放到点完之后鼠标右下，方便快速点击，不用再挪到左上角」）。
+// 左上角操作条里的同款按钮保留 —— 有人习惯固定在角落，两处都能点。
+let probeQuickPopup=null;
+
+function showProbeQuick(latlng){
+  try{
+    if(!map||typeof L==='undefined')return;
+    const coord=`${latlng.lng.toFixed(6)}, ${latlng.lat.toFixed(6)}`;
+    const html='<div class="probe-pop">'
+      +`<div class="probe-pop-coord">${esc(coord)}</div>`
+      +`<button type="button" data-pop="nearby">${esc(t('Find flights at this position'))}</button>`
+      +`<button type="button" data-pop="frames">${esc(t('Frames of this spot'))}</button>`
+      +`<button type="button" class="secondary" data-pop="clear">${esc(t('Clear selection'))}</button>`
+      +'</div>';
+    if(!probeQuickPopup){
+      // autoPan 打开：靠边的点也不至于让气泡跑出可视区；
+      // 顶部留 130px 给地图上的工具栏，否则气泡会被工具条压住。
+      probeQuickPopup=L.popup({closeButton:false,offset:[8,-6],className:'probe-popup',
+        autoPan:true,autoPanPadding:[24,130],keepInView:true});
+    }
+    probeQuickPopup.setLatLng(latlng).setContent(html).openOn(map);
+    const box=probeQuickPopup.getElement();
+    if(box){
+      box.querySelectorAll('button[data-pop]').forEach(b=>{
+        b.addEventListener('click',ev=>{
+          ev.preventDefault();ev.stopPropagation();
+          const act=b.dataset.pop;
+          if(act==='nearby'){searchNearby()}
+          else if(act==='frames'){searchFramesOfSpot()}
+          else{clearProbe();clearHighlight();hideNearbyResult()}
+        });
+      });
+    }
+  }catch(e){}
+}
+
+function closeProbeQuick(){
+  try{if(probeQuickPopup&&map)map.closePopup(probeQuickPopup)}catch(e){}
+}
+
 function showProbePanel(latlng,source,label){
   probeLatLng=latlng;
   probeText=label||'';
@@ -8916,6 +8970,7 @@ function showProbePanel(latlng,source,label){
   }else{
     probeMarker.setLatLng(latlng);
   }
+  showProbeQuick(latlng);
 }
 
 function setProbe(latlng,source,label){
@@ -8934,6 +8989,7 @@ function clearProbe(){
   probeLatLng=null;probeText='';
   if(probeMarker){if(map)map.removeLayer(probeMarker);probeMarker=null}
   probeLine.style.display='none';
+  closeProbeQuick();
   // 注意：**不再把整条悬浮卡藏掉**，只收掉按钮行。
   // 搜索框现在住在这张卡里（用户 2026-10-13 要求挪进地图），
   // 藏掉整卡就等于把搜索功能一起藏了。
