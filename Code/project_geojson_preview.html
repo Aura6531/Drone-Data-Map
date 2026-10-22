@@ -491,15 +491,19 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    （用户 2026-10-22：「一旦选择一个点，之后上面按钮又变成两排了」）。
    现在做成**工具行里的紧凑小片**：单行、超长省略、不参与换行。 */
 .probe-line{font-size:12px;margin:0;color:#1f2937;flex:0 0 auto;
-            max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+            max-width:none;white-space:nowrap;overflow:visible;
             background:rgba(255,255,255,.72);border:1px solid rgba(148,163,184,.35);
             border-radius:6px;padding:2px 7px;
             text-shadow:0 1px 2px rgba(255,255,255,.85)}
 /* 点击处的小气泡：这个点的三个动作就地可点 */
-.probe-pop{display:flex;flex-direction:column;gap:6px;min-width:168px}
-.probe-pop-coord{font-size:12px;color:#475569;font-family:Consolas,"Courier New",monospace}
-.probe-pop button{height:30px;padding:0 10px;font-size:12px}
-.leaflet-popup.probe-popup .leaflet-popup-content{margin:10px 12px}
+.probe-pop{display:flex;flex-direction:column;gap:6px;min-width:200px}
+/* 经纬度是等宽字体、20 来个字符，必须 nowrap 且不被裁 —— 气泡宽度按内容撑开 */
+.probe-pop-coord{font-size:12px;color:#475569;font-family:Consolas,"Courier New",monospace;
+    white-space:nowrap;overflow:visible}
+.probe-pop button{height:30px;padding:0 10px;font-size:12px;white-space:nowrap}
+/* Leaflet 默认给内容区一个固定宽度（上限 300px），会把坐标裁掉；
+   这里改成由内容决定，并把上限放到 420px */
+.leaflet-popup.probe-popup .leaflet-popup-content{width:auto!important;min-width:200px;margin:10px 12px}
 /* 折叠态（`.folded`）只留搜索那一行；展开态见 `.action-bar .action-row` */
 /* Zoom 键默认也在左上角，会被上面的悬浮卡盖住 —— 往下让开。
    让的距离要按卡片**展开**时的高度算（实测 88px 折叠 / 117px 展开，
@@ -9097,7 +9101,7 @@ function showProbeQuick(latlng){
     if(!probeQuickPopup){
       // autoPan 打开：靠边的点也不至于让气泡跑出可视区；
       // 顶部留 130px 给地图上的工具栏，否则气泡会被工具条压住。
-      probeQuickPopup=L.popup({closeButton:false,offset:[8,-6],className:'probe-popup',
+      probeQuickPopup=L.popup({closeButton:false,offset:[8,-6],className:'probe-popup',maxWidth:420,
         autoPan:true,autoPanPadding:[24,130],keepInView:true});
     }
     probeQuickPopup.setLatLng(latlng).setContent(html).openOn(map);
