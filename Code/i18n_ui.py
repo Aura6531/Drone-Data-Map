@@ -82,6 +82,8 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "photo points": "个照片点",
+    "Photo point": "照片点",
     "Remove from this project": "确定从本项目移出",
     "from this project?": "移出本项目吗？",
     "It disappears from the map and from this list. Nothing on disk is touched unless you tick the box below.": "它会从地图和这个列表里消失。除非勾选下面的选项，磁盘上的文件不会有任何改动。",

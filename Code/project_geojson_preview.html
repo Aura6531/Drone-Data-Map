@@ -910,6 +910,14 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     border:1px solid #fecaca;border-radius:8px;cursor:pointer}
 .remove-danger input{margin:0;width:15px;height:15px;cursor:pointer}
 .remove-danger-hint{color:#b91c1c;font-size:11px;margin-top:6px}
+.ld-sublist{max-height:260px;overflow:auto;border-top:1px dashed #e2e8f0;padding:2px 0}
+.ld-subrow{display:flex;align-items:center;gap:6px;padding:2px 8px;font-size:11.5px}
+.ld-subrow:hover{background:#f1f5f9}
+.ld-subrow .ld-subname{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    cursor:pointer;color:#1d4ed8}
+.ld-subrow .ld-subname:hover{text-decoration:underline}
+.ld-subrow.hidden .ld-subname{color:#94a3b8;text-decoration:line-through}
+
 .ld-del{border:0;background:none;color:#cbd5e1;cursor:pointer;font-size:14px;
     line-height:1;padding:0 2px;flex:0 0 auto}
 .ld-row:hover .ld-del{color:#b91c1c}
@@ -6069,6 +6077,10 @@ function photoClusterIcon(count){
 let photoZoomHooked=false;
 let photoClusterStats=null;   // {clusters, singles} 供状态文字用
 
+// 单条照片点的显隐（存 photoGroups 的下标）。空集合 = 全部显示。
+let photoHidden=new Set();
+let photoListOpen=false;
+
 function renderPhotoLayer(){
   if(!map||!leafletReady())return;
 
@@ -6093,14 +6105,16 @@ function renderPhotoLayer(){
   photoLayer=L.layerGroup();
 
   const zoom=map.getZoom();
-  const clusters=clusterPhotoGroups(photoGroups,photoClusterMeters(zoom));
+  // 被单独取消勾选的照片点不参与绘制/聚合
+  const groups=photoHidden.size?photoGroups.filter((g,i)=>!photoHidden.has(i)):photoGroups;
+  const clusters=clusterPhotoGroups(groups,photoClusterMeters(zoom));
   let singles=0;
 
   clusters.forEach(cl=>{
     if(cl.count===1){
       singles++;
       const index=cl.idxs[0];
-      const group=photoGroups[index];
+      const group=groups[index];
       const marker=L.marker([cl.lat,cl.lng],{
         icon:photoIcon(group),
         // 照片点比航迹小一些，zIndexOffset 为负 -> 压在航迹下面，
@@ -6126,7 +6140,7 @@ function renderPhotoLayer(){
     });
     marker.on('click',e=>{
       if(e&&e.originalEvent&&typeof L!=='undefined'&&L.DomEvent)L.DomEvent.stopPropagation(e);
-      const pts=cl.idxs.map(i=>photoGroups[i])
+      const pts=cl.idxs.map(i=>groups[i])
         .filter(g=>g&&Number.isFinite(Number(g.lat))&&Number.isFinite(Number(g.lon)))
         .map(g=>[Number(g.lat),Number(g.lon)]);
       if(!pts.length)return;
@@ -9089,12 +9103,50 @@ function renderLoadedPanel(){
   const pg=(typeof photoGroups!=='undefined')&&photoGroups.length?photoGroups.length:0;
   if(pg){
     const shown=!!photoLayerOn;
-    box.appendChild(ldGroup(t('Photos'),[{
-      name:`${pg} ${t('photo groups')}`,
+    const grp=ldGroup(t('Photos'),[{
+      name:`${pg} ${t('photo points')}`,
       icon:'🖼', shown,
-      onGo:()=>{ try{ if(photoLayerOn)togglePhotoLayer(); }catch(e){} },
+      // 点名称 = 展开/收起这 149 条单点（不是飞过去）
+      onGo:()=>{ photoListOpen=!photoListOpen; renderLoadedPanel(); },
       onToggle:(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
-    }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); }));
+    }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); });
+
+    // 展开后逐条列出：勾选框控制这一个点在不在图上，点名称飞过去并打开该点
+    if(photoListOpen){
+      const list=document.createElement('div');
+      list.className='ld-sublist';
+      photoGroups.forEach((g,i)=>{
+        const row=document.createElement('div');
+        row.className='ld-subrow'+(photoHidden.has(i)?' hidden':'');
+
+        const cb=document.createElement('input');
+        cb.type='checkbox';
+        cb.className='tree-check';
+        cb.checked=!photoHidden.has(i);
+        cb.addEventListener('change',()=>{
+          if(cb.checked)photoHidden.delete(i); else photoHidden.add(i);
+          try{ renderPhotoLayer(); }catch(e){}
+          renderLoadedPanel();
+        });
+        row.appendChild(cb);
+
+        const name=document.createElement('span');
+        name.className='ld-subname';
+        // 用拍摄时刻 + 张数做名字（后端给 stamp，形如 20250412_110058）
+        const stamp=g.stamp?String(g.stamp).replace(/^(.{8})_(.{2})(.{2})(.{2})$/, '$1 $2:$3:$4'):'';
+        const label=(stamp||t('Photo point'))+(g.count>1?(' x'+g.count):'');
+        name.textContent=label;
+        name.title=`${t('Jump to')} ${label}`;
+        name.addEventListener('click',()=>{
+          try{ map.setView([Number(g.lat),Number(g.lon)],Math.max(map.getZoom(),PHOTO_ZOOM)); }catch(e){}
+          try{ selectPhotoGroup(i); }catch(e){}
+        });
+        row.appendChild(name);
+        list.appendChild(row);
+      });
+      grp.appendChild(list);
+    }
+    box.appendChild(grp);
   }
 
   // —— 多段线 / 多边形（KML）——
