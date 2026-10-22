@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "This project has only photos so far — showing them on the map.": "这个项目目前只有照片 —— 已直接显示在地图上。",
     "The folder dialog timed out. It may be hidden behind another window — please try again.": "文件夹对话框超时了（可能被别的窗口挡住了），请重试。",
     "A folder dialog is already open. Finish it first.": "已经有一个文件夹对话框开着，请先处理它。",
     "Waiting for the folder dialog…": "正在等待文件夹选择…",

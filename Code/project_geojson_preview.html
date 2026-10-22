@@ -6329,6 +6329,8 @@ function applyPhotoLayerVisibility(){
 function setPhotoLayer(on){
   photoLayerOn=!!on;
   applyPhotoLayerVisibility();
+  // 面板里的「照片」分组要跟着变：计数与勾选状态都取自这里
+  try{ renderLoadedPanel(); }catch(e){}
 }
 
 // 把视野缩放到「所有照片都看得见」。
@@ -6392,6 +6394,10 @@ async function loadProjectPhotos(){
     // 所以只在计数位置写一句原因，不弹红框。
     if(photoLayerCount)photoLayerCount.textContent=t('Failed to load photos: ')+e.message;
   }
+  // 读完照片就刷新「已加载」面板：否则照片组要等用户点「加载全部照片」才出现
+  try{ renderLoadedPanel(); }catch(e){}
+  // 注意：这里**不**自动点亮照片图层 —— 页面启动/换项目时保持默认关（不挡航迹）；
+  // 只有「导入完成」那条路径才会自动点亮（见 importScannedFolder 收尾）。
 }
 
 // 清掉照片图层与展示区（点「清空」时用；数据留着，再开开关就能显示）
@@ -9845,7 +9851,11 @@ async function ensureAllLoaded(){
   const entries=filteredGeoFiles();
 
   if(!entries.length){
-    show(mapNotice,geoFiles.length?t('No GeoJSON to load with the current filter.'):t('This project has no GeoJSON to load.'),true);
+    show(mapNotice,geoFiles.length?t('No GeoJSON to load with the current filter.')
+      : photoGroups.length
+        ? t('This project has only photos so far — showing them on the map.')
+        : t('This project has no GeoJSON to load.'),
+      true);
     return false;
   }
 
@@ -10333,6 +10343,18 @@ async function importScannedFolder(folder,quiet){
 
   // 导入完直接跑完整流程（缺的 SRT/GeoJSON 会在这里补齐）
   await runAutoPipeline();
+
+  // 照片（含 360 全景）也要跟着进来：原来要等用户点「加载全部照片」才会读，
+  // 于是刚导入完「已加载」里看不到照片组 —— 用户会以为没导入成功。
+  try{
+    await loadProjectPhotos();
+    // 只有照片、没有航迹的项目（比如全景上传文件夹）：直接点亮照片图层，
+    // 「导入即上图」，不用再点一次按钮。
+    if(!loadedTracks.length && photoGroups.length){
+      setPhotoLayer(true);
+    }
+    renderLoadedPanel();
+  }catch(e){}
 
   // 流程跑完再显示（见上面 impMsg 的说明）
   if(impMsg)show(projectNotice,impMsg);
