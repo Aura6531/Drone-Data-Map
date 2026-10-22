@@ -4828,6 +4828,8 @@ function updateMarkerCategoryHint(){
 let projectMarkers=[];
 
 async function saveProjectMarkers(){
+  // 标记点变了，「已加载 → 位置点」也要跟着刷新
+  try{ if(typeof renderLoadedPanel==='function')renderLoadedPanel(); }catch(e){}
   const name=projectSelect.value;
   if(!name)return;
 
@@ -10818,6 +10820,8 @@ projectSelect.addEventListener('change',()=>{
       const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
       projectLabels=(d.project&&d.project.labels)||[];
       projectVectors=(d.project&&d.project.vectors)||[];
+      // 标记点也要在「已加载」里显示，所以换项目时就把它读进来
+      try{ if(typeof loadProjectMarkers==='function')await loadProjectMarkers(); }catch(e){}
       window.__projectLoaded=true;
       labelSelectedId=null;
       renderLabels(); renderVectors(); renderLoadedPanel();
