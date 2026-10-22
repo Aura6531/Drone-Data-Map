@@ -8851,6 +8851,8 @@ function openVideoFromPopup(encoded,autoPlay=true){
 /* ============================================================
    KML 矢量（多段线 / 多边形）
    ============================================================ */
+let orthoHidden=new Set();      // 被 × 从「已加载」清掉的正射影像（按 name 记，存 project.json）
+
 let projectVectors=[];          // [{id,name,kind,feature}]
 let vectorLayer=null;
 const vectorHidden=new Set();   // 隐藏的 vector id
@@ -9362,7 +9364,7 @@ function renderLoadedPanel(){
     // 只列真正的正射影像：dsm / gsddsm 是高程模型（kind='unsupported'），
     // 用户明确「只需要看正射，不需要显示它们」
     const list=(typeof orthoList!=='undefined'&&orthoList)
-      ? orthoList.filter(o=>o&&o.kind==='ortho'&&o.source) : [];
+      ? orthoList.filter(o=>o&&o.kind==='ortho'&&o.source&&!orthoHidden.has(o.name)) : [];
     if(list.length){
       const items=list.filter(Boolean).map((it)=>{
         const key=it.name||it.file||'ortho';
@@ -9389,6 +9391,21 @@ function renderLoadedPanel(){
           onToggle:(on)=>{ loadedUiState.ortho[key]=on; loadedUiSave();
             try{ if(on){ if(typeof orthoApply==='function')orthoApply(); } else if(orthoLayer){ map.removeLayer(orthoLayer); orthoLayer=null; } }catch(e){}
             renderLoadedPanel(); },
+          onRemove:async()=>{
+            // 从「已加载」清除：撤图层、记住别再自动加载，磁盘文件不动
+            const pick=await askRemoveOptions(it.name);
+            if(!pick.ok)return;
+            orthoHidden.add(it.name);
+            try{ loadedUiState.orthoHidden=[...orthoHidden]; loadedUiSave(); }catch(e){}
+            try{
+              if(orthoLayer){ map.removeLayer(orthoLayer); orthoLayer=null; }
+              if(orthoPollTimer){ clearInterval(orthoPollTimer); orthoPollTimer=0; }
+              if(orthoPicked&&orthoPicked.name===it.name)orthoPicked=null;
+              setOrthoStatus('');
+            }catch(e){}
+            renderLoadedPanel();
+            taskLog(t('Removed from the loaded list (files on disk are kept).'),'ok');
+          },
         };
       });
       box.appendChild(ldGroup(t('Orthophoto'),items,(on)=>{
@@ -10600,6 +10617,11 @@ initFileTree();
       const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
       projectLabels=(d.project&&d.project.labels)||[];
       projectVectors=(d.project&&d.project.vectors)||[];
+      try{
+        const ui=(d.project&&d.project.ui)||{};
+        orthoHidden=new Set(ui.orthoHidden||[]);
+        if(ui)loadedUiState=Object.assign({videos:{},photos:{},markers:{},ortho:{},coverage:{}},ui);
+      }catch(e){}
       window.__projectLoaded=true;   // 只有读到过项目，才允许整份覆盖写
       try{ renderVectors(); }catch(e){}
     }catch(e){ projectLabels=[]; }
