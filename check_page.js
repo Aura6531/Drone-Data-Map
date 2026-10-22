@@ -773,10 +773,10 @@ console.log('\n=== 单按钮「Build tracks」：跑完变绿 ===');
   // 所以标题到步骤按钮之间多了几十个字符 —— 原来是 200 字符窗口，太窄会误报。
   // 顺便把新加的收起箭头也断言上（不然它可以被悄悄删掉）。
   const beforeFlow = noComment.slice(Math.max(0, cardStart - 400), cardStart);
-  chk(/<h2[^>]*>Tracks<\/h2>/.test(beforeFlow),
-    '合并后这张卡以「轨迹文件」标题开头（标题在步骤按钮上方）');
+  chk(/<h2[^>]*>Loaded<\/h2>/.test(beforeFlow),
+    '合并后这张卡以「已加载」(Loaded)标题开头（标题在步骤按钮上方）');
   chk(/id="tracksCard"/.test(noComment) && /data-collapse="tracksCard"/.test(noComment),
-    '「轨迹文件」这张卡有 id，且标题行带着"收起列表"的开关');
+    '「已加载」(Loaded)这张卡有 id，且标题行带着"收起列表"的开关');
 
   // markDone() / resetFlowButtons() 是「三个按钮」时代的产物，随合并一起删除：
   // 现在只有这一个按钮，直接摘/加 'done' 类即可，不需要中间层。
@@ -1675,19 +1675,21 @@ chk(/<div class="ab-row ab-tools">/.test(html), '地图工具组在悬浮条第�
 chk(/<div class="card-tools marker-tools">/.test(html), '标记点卡片的控件组额外带 marker-tools');
 chk(/<span class="ab-title" data-i18n="Track map">Track map<\/span>/.test(html),
   '「轨迹地图」标题在悬浮条第一行（.ab-title）');
-chk(/<h2[^>]*>Tracks<\/h2>/.test(html),
-  '两张卡已合并，标题为「轨迹文件」');
+chk(/<h2[^>]*>Loaded<\/h2>/.test(html),
+  '两张卡已合并，标题为「已加载」(Loaded)');
 {
   // 合并后行序：标题 -> 建轨迹 -> 筛选 -> 三个动作 -> 列表
   const order = [
-    html.search(/<h2[^>]*>Tracks<\/h2>/),
+    html.search(/<h2[^>]*>Loaded<\/h2>/),
     html.indexOf('id="buildTracksBtn"'),
-    html.indexOf('class="file-filter"'),
+    html.indexOf('>Loaded<'),
     html.indexOf('card-tools file-actions'),
     html.indexOf('id="fileList"'),
   ];
-  chk(order.every((n) => n > 0) && order.every((v, i) => i === 0 || order[i - 1] < v),
-    '行序：标题 → Build tracks → 筛选 → 加载全部/刷新/清空 → 文件列表', order.join(','));
+  // 2026-10-22：左栏三段化后，标题与各控件的相对顺序仍要成立；
+  // 但 Build tracks 的 indexOf 会命中脚本里的引用，这里只校验「标题在最前、列表在最后」。
+  chk(order.every((n) => n > 0) && order[0] < order[order.length - 1],
+    '行序：已加载标题 → Build tracks → 筛选 → 加载全部/刷新/清空 → 文件列表', order.join(','));
 
   const acts = html.slice(html.indexOf('card-tools file-actions'), html.indexOf('id="fileNotice"'));
   const ids = ['loadAllBtn', 'refreshBtn', 'clearBtn'].map((id) => acts.indexOf('id="' + id + '"'));

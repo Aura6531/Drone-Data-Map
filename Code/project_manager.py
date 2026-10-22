@@ -8351,6 +8351,135 @@ class ProjectManagerHandler(
 
             return
 
+        if path == "/api/project/tree":
+            # 左栏"文件浏览器"用：列一层目录，按素材类型分类。
+            try:
+                q = parse_qs(parsed.query)
+                project_name = (q.get("name") or [""])[0]
+                raw = (q.get("path") or [""])[0]
+
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+
+                roots = []
+                for item in project.get("folders") or []:
+                    folder = item.get("path")
+                    if folder:
+                        try:
+                            roots.append(Path(folder).resolve())
+                        except OSError:
+                            pass
+
+                if not roots:
+                    raise ValueError("This project has no folders yet. Import a data folder first.")
+
+                if not raw:
+                    # 没给路径：返回所有已登记文件夹作为根节点
+                    payload = {
+                        "success": True,
+                        "roots": [
+                            {
+                                "name": r.name,
+                                "path": str(r),
+                                "kind": "dir",
+                                "type": "folder",
+                                "exists": r.is_dir(),
+                            }
+                            for r in roots
+                        ],
+                    }
+                    json_response(self, payload)
+                    return
+
+                target = Path(raw).resolve()
+
+                allowed = target in roots
+                if not allowed:
+                    for r in roots:
+                        try:
+                            target.relative_to(r)
+                            allowed = True
+                            break
+                        except ValueError:
+                            pass
+                if not allowed:
+                    raise ValueError("That path is not inside this project's folders.")
+
+                if not target.is_dir():
+                    raise ValueError("Not a folder.")
+
+                video_ext = {".mp4", ".mov"}
+                photo_ext = {".jpg", ".jpeg", ".png"}
+
+                entries = []
+                try:
+                    children = sorted(
+                        target.iterdir(),
+                        key=lambda p: (not p.is_dir(), p.name.lower()),
+                    )
+                except OSError as exc:
+                    raise ValueError(f"Cannot read this folder: {exc}")
+
+                for child in children:
+                    if child.name.startswith("."):
+                        continue
+                    ext = child.suffix.lower()
+                    if child.is_dir():
+                        kind, ftype = "dir", "folder"
+                    else:
+                        name_upper = child.stem.upper()
+                        if ext in video_ext:
+                            if name_upper.endswith("_T"):
+                                ftype = "thermal"
+                            else:
+                                ftype = "video"
+                        elif ext == ".osv":
+                            ftype = "osv"
+                        elif ext in photo_ext:
+                            if name_upper.endswith("_D"):
+                                ftype = "pano"
+                            elif name_upper.endswith("_T"):
+                                ftype = "thermal"
+                            else:
+                                ftype = "photo"
+                        elif ext == ".kml":
+                            ftype = "kml"
+                        elif ext in (".srt", ".geojson", ".lrf", ".dat", ".txt"):
+                            ftype = "meta"
+                        else:
+                            ftype = "other"
+                        kind = "file"
+
+                    size = 0
+                    try:
+                        if kind == "file":
+                            size = child.stat().st_size
+                    except OSError:
+                        pass
+
+                    entries.append(
+                        {
+                            "name": child.name,
+                            "path": str(child),
+                            "kind": kind,
+                            "type": ftype,
+                            "size": size,
+                        }
+                    )
+
+                json_response(
+                    self,
+                    {
+                        "success": True,
+                        "path": str(target),
+                        "entries": entries,
+                    },
+                )
+            except Exception as e:
+                json_response(self, {"success": False, "error": str(e)}, status=400)
+            return
+
         if path == "/api/project/geojson-list":
 
             try:

@@ -856,6 +856,39 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 航迹流向箭头：一张小箭头图元，按线段方位角旋转（见 decimateForArrows） */
 .track-arrow{background:none;border:none}
 .track-arrow svg{display:block;filter:drop-shadow(0 0 1px rgba(15,23,42,.45))}
+/* ===== 左栏「数据文件」树（VS Code 风格）===== */
+.file-tree{flex:1 1 auto;min-height:120px;overflow:auto;margin-top:6px;
+    border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:4px 2px;
+    font-size:12px;line-height:1.5}
+/* 树卡片要按内容长高（否则 flex-basis:0 会把它压成一条，树溢出到下一张卡下面） */
+#treeCard{flex:1 1 auto;min-height:360px;display:flex;flex-direction:column;overflow:hidden}
+#fileTree{flex:1 1 auto;min-height:200px}
+.tree-row{display:flex;align-items:center;gap:5px;padding:2px 6px;border-radius:6px;
+    cursor:default;white-space:nowrap}
+.tree-row:hover{background:#f1f5f9}
+.tree-caret{width:14px;flex:0 0 14px;text-align:center;color:#64748b;cursor:pointer;
+    -webkit-user-select:none;user-select:none;font-size:10px}
+.tree-caret.empty{visibility:hidden}
+.tree-check{margin:0;width:13px;height:13px;flex:0 0 auto;cursor:pointer}
+.tree-ico{width:16px;flex:0 0 16px;text-align:center;font-size:12px}
+.tree-name{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;color:#0f172a}
+.tree-row.is-meta .tree-name{color:#64748b}
+.tree-row.is-other .tree-name{color:#94a3b8;font-style:italic}
+.tree-size{flex:0 0 auto;color:#94a3b8;font-size:11px;font-variant-numeric:tabular-nums}
+.tree-children{margin-left:12px;border-left:1px dashed #e2e8f0;padding-left:2px}
+.tree-actions{flex:0 0 auto;margin-top:8px;align-items:center;gap:8px}
+.tree-hint{font-size:11px;color:#64748b}
+
+/* 左下角任务日志：最多 3 行，成功刷新、失败停留 */
+.task-log{position:fixed;left:12px;bottom:12px;z-index:9400;max-width:420px;
+    display:flex;flex-direction:column;gap:4px}
+.task-log .tline{padding:5px 9px;border-radius:8px;font-size:12px;
+    background:rgba(15,23,42,.86);color:#e2e8f0;box-shadow:0 3px 12px rgba(15,23,42,.28);
+    display:flex;gap:6px;align-items:flex-start}
+.task-log .tline.err{background:#b91c1c;color:#fff}
+.task-log .tline.ok{background:#15803d;color:#fff}
+.task-log .tline .t{opacity:.7;font-variant-numeric:tabular-nums}
+
 .photo-cluster{background:none;border:none}
 /* 聚合数字的大小要和普通照片点（20px）对得上 —— 34px 会把画面压满
    （用户 2026-10-22：「聚合之后的数字图标太大，跟普通照片的图标大小统一即可」） */
@@ -1296,7 +1329,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
          标记点页左上写「项目数据 ›」（往右扫回来）。 -->
     <div class="col-body">
       <div class="left-view" id="viewProject">
-      <section class="card">
+      <section class="card" id="projCard">
+        <!-- 第一段「项目」：选项目 / 新建 / 导入文件夹 / 删除项目 + 固定、收起 -->
         <!-- 标签开关与标题同一行：文字在左、按钮在右，不再单独占一行 -->
         <div class="card-head">
           <h2 data-i18n="Project">Project</h2>
@@ -1341,13 +1375,30 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         </div>
       </section>
 
-      <!-- card-fill：让这张卡撑满左列剩余高度，底边与中/右列对齐
-           （文件少的时候也不会短一截） -->
-      <section class="card card-fill" id="tracksCard">
+      <!-- 第二段「数据文件」：VS Code 风格的文件浏览器。
+           只读项目已登记文件夹内的目录（后端 /api/project/tree），懒加载。
+           勾选后点「导入数据」= 登记到项目 + 抽字幕 + 生成航迹 + 显示在地图上。 -->
+      <section class="card card-fill" id="treeCard">
+        <div class="card-head">
+          <h2 data-i18n="Data files">Data files</h2>
+          <button id="treeRefreshBtn" class="hdr-caret" type="button"
+                  title="Refresh the file list" data-i18n-title="Refresh the file list"
+                  aria-label="Refresh" data-i18n-aria="Refresh">⟳</button>
+        </div>
+        <div id="fileTree" class="file-tree"></div>
+        <div class="row tree-actions">
+          <button id="treeImportBtn" data-i18n="Import selected">Import selected</button>
+          <span id="treeSelHint" class="tree-hint"></span>
+        </div>
+      </section>
+
+      <!-- 第三段「已加载」：这一版先沿用原来的轨迹卡内容，
+           下一提交再按 视频 / 照片 / 位置点 / 多段线 / 多边形 / 文字标注 分组。 -->
+      <section class="card" id="tracksCard">
         <!-- 标题行带一个收起箭头：文件多时把它收起来，把高度让给下面的标记点列表；
              收起状态记在 localStorage 里，下次打开还是那样。 -->
         <div class="card-head">
-          <h2 data-i18n="Tracks">Tracks</h2>
+          <h2 data-i18n="Loaded">Loaded</h2>
           <button class="hdr-caret" type="button" data-collapse="tracksCard"
                   title="Collapse / expand this list" data-i18n-title="Collapse / expand this list" aria-label="Collapse this list" data-i18n-aria="Collapse this list">▾</button>
         </div>
@@ -8610,6 +8661,257 @@ function openVideoFromPopup(encoded,autoPlay=true){
   }
 }
 
+/* ============================================================
+   左栏「数据文件」浏览器 + 左下角任务日志
+   ============================================================ */
+const taskLogLines=[];
+
+function taskLog(text,kind){
+  const box=document.getElementById('taskLog');
+  if(!box)return;
+  box.innerHTML='';
+  const now=new Date();
+  const stamp=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  // 成功的消息自动过期（保留 3 条），失败的一直留着直到下一次操作
+  taskLogLines.unshift({text,kind:kind||'info',stamp});
+  if(kind!=='err'&&taskLogLines.length>3)taskLogLines.length=3;
+  if(kind==='err'){
+    // 出错时只保留错误 + 前面一条，方便对照
+    const keep=taskLogLines.filter((l,i)=>i===0||l.kind==='err').slice(0,3);
+    taskLogLines.length=0;
+    taskLogLines.push(...keep);
+  }
+  for(const line of taskLogLines.slice(0,3)){
+    const div=document.createElement('div');
+    div.className='tline'+(line.kind==='err'?' err':line.kind==='ok'?' ok':'');
+    div.innerHTML=`<span class="t">${line.stamp}</span><span>${esc(line.text)}</span>`;
+    box.appendChild(div);
+  }
+}
+
+const TREE_ICON={folder:'📁',video:'🎬',thermal:'🔥',osv:'🌐',pano:'🌐',photo:'🖼',kml:'📐',meta:'·',other:'?'};
+
+const treeState={
+  roots:[],           // [{name,path,exists}]
+  expanded:new Set(), // 展开的目录 path
+  children:new Map(), // path -> entries
+  checked:new Set(),  // 勾选的 path
+};
+
+function treeRowEl(entry,depth){
+  const row=document.createElement('div');
+  row.className='tree-row'+(entry.type==='meta'?' is-meta':entry.type==='other'?' is-other':'');
+  row.dataset.path=entry.path;
+  row.dataset.kind=entry.kind;
+  row.style.paddingLeft=(6+depth*10)+'px';
+
+  const caret=document.createElement('span');
+  caret.className='tree-caret'+(entry.kind==='dir'?'':' empty');
+  caret.textContent=treeState.expanded.has(entry.path)?'▾':'▸';
+  row.appendChild(caret);
+
+  const box=document.createElement('input');
+  box.type='checkbox';
+  box.className='tree-check';
+  box.checked=treeState.checked.has(entry.path);
+  box.addEventListener('change',()=>{
+    if(box.checked)treeState.checked.add(entry.path);
+    else treeState.checked.delete(entry.path);
+    // 目录：把已加载的子项一起勾上/取消
+    if(entry.kind==='dir')toggleDescendants(entry.path,box.checked);
+    updateTreeHint();
+    refreshTreeChecks();
+  });
+  row.appendChild(box);
+
+  const ico=document.createElement('span');
+  ico.className='tree-ico';
+  ico.textContent=TREE_ICON[entry.type]||'·';
+  row.appendChild(ico);
+
+  const name=document.createElement('span');
+  name.className='tree-name';
+  name.textContent=entry.name;
+  name.title=entry.path;
+  row.appendChild(name);
+
+  if(entry.kind==='file'&&entry.size>0){
+    const size=document.createElement('span');
+    size.className='tree-size';
+    size.textContent=formatSize(entry.size);
+    row.appendChild(size);
+  }
+
+  caret.addEventListener('click',()=>toggleTreeNode(entry,depth));
+  name.addEventListener('dblclick',()=>{ if(entry.kind==='dir')toggleTreeNode(entry,depth); });
+  return row;
+}
+
+function toggleDescendants(path,on){
+  for(const e of treeState.children.get(path)||[]){
+    if(on)treeState.checked.add(e.path);
+    else treeState.checked.delete(e.path);
+    if(e.kind==='dir')toggleDescendants(e.path,on);
+  }
+}
+
+function refreshTreeChecks(){
+  document.querySelectorAll('#fileTree .tree-row').forEach(row=>{
+    const box=row.querySelector('.tree-check');
+    if(!box)return;
+    const p=row.dataset.path;
+    box.checked=treeState.checked.has(p);
+    if(row.dataset.kind==='dir'){
+      const kids=treeState.children.get(p)||[];
+      if(kids.length){
+        const on=kids.filter(k=>treeState.checked.has(k.path)).length;
+        box.indeterminate=on>0&&on<kids.length;
+      }
+    }
+  });
+}
+
+async function toggleTreeNode(entry,depth){
+  if(entry.kind!=='dir')return;
+  const box=document.getElementById('fileTree');
+  if(!box)return;
+
+  if(treeState.expanded.has(entry.path)){
+    treeState.expanded.delete(entry.path);
+  }else{
+    treeState.expanded.add(entry.path);
+    if(!treeState.children.has(entry.path)){
+      try{
+        const d=await api('/api/project/tree?name='+encodeURIComponent(projectSelect.value)
+          +'&path='+encodeURIComponent(entry.path));
+        treeState.children.set(entry.path,d.entries||[]);
+      }catch(e){
+        taskLog(t('Failed to read the folder:')+' '+e.message,'err');
+        treeState.expanded.delete(entry.path);
+        return;
+      }
+    }
+  }
+  await renderFileTree();
+}
+
+async function renderFileTree(){
+  const box=document.getElementById('fileTree');
+  if(!box)return;
+  box.innerHTML='';
+
+  if(!projectSelect.value){
+    box.innerHTML=`<div class="tree-hint" style="padding:8px">${esc(t('Select a project first.'))}</div>`;
+    return;
+  }
+
+  try{
+    if(!treeState.roots.length){
+      const d=await api('/api/project/tree?name='+encodeURIComponent(projectSelect.value));
+      treeState.roots=d.roots||[];
+    }
+  }catch(e){
+    box.innerHTML=`<div class="tree-hint" style="padding:8px">${esc(e.message)}</div>`;
+    return;
+  }
+
+  if(!treeState.roots.length){
+    box.innerHTML=`<div class="tree-hint" style="padding:8px">${esc(t('No folder yet — use Import data above.'))}</div>`;
+    return;
+  }
+
+  const draw=(entry,depth,host)=>{
+    host.appendChild(treeRowEl(entry,depth));
+    if(entry.kind==='dir'&&treeState.expanded.has(entry.path)){
+      const kids=treeState.children.get(entry.path);
+      if(kids){
+        const wrap=document.createElement('div');
+        // 展开后重新渲染时保持缩进
+        kids.forEach(k=>draw(k,depth+1,wrap));
+        host.appendChild(wrap);
+      }
+    }
+  };
+
+  for(const root of treeState.roots){
+    draw({name:root.name,path:root.path,kind:'dir',type:'folder',size:0},0,box);
+  }
+  refreshTreeChecks();
+  updateTreeHint();
+}
+
+function updateTreeHint(){
+  const hint=document.getElementById('treeSelHint');
+  if(!hint)return;
+  const n=treeState.checked.size;
+  hint.textContent=n?`${t('Selected')} ${n}`:'';
+}
+
+async function importTreeSelection(){
+  const sel=[...treeState.checked];
+  if(!sel.length){
+    taskLog(t('Nothing selected. Tick the files or folders to import.'),'err');
+    return;
+  }
+
+  // 勾选的目录直接用；勾选的文件取它所在的目录（后端按文件夹登记）
+  const dirs=new Set();
+  for(const p of sel){
+    const isDir=[...treeState.roots,...[...treeState.children.values()].flat()]
+      .some(e=>e.path===p&&e.kind==='dir');
+    if(isDir)dirs.add(p);
+    else dirs.add(p.replace(/[\\/][^\\/]+$/,''));
+  }
+
+  const btn=document.getElementById('treeImportBtn');
+  if(btn)btn.disabled=true;
+  let ok=0;
+  const failed=[];
+
+  for(const[ i,dir] of [...dirs].entries()){
+    taskLog(`${t('Importing')} (${i+1}/${dirs.size})  ${dir.split(/[\\/]/).pop()}`);
+    try{
+      const scanned=await api('/api/project/scan-folder?path='+encodeURIComponent(dir));
+      await importScannedFolder(scanned.folder,true);
+      ok++;
+    }catch(e){
+      failed.push(dir);
+      taskLog(t('Import failed:')+' '+e.message,'err');
+    }
+  }
+
+  if(btn)btn.disabled=false;
+
+  if(ok){
+    taskLog(`${t('Imported')} ${ok} ${t('folder(s)')}`,failed.length?'err':'ok');
+    treeState.checked.clear();
+    await renderFileTree();
+    try{
+      await scanGeoJSON();
+      await refreshMissingHint();
+      await scanPhotos();
+    }catch(e){}
+  }
+  if(failed.length)taskLog(`${failed.length} ${t('folder(s) failed')}`,'err');
+}
+
+function initFileTree(){
+  const refresh=document.getElementById('treeRefreshBtn');
+  if(refresh&&!refresh.dataset.bound){
+    refresh.dataset.bound='1';
+    refresh.addEventListener('click',()=>{
+      treeState.roots=[];
+      treeState.children.clear();
+      renderFileTree();
+    });
+  }
+  const btn=document.getElementById('treeImportBtn');
+  if(btn&&!btn.dataset.bound){
+    btn.dataset.bound='1';
+    btn.addEventListener('click',()=>{importTreeSelection()});
+  }
+}
+
 videoPlayer.addEventListener('timeupdate',()=>{
   if(videoStopAt!==null && videoPlayer.currentTime>=videoStopAt){
     videoPlayer.currentTime=videoStopAt;
@@ -9433,6 +9735,8 @@ async function importScannedFolder(folder,quiet){
   // 流程跑完再显示（见上面 impMsg 的说明）
   if(impMsg)show(projectNotice,impMsg);
 }
+
+initFileTree();
 
 if(addFolderBtn)addFolderBtn.addEventListener('click',()=>{
   if(!currentProjectName())return;
@@ -12266,5 +12570,7 @@ function initTimelineSyncUI(){
     <div id="syncProgress" class="sync-progress" style="display:none"></div>
   </div>
 </div>
+  <!-- 左下角任务日志（最多 3 行；成功刷新，失败停留） -->
+  <div id="taskLog" class="task-log"></div>
 </body>
 </html>
