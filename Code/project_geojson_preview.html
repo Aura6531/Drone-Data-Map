@@ -1511,6 +1511,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div id="missingHint" class="missing-hint" style="display:none"></div>
         <div id="flowStatus" class="detect-result" style="display:none"></div>
         <!-- 日期 / 类型筛选：并成一行（原来上下两行太占高度） -->
+      <!-- 以下整块已由「已加载」面板取代（分组显隐/飞过去/移出），先隐藏保留代码。
+           要彻底删除需要同步改 8 处 JS 与页面断言，留待单独一轮。 -->
+      <div id="legacyTrackTools" style="display:none">
         <div class="file-filter" style="flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px 10px">
           <label class="ctrl-label" for="filterDate" data-i18n="Date">Date</label>
           <select id="filterDate" class="ctrl-select"></select>
@@ -1525,6 +1528,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         </div>
         <div id="fileNotice" class="notice" style="display:none"></div>
         <div id="fileList" class="file-list" style="margin-top:16px"></div>
+      </div><!-- /#legacyTrackTools -->
       </section>
       </div><!-- /#viewProject -->
 
