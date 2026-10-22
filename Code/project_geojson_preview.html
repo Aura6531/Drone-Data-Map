@@ -2750,7 +2750,7 @@ async function refreshMissingHint(name){
 
 function renderFiles(){
   fileList.innerHTML='';
-  if(!geoFiles.length){show(fileNotice,t('This project has no GeoJSON yet. Use “Make GeoJSON” above, or create a project and import data first.'),false);return}
+  if(!geoFiles.length){show(fileNotice,t('This project has no GeoJSON yet — import data above (tracks are generated automatically).'),false);return}
   hide(fileNotice);
 
   // 按视频类型归拢（同类型内保持原顺序）。
@@ -9343,12 +9343,12 @@ async function renderFileTree(){
       treeState.roots=d.roots||[];
     }
   }catch(e){
-    box.innerHTML=`<div class="tree-hint" style="padding:8px">${esc(e.message)}</div>`;
+    box.innerHTML=`<div class="tree-hint" style="padding:8px">${esc(t(e.message)||e.message)}</div>`;
     return;
   }
 
   if(!treeState.roots.length){
-    box.innerHTML=`<div class="tree-hint" style="padding:8px">${esc(t('No folder yet — use Import data above.'))}</div>`;
+    box.innerHTML=`<div class="tree-hint" style="padding:8px">${esc(t('This project has no folders yet. Import a data folder first.'))}</div>`;
     return;
   }
 

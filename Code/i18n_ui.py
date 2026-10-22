@@ -82,6 +82,9 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Loaded": "已加载",
+    "This project has no folders yet. Import a data folder first.": "这个项目还没有文件夹 —— 先用上面的「导入数据」。",
+    "This project has no GeoJSON yet — import data above (tracks are generated automatically).": "这个项目还没有 GeoJSON —— 用上面的「导入数据」，航迹会自动生成。",
     "The browser blocked automatic copying. Copy this text manually:": "浏览器拦截了自动复制。请手动复制下面这段内容：",
     "Failed to build the Word report:": "生成 Word 报告失败：",
     "Generating the report, please wait…": "正在生成报告，请稍候…",
