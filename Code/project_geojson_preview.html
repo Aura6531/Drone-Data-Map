@@ -9304,7 +9304,17 @@ function renderLoadedPanel(){
         const shown=loadedUiState.ortho[key]!==false && (orthoLayer!=null || loadedUiState.ortho[key]===true);
         return {
           name:key, icon:'🗺', shown, key,
-          onGo:()=>{ try{ if(orthoLayer&&orthoLayer.getBounds)map.fitBounds(orthoLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
+          onGo:()=>{
+            // 优先用后端给的经纬度范围 —— 图层还没打开时也能跳过去
+            const b=(it.source&&it.source.bounds)||null;
+            try{
+              if(b&&Number.isFinite(b.south)&&Number.isFinite(b.north)){
+                map.fitBounds([[b.south,b.west],[b.north,b.east]],{maxZoom:TRACK_FIT_MAX_ZOOM,animate:false});
+                return;
+              }
+              if(orthoLayer&&orthoLayer.getBounds)map.fitBounds(orthoLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM});
+            }catch(e){}
+          },
           onToggle:(on)=>{ loadedUiState.ortho[key]=on; loadedUiSave();
             try{ if(on){ if(typeof orthoApply==='function')orthoApply(); } else if(orthoLayer){ map.removeLayer(orthoLayer); orthoLayer=null; } }catch(e){}
             renderLoadedPanel(); },
