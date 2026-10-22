@@ -9177,7 +9177,9 @@ function ldGroup(title,items,onAll,opts={}){
   head.className='ld-head';
 
   // 多条目的组可以用 + 折叠
-  const collapsible=opts.collapsible!==false&&items.length>1;
+  // 哪怕只有一条也给折叠按钮：视频/正射这些「文件类」分组，条目多少不定，
+  // 有 + 随时能收起来，不用等到「出现多个」才有
+  const collapsible=opts.collapsible!==false&&items.length>=1;
   const key=opts.key||title;
   const collapsed=collapsible&&collapsedGroups.has(key);
 
