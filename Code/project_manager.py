@@ -6917,6 +6917,92 @@ class ProjectManagerHandler(
 
             return
 
+        if path == "/photo/hires":
+            # 全景照片的「原图级」查看副本：按需生成一次、落盘缓存。
+            # 为什么不是直接用原图：14400×7200 的原图有 30+ MB，浏览器解码要几秒，
+            # 而 75° 窗口在 1700px 画布上只需要 ~1700px 宽的等距柱状（8192 宽绰绰有余）。
+            try:
+                q = parse_qs(parsed.query)
+                raw = (q.get("path") or [""])[0]
+                if not raw:
+                    raise ValueError("Missing path.")
+                try:
+                    want = int((q.get("w") or ["8192"])[0])
+                except (TypeError, ValueError):
+                    want = 8192
+                want = max(1024, min(12000, want))
+
+                candidate = Path(raw).resolve()
+                if candidate.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                    raise ValueError("Only jpg/png.")
+
+                # 与 /photo 同一套「必须落在项目文件夹内」的校验
+                allowed = False
+                for project_file in PROJECT_DIR.glob("*/project.json"):
+                    try:
+                        data = json.loads(project_file.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        continue
+                    for item in data.get("folders") or []:
+                        folder = item.get("path")
+                        if not folder:
+                            continue
+                        try:
+                            candidate.relative_to(Path(folder).resolve())
+                            allowed = True
+                            break
+                        except ValueError:
+                            pass
+                    if allowed:
+                        break
+                if not allowed:
+                    raise ValueError("That path is not inside any project folder.")
+
+                import hashlib
+                from PIL import Image
+
+                stat = candidate.stat()
+                key = hashlib.sha1(
+                    ("%s|%d|%d|%d|hires" % (candidate, stat.st_size, int(stat.st_mtime), want)).encode("utf-8")
+                ).hexdigest()[:20]
+                cache_dir = TEST_DIR / "_cache" / "hires"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                cached = cache_dir / ("%s_%d.jpg" % (key, want))
+
+                if not cached.is_file():
+                    Image.MAX_IMAGE_PIXELS = None
+                    with Image.open(candidate) as im:
+                        try:
+                            im.draft("RGB", (want, max(1, want // 2)))
+                        except Exception:
+                            pass
+                        im = im.convert("RGB")
+                        if im.width > want:
+                            ratio = want / float(im.width)
+                            im = im.resize((want, max(1, int(round(im.height * ratio)))),
+                                           Image.LANCZOS)
+                        tmp = cached.with_suffix(".jpg.tmp")
+                        im.save(tmp, format="JPEG", quality=88, optimize=True)
+                        tmp.replace(cached)
+
+                payload = cached.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(payload)))
+                self.send_header("Cache-Control", "private, max-age=86400")
+                self.end_headers()
+                self._write_body(payload)
+
+            except Exception as e:
+                message = str(e).encode("utf-8")
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(message)))
+                self.end_headers()
+                self._write_body(message)
+
+            return
+
         if path == "/photo":
 
             try:

@@ -6423,7 +6423,7 @@ function openPanoPhoto(group,name){
 // 采样分辨率：源图缩到 max 4096 宽再逐像素取（ImageData 会缓存，
 // 只在换源时重取一次）—— 75° 窗口在 4096 宽的等距柱状上约 850 px，
 // 和右栏实际显示宽度接近，够清晰又不至于每帧拷 33 MB。
-const PANO_INLINE_MAX_W = 4096;
+const PANO_INLINE_MAX_W = 8192;
 
 const panoInline = {
   el:null, canvas:null, ctx:null, msg:null, title:null, sub:null, fovSel:null,
@@ -6558,7 +6558,9 @@ function openPanoInline(path,fileName){
   try{ syncRightCol(); }catch(e){}
   panoInline.yaw=0; panoInline.pitch=-10; panoInline.fov=Number(panoInline.fovSel&&panoInline.fovSel.value)||75;
   const enc=encodeURIComponent(path);
-  panoInlineLoad('/photo/thumb?w=1600&path='+enc,'/photo?path='+enc,fileName||'360');
+  // 第二段用 /photo/hires（8192 宽的缓存副本，2-3 MB）：视觉上等于原图，
+  // 但不需要浏览器去解 14400×7200 的 30+ MB 原图（用户 2026-10-22）。
+  panoInlineLoad('/photo/thumb?w=1600&path='+enc,'/photo/hires?w=8192&path='+enc,fileName||'360');
   setTimeout(()=>{try{syncRightCol()}catch(e){}},30);
 }
 
