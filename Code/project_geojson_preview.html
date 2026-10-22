@@ -826,25 +826,18 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    现在：nowrap + 两边 min-width:0，宽度按 flex 比例各自伸缩，永远并排。
    flex-basis 用 0：写 auto 会让画廊按内容抢高度（卡片固定高度时会溢出）。
    整块由 .photo-gallery 自己滚动。 */
-.photo-gallery{display:flex;flex-wrap:nowrap;gap:10px;align-items:stretch;
+.photo-gallery{display:flex;flex-wrap:nowrap;gap:10px;align-items:flex-start;
                flex:1 1 0;min-height:130px;overflow:auto}
 /* 大图 : 小图 = 2.6 : 1（约 470 : 180）。小图的 flex-basis 0 让它只吃剩余宽度，
    不会把大图挤扁；想给小图更多就把 2.6 调小。 */
-.photo-lead{flex:2.6 1 0;min-width:0;min-height:70px;display:flex;flex-direction:column}
+.photo-lead{flex:2.6 1 0;min-width:0;min-height:70px}
 .photo-thumbs{flex:1 1 0;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:70px}
 
-/* 图片按**可用高度**自适应（用户 2026-10-22：「刚好上下高度把界面留出来的空间占满」）：
-   容器定高、图片 contain 居中。原来卡 max-height:420px，16:9 的图只用掉容器 3/4 宽，
-   右边留一条深色空带。 */
-.photo-lead .photo-shot{flex:1 1 auto;min-height:0;
-    display:flex;align-items:center;justify-content:center}
-/* 大图：铺满整个可用区域（cover）。16:9 的照片塞进接近 1:1 的框里，
-   contain 会在上下留黑边，用户明确不要；cover 只裁两侧一小部分。 */
-.photo-lead .photo-shot img{width:100%;height:100%;object-fit:cover;object-position:center}
-.photo-thumbs .photo-shot{flex:0 1 auto;min-height:0;
-    display:flex;align-items:center;justify-content:center}
-.photo-thumbs .photo-shot img{max-width:100%;max-height:100%;width:auto;height:auto;
-    object-fit:contain}
+/* 照片按宽度等比缩放、最高 420px。
+   注意：**"高度自适应"指的是打开的全景查看器，不是这里**
+   （用户 2026-10-22 纠正：把照片卡也铺满高度是理解错了，360 封面被拉成细高条）。 */
+.photo-lead .photo-shot{flex:0 1 auto}
+.photo-thumbs .photo-shot{flex:0 1 auto}
 
 .photo-shot{margin:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#0f172a}
 /* 图片按容器宽度自适应：只给 max-width 与 height:auto，不给固定宽度，
