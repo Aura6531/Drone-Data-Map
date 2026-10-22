@@ -9451,17 +9451,33 @@ function ldCategoryGroup(title,cats,onAllAll,key,onCategoryAll){
 // 自动把当前项目的航迹加载进地图（「视频」分组因此有内容）。
 // 地图/图层可能还没就绪，所以失败就隔 1.2 秒重试，最多 3 次；
 // 仍然空就写一句到任务日志。切换项目与 **刷新页面** 都会调它。
-function autoLoadTracks(){
-  if(!geoFiles.length){ setTimeout(autoLoadTracks,800); return; }
+function autoLoadTracks(waitTries){
+  // 同时只允许一条重试链在跑：启动、切换项目、scanGeoJSON 回调都会调它，
+  // 不设闸会叠出好几条链，轮询次数一直涨（test_boot 有上限断言）
+  if(autoLoadTracks._running)return;
+  autoLoadTracks._running=true;
+  waitTries=Number(waitTries)||0;
+  // 还没有 GeoJSON 列表就等一会儿再看，但**最多等 8 次**（约 6 秒），
+  // 不能无限轮询（test_boot 有「轮询次数有上限」的断言，也确实该有上限）
+  if(!geoFiles.length){
+    // 没有选中项目就别等了（页面刚起来、或测试沙箱里），否则会空转一堆定时器
+    if(!projectSelect||!projectSelect.value){ autoLoadTracks._running=false; return; }
+    if(waitTries<8)setTimeout(()=>{autoLoadTracks._running=false;autoLoadTracks(waitTries+1);},800);
+    else autoLoadTracks._running=false;
+    return;
+  }
   let tries=0;
   const attempt=()=>{
     tries++;
-    if(loadedTracks.length)return;
+    if(loadedTracks.length){ autoLoadTracks._running=false; return; }
     try{ ensureAllLoaded(); }catch(e){}
     setTimeout(()=>{
-      if(loadedTracks.length||!geoFiles.length)return;
+      if(loadedTracks.length||!geoFiles.length){ autoLoadTracks._running=false; return; }
       if(tries<3)attempt();
-      else taskLog(t('Tracks were not loaded automatically — click “Load all tracks” if needed.'),'err');
+      else{
+        autoLoadTracks._running=false;
+        taskLog(t('Tracks were not loaded automatically — click “Load all tracks” if needed.'),'err');
+      }
     },1200);
   };
   setTimeout(attempt,300);
