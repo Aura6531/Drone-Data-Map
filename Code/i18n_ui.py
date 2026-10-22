@@ -82,6 +82,10 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "No laser data for this photo": "这张照片没有激光数据",
+    "ground position estimated on a flat-earth assumption": "地面位置按平地假设估算",
+    "Laser rangefinder failed": "激光测距失败",
+    "Ground position derived from the laser rangefinder": "地面位置由激光测距得出",
     "Search reference point — drag to adjust": "搜索参考点 —— 可拖动调整",
     "Nearest track point": "最近的航迹点",
     "photos — click to show them below": "张照片 —— 点击在下方查看",

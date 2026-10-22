@@ -52,6 +52,8 @@ function extractConst(name) {
 const PURE = [
   // 相机与文案
   'photoCameraLabel', 'photoCameraClass', 'photoTimeText', 'photoClockText',
+  // 定位质量的英文原句要按句式翻（2026-10-22）
+  'photoAccuracyNoteText',
   // 全景优先的标签（全景图的 EXIF camera 也是 WideCamera）
   'photoMemberLabel',
   // 大图挑法（可见光变焦 > 可见光广角 > 热成像，用户 2026-10-07 定的规则）

@@ -353,8 +353,10 @@ console.log('\n=== 准确度说明改成 i 图标（只留图标，悬停/点击
     chk(/cursor:\s*help/.test(css), '指针是 help（提示这是说明）');
   }
   // 全文要写到 title 里，并且**渲染时**写（内容是随点变化的）
-  chk(/acc\.title\s*=\s*q\.accuracy_note/.test(html),
-    '说明全文写到图标的 title 里（渲染时按该点更新）');
+  // 2026-10-22：改走 photoAccuracyNoteText —— 后端发的是英文原句（还带动态 LRFStatus），
+  // 前端必须按句式翻，不能直接把原串塞进 title。
+  chk(/acc\.title\s*=\s*photoAccuracyNoteText\(/.test(html),
+    '说明全文写到图标的 title 里（渲染时按该点更新，且过一遍翻译）');
   // 那段长说明不能还留在页面上当正文
   chk(!/class="note">\$\{esc\(q\.accuracy_note/.test(html),
     '长说明不再作为正文渲染在页面块里');

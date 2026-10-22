@@ -6212,6 +6212,28 @@ function photoJumpHtml(group,matches){
     +`</div>`;
 }
 
+// 后端发的 accuracy_note 是**英文原句**（还带动态的 LRFStatus），
+// 整句拿去查词表永远查不到 —— 按句式拆开翻（用户 2026-10-22）。
+function photoAccuracyNoteText(lead){
+  const raw=lead&&lead.accuracy_note?String(lead.accuracy_note):'';
+  if(!raw)return '';
+
+  // 用 \\w+ 取状态值（正则里不出现圆括号，免得 check_page 的括号配平计数失衡）
+  const lrf=raw.match(/LRFStatus=(\w+)/i);
+  if(/^Laser rangefinder failed/i.test(raw)){
+    // ASCII 方括号 + 全角分号：外面 chip 已经套了一层圆括号，
+    // 再用圆括号会叠成 "(激光测距失败 (LRFStatus=TooFar); …)" 这种难看的嵌套；
+    // 也不能用中文圆括号 —— check_page 有条断言在数整段脚本的 `(` 与 `)` 个数。
+    return t('Laser rangefinder failed')+(lrf?' [LRFStatus='+lrf[1]+']':'')+'；'
+      +t('ground position estimated on a flat-earth assumption');
+  }
+  if(/^No laser data for this photo/i.test(raw)){
+    return t('No laser data for this photo')+'；'
+      +t('ground position estimated on a flat-earth assumption');
+  }
+  return t(raw);
+}
+
 // 展示区里那张「点信息」小标签行
 function photoCardChips(group){
   if(!group)return '';
@@ -6227,7 +6249,7 @@ function photoCardChips(group){
     +chip(t('Photo'),`${group.count} ${t('shots')} (${photoShotText(group)})`)
     +chip(t('Distance'),lead&&lead.distance!=null?`${lead.distance} m`:'-')
     +chip(t('Pitch'),lead&&lead.depression!=null?`${lead.depression}°`:'-')
-    +(warn?`<span class="photo-chip"><span class="k">${esc(t('Position quality'))}</span><span class="v">⚠ ${esc(t(group.accuracy))}${note?' ('+esc(t(note))+')':''}</span></span>`:'');
+    +(warn?`<span class="photo-chip"><span class="k">${esc(t('Position quality'))}</span><span class="v">⚠ ${esc(t(group.accuracy))}${note?' ('+esc(photoAccuracyNoteText(lead))+')':''}</span></span>`:'');
 }
 
 // 打开（或切换）展示区
@@ -9768,7 +9790,8 @@ function coverageHitHtml(){
   }
   const q=h.q;
   // 说明文本挪到 i 图标上（只留图标，悬停/点击才看到全文）
-  if(acc)acc.title=q.accuracy_note||'';
+  // 同样按句式拆开翻（未知句式会原样返回，不会把内容吞掉）
+  if(acc)acc.title=photoAccuracyNoteText({accuracy_note:q.accuracy_note})||'';
   if(!q.covered){
     return `<div class="lg-sec"><div class="kv">`
       +`<div class="hd">${t('Coverage')}</div>`
