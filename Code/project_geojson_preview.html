@@ -904,6 +904,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .lab-editor .sw.on{outline:2px solid #2563eb}
 .lab-editor button{font-size:11px;height:22px;padding:0 7px}
 
+.ld-danger{display:flex;align-items:center;gap:6px;padding:4px 8px;margin-top:2px;
+    font-size:11px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px}
 .ld-del{border:0;background:none;color:#cbd5e1;cursor:pointer;font-size:14px;
     line-height:1;padding:0 2px;flex:0 0 auto}
 .ld-row:hover .ld-del{color:#b91c1c}
@@ -8777,6 +8779,7 @@ function renderVectors(){
 function saveVectors(){
   // vectors 与 labels 一样，整份存在 project.json（后端 /api/project/kml 负责追加，
   // 删除时走 /api/project/vectors 覆盖写）
+  if(!window.__projectLoaded)return;   // 同上：避免空数组覆盖
   try{
     jsonPost('/api/project/vectors',{project_name:projectSelect.value,vectors:projectVectors.map(v=>({
       id:v.id,name:v.name,kind:v.kind,source:v.source,feature:v.feature}))});
@@ -8828,6 +8831,8 @@ function renderLabels(){
 }
 
 function saveLabels(){
+  // 没读到过项目就别写：否则会用空数组覆盖掉磁盘上已有的标注
+  if(!window.__projectLoaded)return;
   try{
     jsonPost('/api/project/labels',{project_name:projectSelect.value,labels:projectLabels});
   }catch(e){}
@@ -8956,7 +8961,7 @@ function renderLoadedPanel(){
   box.innerHTML='';
 
   // —— 视频（每条航迹一个图层组）——
-  const vids=loadedTracks.map(tr=>{
+  const vids=loadedTracks.filter(tr=>!!tr).map(tr=>{
     const key=tr.fileInfo&&tr.fileInfo.relative_path||tr.name||'';
     const shown=loadedUiState.videos[key]!==false;
     if(tr.group){
@@ -8968,15 +8973,29 @@ function renderLoadedPanel(){
       icon:(function(){ const k=streamKindOf(tr.video||''); return k==='thermal'?'🔥':k==='pano'?'🌐':'🎬'; })(),
       shown, key,
       onGo:()=>{ try{ map.fitBounds(tr.group.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
-      onRemove:()=>{
+      onRemove:(async()=>{
+        if(window.__delDiskOn){
+          const rel=(tr.video||'');
+          if(rel){
+            try{
+              const r=await jsonPost('/api/project/delete-files',{
+                project_name:projectSelect.value,relative_paths:[rel]});
+              const n=(r&&r.deleted&&r.deleted.length)||0;
+              taskLog(n?`${t('Deleted from disk:')} ${rel}`:t('The file was not deleted (not inside the project folders).'),
+                n?'ok':'err');
+            }catch(e){
+              taskLog(t('Delete failed:')+' '+e.message,'err');
+            }
+          }
+        }
         try{ if(tr.group)map.removeLayer(tr.group); }catch(e){}
         try{ const i=loadedTracks.indexOf(tr); if(i>=0)loadedTracks.splice(i,1); }catch(e){}
         try{ if(trackArrowLayer)trackArrowLayer.clearLayers(); }catch(e){}
         renderLoadedPanel();
         try{ rebuildLegend(); }catch(e){}
         try{ scheduleTrackArrows(); }catch(e){}
-        taskLog(t('Removed from the project (files on disk are kept).'),'ok');
-      },
+        taskLog(t('Removed from the project.'),'ok');
+      })(),
       onToggle:(on)=>{ loadedUiState.videos[key]=on; loadedUiSave(); renderLoadedPanel(); scheduleTrackArrows(); },
     };
   });
@@ -9078,7 +9097,7 @@ function renderLoadedPanel(){
   try{
     const mk=(typeof projectMarkers!=='undefined'?projectMarkers:[]);
     if(mk.length){
-      const items=mk.map((m,i)=>{
+      const items=mk.filter(Boolean).map((m,i)=>{
         const key=m.name||('marker-'+i);
         const shown=loadedUiState.markers[key]!==false;
         return {
@@ -9098,7 +9117,7 @@ function renderLoadedPanel(){
   try{
     const list=(typeof orthoList!=='undefined'&&orthoList)?orthoList:[];
     if(list.length){
-      const items=list.map((it)=>{
+      const items=list.filter(Boolean).map((it)=>{
         const key=it.name||it.file||'ortho';
         const shown=loadedUiState.ortho[key]!==false && (orthoLayer!=null || loadedUiState.ortho[key]===true);
         return {
@@ -9138,6 +9157,33 @@ function renderLoadedPanel(){
       }));
     }
   }catch(e){}
+
+  // 底部：同步删除磁盘文件（默认不勾、红字、勾选时二次确认）
+  if(box.children.length){
+    const foot=document.createElement('div');
+    foot.className='ld-danger';
+    const cb=document.createElement('input');
+    cb.type='checkbox';
+    cb.id='delDiskChk';
+    cb.checked=!!window.__delDiskOn;
+    cb.style.cssText='margin:0;cursor:pointer';
+    cb.addEventListener('change',()=>{
+      if(cb.checked){
+        const ok=confirm(t('Deleting files from disk cannot be undone. Continue?'));
+        if(!ok){ cb.checked=false; window.__delDiskOn=false; return; }
+        window.__delDiskOn=true;
+      }else{
+        window.__delDiskOn=false;
+      }
+    });
+    foot.appendChild(cb);
+    const lab=document.createElement('label');
+    lab.htmlFor='delDiskChk';
+    lab.textContent=t('Also delete the file on disk');
+    lab.style.cssText='cursor:pointer';
+    foot.appendChild(lab);
+    box.appendChild(foot);
+  }
 
   if(!box.children.length){
     box.innerHTML=`<div class="ld-empty">${esc(t('Nothing loaded yet — import data above.'))}</div>`;
@@ -10296,6 +10342,7 @@ initFileTree();
       const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
       projectLabels=(d.project&&d.project.labels)||[];
       projectVectors=(d.project&&d.project.vectors)||[];
+      window.__projectLoaded=true;   // 只有读到过项目，才允许整份覆盖写
       try{ renderVectors(); }catch(e){}
     }catch(e){ projectLabels=[]; }
     try{ initLabels(); renderLabels(); renderLoadedPanel(); }catch(e){}
@@ -10429,6 +10476,7 @@ projectSelect.addEventListener('change',()=>{
       const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
       projectLabels=(d.project&&d.project.labels)||[];
       projectVectors=(d.project&&d.project.vectors)||[];
+      window.__projectLoaded=true;
       labelSelectedId=null;
       renderLabels(); renderVectors(); renderLoadedPanel();
     }catch(e){}

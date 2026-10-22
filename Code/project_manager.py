@@ -8831,8 +8831,7 @@ class ProjectManagerHandler(
                 project = load_project(project_name) if project_name else None
                 if not project:
                     raise ValueError("Project not found.")
-                if not paths:
-                    raise ValueError("No file given.")
+                # 注意：paths 可能先为空，等 relative_paths 解析完再判
 
                 roots = []
                 for item in project.get("folders") or []:
@@ -8843,7 +8842,22 @@ class ProjectManagerHandler(
                         except OSError:
                             pass
 
+                if not paths:
+                    raise ValueError("No file given.")
                 allowed_ext = {".mp4", ".mov", ".osv", ".jpg", ".jpeg", ".png"}
+
+                # 也接受「相对路径」（相对项目文件夹），由后端解析成绝对路径 ——
+                # 前端只知道 DJI_..._V.MP4 这样的相对名，拼绝对路径容易出错。
+                for rel in body.get("relative_paths") or []:
+                    rel = str(rel or "").strip()
+                    if not rel:
+                        continue
+                    for root in roots:
+                        cand = (root / rel)
+                        if cand.is_file():
+                            paths.append(str(cand))
+                            break
+
                 deleted, failed = [], []
 
                 for raw in paths:

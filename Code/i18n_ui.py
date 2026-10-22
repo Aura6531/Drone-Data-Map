@@ -82,6 +82,11 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Also delete the file on disk": "同步删除磁盘文件",
+    "Deleting files from disk cannot be undone. Continue?": "同步删除磁盘文件不可撤销，确定继续？",
+    "Deleted from disk:": "已从磁盘删除：",
+    "The file was not deleted (not inside the project folders).": "文件未删除（不在项目文件夹内）。",
+    "Removed from the project.": "已移出本项目。",
     "Polylines": "多段线",
     "Polygons": "多边形",
     "Text label": "文字标注",
