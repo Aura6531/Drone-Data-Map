@@ -9446,7 +9446,24 @@ function ldCategoryGroup(title,cats,onAllAll,key,onCategoryAll){
   return wrap;
 }
 
+// 外层：渲染前后保住滚动位置（勾选分类时整块重建，否则列表会跳回顶部）
 function renderLoadedPanel(){
+  const box0=document.getElementById('loadedGroups');
+  const prevTop=box0?box0.scrollTop:0;
+  const prevSubs=box0?[...box0.querySelectorAll('.ld-sublist')].map(e=>e.scrollTop):[];
+
+  renderLoadedPanelInner();
+
+  const box1=document.getElementById('loadedGroups');
+  if(box1){
+    box1.scrollTop=prevTop;
+    [...box1.querySelectorAll('.ld-sublist')].forEach((e,i)=>{
+      if(prevSubs[i]!=null)e.scrollTop=prevSubs[i];
+    });
+  }
+}
+
+function renderLoadedPanelInner(){
   const box=document.getElementById('loadedGroups');
   if(!box)return;
   // 位置点 / 正射 / 覆盖 三份清单按需拉一次（失败就当没有）
