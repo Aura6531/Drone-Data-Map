@@ -756,6 +756,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
    点本身变黄，叹号画在圆里面，一个标记就说完。 */
 .photo-div-icon.photo-warn .photo-dot{fill:var(--photo-warn-dot,#f5b301)}
 .photo-div-icon .photo-dot-mark{fill:#1f2937}
+/* 360 全景的小球：赤道/经线用白色细线，深靛底上才看得清 */
+.photo-div-icon .photo-globe-line{fill:none;stroke:rgba(255,255,255,.85);stroke-width:1}
 
 /* 当前选中的照片点：描一圈琥珀色，和展示区里那张大图呼应 */
 .photo-div-icon.photo-active .photo-dot{stroke:#f59e0b;stroke-width:3}
@@ -5454,16 +5456,29 @@ function photoIcon(group,active){
   const warn=group&&group.accuracy&&group.accuracy!=='measured';
   const activeNow=active!==undefined?active:false;
 
-  const cls='photo-div-icon'+(warn?' photo-warn':'')+(activeNow?' photo-active':'');
+  // 全景（360）用小球图标区分：EXIF 里的镜头名也是 WideCamera，
+  // 所以只能靠 panorama 标记判断（用户 2026-10-22）。
+  const isPano=!!(group&&(group.panorama||(group.members||[]).some(m=>m&&m.panorama)));
+
+  const cls='photo-div-icon'+(warn?' photo-warn':'')+(activeNow?' photo-active':'')
+    +(isPano?' photo-pano':'');
 
   // 内联颜色 + 外层 CSS 变量：颜色由「实不实测」在 JS 里决定，
   // CSS 里没法从一个变量推另一个（选中时的描边色也要跟它一致）。
-  const dotColor=warn?'#f5b301':'#1d4ed8';
+  // 全景用更深的靛色，和普通照片的蓝拉开距离。
+  const dotColor=warn?'#f5b301':(isPano?'#4c1d95':'#1d4ed8');
 
   // 叹号：不压到圆边（圆半径 6，竖条从 y=6.9 到 10.8、点在 12.3）
   const mark=warn
     ?'<rect class="photo-dot-mark" x="9.15" y="6.9" width="1.7" height="3.9" rx="0.85"/>'
      +'<circle class="photo-dot-mark" cx="10" cy="12.3" r="1.05"/>'
+    :'';
+
+  // 全景的「小球」：圆 + 一条赤道 + 一条经线（12 半径 6，线条细一点避免糊成一团）
+  const globe=isPano&&!warn
+    ?'<ellipse class="photo-globe-line" cx="10" cy="10" rx="6" ry="2.6"/>'
+     +'<ellipse class="photo-globe-line" cx="10" cy="10" rx="2.6" ry="6"/>'
+     +'<line class="photo-globe-line" x1="4" y1="10" x2="16" y2="10"/>'
     :'';
 
   return L.divIcon({
@@ -5473,6 +5488,7 @@ function photoIcon(group,active){
     tooltipAnchor:[0,-11],
     html:`<svg class="photo-dot-svg" width="20" height="20" viewBox="0 0 20 20" style="--photo-dot:${dotColor}">`
         +`<circle class="photo-dot" cx="10" cy="10" r="6"/>`
+        +globe
         +mark
         +`</svg>`
   });
