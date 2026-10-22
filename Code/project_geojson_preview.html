@@ -904,8 +904,12 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .lab-editor .sw.on{outline:2px solid #2563eb}
 .lab-editor button{font-size:11px;height:22px;padding:0 7px}
 
-.ld-danger{display:flex;align-items:center;gap:6px;padding:4px 8px;margin-top:2px;
-    font-size:11px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px}
+/* 移出弹窗里的危险勾选：红字、默认不勾 */
+.remove-danger{display:flex;align-items:center;gap:8px;margin:10px 0 0;padding:8px 10px;
+    font-size:13px;font-weight:700;color:#b91c1c;background:#fef2f2;
+    border:1px solid #fecaca;border-radius:8px;cursor:pointer}
+.remove-danger input{margin:0;width:15px;height:15px;cursor:pointer}
+.remove-danger-hint{color:#b91c1c;font-size:11px;margin-top:6px}
 .ld-del{border:0;background:none;color:#cbd5e1;cursor:pointer;font-size:14px;
     line-height:1;padding:0 2px;flex:0 0 auto}
 .ld-row:hover .ld-del{color:#b91c1c}
@@ -1982,6 +1986,23 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     </div>
     <div class="row mini-modal-actions">
       <button id="importCancel" class="secondary">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- 移出本项目：单独弹窗，底部带「同步删除磁盘文件」（默认不勾、标红） -->
+<div id="removeModal" class="mini-modal" style="display:none">
+  <div class="mini-modal-box">
+    <div class="mini-modal-title" id="removeModalTitle">移出本项目</div>
+    <div class="mini-modal-hint" id="removeModalHint"></div>
+    <label class="remove-danger">
+      <input type="checkbox" id="removeDeleteDisk">
+      <span id="removeDeleteDiskLabel">同步删除磁盘文件</span>
+    </label>
+    <div class="mini-modal-hint remove-danger-hint" id="removeDangerHint"></div>
+    <div class="row mini-modal-actions">
+      <button id="removeCancel" class="secondary">取消</button>
+      <button id="removeConfirm">移出</button>
     </div>
   </div>
 </div>
@@ -8796,6 +8817,53 @@ function saveVectors(){
 }
 
 /* ============================================================
+   移出本项目：独立弹窗（底部带「同步删除磁盘文件」）
+   ============================================================ */
+// 返回 {ok:boolean, deleteDisk:boolean}
+function askRemoveOptions(label,diskHint){
+  return new Promise((resolve)=>{
+    const modal=document.getElementById('removeModal');
+    const title=document.getElementById('removeModalTitle');
+    const hint=document.getElementById('removeModalHint');
+    const chk=document.getElementById('removeDeleteDisk');
+    const dangerHint=document.getElementById('removeDangerHint');
+    const okBtn=document.getElementById('removeConfirm');
+    const noBtn=document.getElementById('removeCancel');
+    if(!modal){resolve({ok:false,deleteDisk:false});return}
+
+    // 用专门的键：'Remove' 是「删除项目」弹窗在用的，措辞不一样
+    title.textContent=`${t('Remove from this project')} “${label}”`;
+    hint.textContent=t('It disappears from the map and from this list. Nothing on disk is touched unless you tick the box below.');
+    document.getElementById('removeDeleteDiskLabel').textContent=t('Also delete the file on disk');
+    dangerHint.textContent=t('Tick this only if you want the file itself deleted — this cannot be undone.');
+    chk.checked=false;
+    modal.style.display='flex';
+
+    const close=(ok)=>{
+      modal.style.display='none';
+      okBtn.removeEventListener('click',onOk);
+      noBtn.removeEventListener('click',onNo);
+      modal.removeEventListener('click',onMask);
+      resolve({ok,deleteDisk:!!chk.checked});
+    };
+    const onOk=()=>{
+      // 勾了「同步删除磁盘文件」= 破坏性操作，再确认一次
+      if(chk.checked){
+        const sure=window.confirm(t('Deleting files from disk cannot be undone. Continue?'));
+        if(!sure)return;
+      }
+      close(true);
+    };
+    const onNo=()=>close(false);
+    const onMask=(ev)=>{ if(ev.target===modal)close(false); };
+
+    okBtn.addEventListener('click',onOk);
+    noBtn.addEventListener('click',onNo);
+    modal.addEventListener('click',onMask);
+  });
+}
+
+/* ============================================================
    文字标注：半透明定位点 + 白色底板文字牌
    ============================================================ */
 let projectLabels=[];           // [{id,lat,lng,text,size,color}]
@@ -8983,7 +9051,9 @@ function renderLoadedPanel(){
       shown, key,
       onGo:()=>{ try{ map.fitBounds(tr.group.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
       onRemove:(async()=>{
-        if(window.__delDiskOn){
+        const pick=await askRemoveOptions(tr.name||tr.video||'');
+        if(!pick.ok)return;
+        if(pick.deleteDisk){
           const rel=(tr.video||'');
           if(rel){
             try{
@@ -9037,7 +9107,12 @@ function renderLoadedPanel(){
         shown:!vectorHidden.has(v.id), key:v.id,
         onGo:()=>{ try{ const l=L.geoJSON(v.feature); map.fitBounds(l.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
         onToggle:(on)=>{ if(on)vectorHidden.delete(v.id); else vectorHidden.add(v.id); renderVectors(); renderLoadedPanel(); },
-        onRemove:()=>{ projectVectors=projectVectors.filter(x=>x.id!==v.id); saveVectors(); renderVectors(); renderLoadedPanel(); },
+        onRemove:async()=>{
+          const pick=await askRemoveOptions(v.name||v.id);
+          if(!pick.ok)return;
+          projectVectors=projectVectors.filter(x=>x.id!==v.id);
+          saveVectors(); renderVectors(); renderLoadedPanel();
+        },
       }));
       box.appendChild(ldGroup(t(kind==='polygon'?'Polygons':'Polylines'),rows,(on)=>{
         items.forEach(v=>{ if(on)vectorHidden.delete(v.id); else vectorHidden.add(v.id); });
@@ -9055,7 +9130,9 @@ function renderLoadedPanel(){
           name:it.text||'(空)', icon:'✎', shown, key:it.id,
           onGo:()=>{ try{ map.setView([it.lat,it.lng],Math.max(map.getZoom(),17)); labelSelectedId=it.id; renderLabels(); renderLoadedPanel(); }catch(e){} },
           onToggle:()=>{ renderLoadedPanel(); },
-          onRemove:()=>{
+          onRemove:async()=>{
+            const pick=await askRemoveOptions(it.text||'');
+            if(!pick.ok)return;
             projectLabels=projectLabels.filter(x=>x.id!==it.id);
             if(labelSelectedId===it.id)labelSelectedId=null;
             saveLabels(); renderLabels(); renderLoadedPanel();
@@ -9166,33 +9243,6 @@ function renderLoadedPanel(){
       }));
     }
   }catch(e){}
-
-  // 底部：同步删除磁盘文件（默认不勾、红字、勾选时二次确认）
-  if(box.children.length){
-    const foot=document.createElement('div');
-    foot.className='ld-danger';
-    const cb=document.createElement('input');
-    cb.type='checkbox';
-    cb.id='delDiskChk';
-    cb.checked=!!window.__delDiskOn;
-    cb.style.cssText='margin:0;cursor:pointer';
-    cb.addEventListener('change',()=>{
-      if(cb.checked){
-        const ok=confirm(t('Deleting files from disk cannot be undone. Continue?'));
-        if(!ok){ cb.checked=false; window.__delDiskOn=false; return; }
-        window.__delDiskOn=true;
-      }else{
-        window.__delDiskOn=false;
-      }
-    });
-    foot.appendChild(cb);
-    const lab=document.createElement('label');
-    lab.htmlFor='delDiskChk';
-    lab.textContent=t('Also delete the file on disk');
-    lab.style.cssText='cursor:pointer';
-    foot.appendChild(lab);
-    box.appendChild(foot);
-  }
 
   if(!box.children.length){
     box.innerHTML=`<div class="ld-empty">${esc(t('Nothing loaded yet — import data above.'))}</div>`;

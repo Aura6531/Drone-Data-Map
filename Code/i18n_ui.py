@@ -82,6 +82,10 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Remove from this project": "确定从本项目移出",
+    "from this project?": "移出本项目吗？",
+    "It disappears from the map and from this list. Nothing on disk is touched unless you tick the box below.": "它会从地图和这个列表里消失。除非勾选下面的选项，磁盘上的文件不会有任何改动。",
+    "Tick this only if you want the file itself deleted — this cannot be undone.": "只有确实要删掉磁盘上的文件时才勾选 —— 删了不可恢复。",
     "This project has only photos so far — showing them on the map.": "这个项目目前只有照片 —— 已直接显示在地图上。",
     "The folder dialog timed out. It may be hidden behind another window — please try again.": "文件夹对话框超时了（可能被别的窗口挡住了），请重试。",
     "A folder dialog is already open. Finish it first.": "已经有一个文件夹对话框开着，请先处理它。",
