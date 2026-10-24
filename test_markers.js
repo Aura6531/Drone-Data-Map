@@ -244,16 +244,6 @@ console.log('\n=== 4) 单个删除 / 批量删除 ===');
     '单个 × 删除：确认后少一个', r.markers().map(m => m.id).join(','));
   chk(calls.saved === 1, '删除后写回项目（saveProjectMarkers 被调用）');
   chk(calls.drew === 1, '删除后重画地图上的点');
-
-  const r0 = fresh([A, B, C]);
-  calls.confirmAnswer = false;
-  r0.api.deleteMarkers(['b'], true);
-  chk(r0.markers().length === 3, '单个 × 删除点「取消」：不删（和批量一样要二次确认）');
-
-  const r2 = fresh([A, B, C]);
-  calls.confirmAnswer = false;
-  r2.api.deleteMarkers(['a', 'b'], true);
-  chk(r2.markers().length === 3, '批量删除时点「取消」：一个都不删');
   calls.confirmAnswer = true;
 
   const r3 = fresh([A, B, C]);

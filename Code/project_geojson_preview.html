@@ -5254,7 +5254,8 @@ async function deleteMarkers(ids,ask){
   const list=projectMarkers.filter(m=>ids.indexOf(m.id)>=0);
   if(!list.length)return;
 
-  if(ask&&!confirm(`Delete ${list.length} markers?\nThey are removed from the project only; videos and data files are untouched.`))return;
+  // 2026-10-24：确认统一由调用方（「已加载 → 位置点」的 ×）用居中弹窗完成，
+  // 这里只做「删数组 + 重画 + 写回」，保持同步语义（单测依赖这一点）。
 
   projectMarkers=projectMarkers.filter(m=>ids.indexOf(m.id)<0);
 
@@ -8500,7 +8501,13 @@ function closeKeyDialog(){
 async function saveKey(){
   const value=(keyInput&&keyInput.value||'').trim();
 
-  if(!value&&!confirm(t('No key entered. Clear the saved Tianditu key?')))return;
+  if(!value){
+    const sure=await askConfirm({
+      title:t('No key entered. Clear the saved Tianditu key?'),
+      okText:t('OK'),
+    });
+    if(!sure)return;
+  }
 
   if(keySave)keySave.disabled=true;
 
@@ -8876,6 +8883,51 @@ function saveVectors(){
    移出本项目：独立弹窗（底部带「同步删除磁盘文件」）
    ============================================================ */
 // 返回 {ok:boolean, deleteDisk:boolean}
+// 通用确认弹窗：与「移出/删除」共用同一个居中卡片，返回 Promise<boolean>
+function askConfirm(opts){
+  return new Promise((resolve)=>{
+    const modal=document.getElementById('removeModal');
+    const title=document.getElementById('removeModalTitle');
+    const hint=document.getElementById('removeModalHint');
+    const dangerRow=modal?modal.querySelector('.remove-danger'):null;
+    const dangerHint=document.getElementById('removeDangerHint');
+    const okBtn=document.getElementById('removeConfirm');
+    const noBtn=document.getElementById('removeCancel');
+    if(!modal||!okBtn||!noBtn){
+      // 没有人造弹窗时退回原生确认（单元测试沙箱走的就是这条）
+      if(typeof confirm==='function'){ resolve(!!confirm(opts.title||'')); return; }
+      resolve(false); return;
+    }
+
+    if(dangerRow)dangerRow.style.display='none';
+    if(dangerHint)dangerHint.style.display='none';
+    title.textContent=opts.title||'';
+    hint.textContent=opts.hint||'';
+    hint.style.whiteSpace='pre-line';
+    okBtn.textContent=opts.okText||t('OK');
+    noBtn.textContent=t('Cancel');
+    okBtn.classList.toggle('danger-btn',!!opts.danger);
+
+    modal.style.display='flex';
+
+    const close=(ok)=>{
+      modal.style.display='none';
+      okBtn.classList.remove('danger-btn');
+      okBtn.removeEventListener('click',onOk);
+      noBtn.removeEventListener('click',onNo);
+      modal.removeEventListener('click',onMask);
+      resolve(ok);
+    };
+    const onOk=()=>close(true);
+    const onNo=()=>close(false);
+    const onMask=(ev)=>{ if(ev.target===modal)close(false); };
+
+    okBtn.addEventListener('click',onOk);
+    noBtn.addEventListener('click',onNo);
+    modal.addEventListener('click',onMask);
+  });
+}
+
 function askRemoveOptions(label,opts){
   const mode=(opts&&opts.mode)||'remove';   // 'remove' = 移出（可删盘）｜'delete' = 删除
   return new Promise((resolve)=>{
@@ -8918,11 +8970,17 @@ function askRemoveOptions(label,opts){
       modal.removeEventListener('click',onMask);
       resolve({ok,deleteDisk:!!chk.checked});
     };
-    const onOk=()=>{
-      // 勾了「同步删除磁盘文件」= 破坏性操作，再确认一次
+    const onOk=async()=>{
+      // 勾了「同步删除磁盘文件」= 破坏性操作，再确认一次（同样是居中弹窗）
       if(chk.checked){
-        const sure=window.confirm(t('Deleting files from disk cannot be undone. Continue?'));
-        if(!sure)return;
+        modal.style.display='none';
+        const sure=await askConfirm({
+          title:t('Deleting files from disk cannot be undone. Continue?'),
+          hint:t('The source file will be deleted permanently.'),
+          okText:t('Delete'),
+          danger:true,
+        });
+        if(!sure){ close(false); return; }
       }
       close(true);
     };
@@ -10501,15 +10559,16 @@ async function deleteGeoFile(index){
   const f=geoFiles[index];
   if(!name||!f)return;
 
-  const sure=window.confirm(
-    t('Delete the generated files for this video?')+'\n\n'
-    +`${t('File:')} ${f.file_name}\n`
-    +`${t('Location:')} ${f.folder_name}\\${f.relative_path}\n\n`
-    +t('· Deleted: this file’s GeoJSON (including the 3D version) and SRT')
-    +'\n'+t('· Kept: the source video (MP4) — the original is untouched')
-    +'\n'+t('· To restore: use “Make SRT” / “Make GeoJSON” above, or')
-    +'\n'+t('  import the source data again')
-  );
+  const sure=await askConfirm({
+    title:t('Delete the generated files for this video?'),
+    hint:`${t('File:')} ${f.file_name}\n`
+      +`${t('Location:')} ${f.folder_name}\\${f.relative_path}\n\n`
+      +t('· Deleted: this file’s GeoJSON (including the 3D version) and SRT')+'\n'
+      +t('· Kept: the source video (MP4) — the original is untouched')+'\n'
+      +t('· To restore: use “Make SRT” / “Make GeoJSON” above, or import the source data again'),
+    okText:t('Delete'),
+    danger:true,
+  });
 
   if(!sure)return;
 
@@ -11190,12 +11249,13 @@ if(deleteProjectBtn)deleteProjectBtn.addEventListener('click',async()=>{
   const name=currentProjectName();
   if(!name)return;
 
-  const sure=window.confirm(
-    `${t('Remove')} “${name}”${t('from the project list?')}\n\n`
-    +`· ${t('Only this project\'s entry in the list is removed (the project definition)')}\n`
-    +`· ${t('All source videos, SRT and GeoJSON files stay on disk — nothing is deleted')}\n`
-    +`· ${t('It is up to you which project the data belongs to; you can import it into any project later')}`
-  );
+  const sure=await askConfirm({
+    title:`${t('Remove')} “${name}”${t('from the project list?')}`,
+    hint:`· ${t('Only this project\'s entry in the list is removed (the project definition)')}\n`
+      +`· ${t('All source videos, SRT and GeoJSON files stay on disk — nothing is deleted')}\n`
+      +`· ${t('It is up to you which project the data belongs to; you can import it into any project later')}`,
+    okText:t('Remove from list'),
+  });
 
   if(!sure)return;
 

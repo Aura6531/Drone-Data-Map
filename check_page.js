@@ -794,7 +794,8 @@ console.log('\n=== 删除项目 = 只清出项目列表，不删数据 ===');
 {
   const start = body.indexOf('if(deleteProjectBtn)deleteProjectBtn.addEventListener');
   const fn = body.slice(start, start + 1600);
-  chk(/window\.confirm\(/.test(fn), '删除前要确认');
+  // 2026-10-24：改用应用内居中确认弹窗（askConfirm）
+  chk(/await askConfirm\(/.test(fn), '删除前要确认（居中弹窗）');
   // 注意：源码里撇号写在单引号字符串里，是 \' ，所以正则里要带一个反斜杠。
   chk(/Only this project\\'s entry in the list is removed/.test(fn),
     '确认框说明：只移除项目列表里那一项');
