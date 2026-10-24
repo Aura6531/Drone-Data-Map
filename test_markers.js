@@ -183,24 +183,15 @@ console.log('=== 1) 按创建时间排序：新的在上面 ===');
   chk(r.api.sortedMarkers() !== r.markers(), '排序返回副本，不改动原数组');
 }
 
-console.log('\n=== 2) 全选 / 半选态 ===');
+console.log('\n=== 2) 选中语义（以「已加载」的显隐为准）===');
 {
+  // 2026-10-24：标记点页已删除，勾选状态只剩「已加载 → 位置点」那一处。
+  // 沙箱里没有 loadedUiState → 视为「全部可见」→ 选中的就是全部。
   const r = fresh([A, B, C]);
-  r.api.renderMarkerList();
-  chk(el.markerSelectAll.checked === false && el.markerSelectAll.indeterminate === false,
-    '一个都没勾：既不是全选也不是半选');
-
-  r.checked().add('a');
-  r.api.updateMarkerBar();
-  chk(el.markerSelectAll.indeterminate === true && el.markerSelectAll.checked === false,
-    '勾 1/3：半选态');
-  chk(String(el.markerCount.textContent).indexOf('1 of 3 selected') >= 0,
-    '计数写成「n of m selected」', String(el.markerCount.textContent));
-
-  r.checked().add('b'); r.checked().add('c');
-  r.api.updateMarkerBar();
-  chk(el.markerSelectAll.checked === true && el.markerSelectAll.indeterminate === false,
-    '全勾：全选态、无半选');
+  chk(r.api.selectedMarkers().length === 3, '全部可见时，选中的是全部 3 个',
+    String(r.api.selectedMarkers().length));
+  r.checked().add('a');   // 旧集合不再影响选中结果
+  chk(r.api.selectedMarkers().length === 3, '旧 markerChecked 不再决定导出范围');
 }
 
 console.log('\n=== 3) 列表渲染 ===');
@@ -333,15 +324,13 @@ console.log('\n=== 7) 点一行：地图跳 16 级 + 视频跳到那一帧 ===')
   chk(calls.opened.length === 0, '没有视频信息的点不会去打开视频');
 }
 
-console.log('\n=== 8) 一个都没勾就点导出：页面提示 ===');{
+console.log('\n=== 8) 全部隐藏时才提示「请先勾选」===');
+{
+  // 新语义：选中 = 可见。沙箱里没有 loadedUiState，所以先确认「可见时能导出」。
   const r = fresh([A, B, C]);
   calls.alerts.length = 0;
-  chk(r.api.pickedForExport() === null, '返回 null（调用方不再往下走）');
-  chk(calls.alerts.length === 1 && /Select the markers to export/.test(calls.alerts[0]), '弹出「Select the markers to export」的提示', calls.alerts[0]);
-
-  r.checked().add('a');
-  const picked = r.api.pickedForExport();
-  chk(Array.isArray(picked) && picked.length === 1 && picked[0].id === 'a', '勾了就返回勾选的点');
+  chk(r.api.pickedForExport() !== null, '有可见标记点时可以直接导出');
+  chk(calls.alerts.length === 0, '不弹提示');
 }
 
 console.log('\n=== 9) 右键取点的默认名字：项目名-序号 ===');

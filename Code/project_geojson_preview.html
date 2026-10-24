@@ -4866,7 +4866,15 @@ function sortedMarkers(){
 }
 
 function selectedMarkers(){
-  return sortedMarkers().filter(m=>markerChecked.has(m.id));
+  // 2026-10-24：标记点页已删除，勾选状态现在只有一处 ——
+  // 「已加载 → 位置点」里的复选框（存在 project.json 的 ui.markers）。
+  // 所以「选中」= 列表里显示（打勾）的那些点。
+  return sortedMarkers().filter(m=>{
+    // loadedUiState 只在页面里存在；单元测试沙箱没有这个变量，用 typeof 兜住
+    const ui=(typeof loadedUiState!=='undefined')?loadedUiState:null;
+    const hidden=!!(ui&&ui.markers&&ui.markers[m.name]===false);
+    return !hidden;
+  });
 }
 
 // 标记点卡片收起 / 展开的那套已删除：2026-10-07 标记点挪到左栏，
