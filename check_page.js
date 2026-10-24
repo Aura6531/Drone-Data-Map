@@ -1390,7 +1390,9 @@ chk(/<div class="card-head">/.test(html), '卡片头部改用 .card-head');
 // 2026-10-22：卡片标题行整个并进了地图上的悬浮条（用户要求不要单独占高度），
 // 所以控件组现在是悬浮条的第一行 `.ab-row.ab-tools`。
 chk(/<div class="ab-row ab-tools">/.test(html), '地图工具组在悬浮条第一行（.ab-row.ab-tools）');
-chk(/<div class="card-tools marker-tools">/.test(html), '标记点卡片的控件组额外带 marker-tools');
+// 2026-10-24：标记点卡片的 4 个按钮已移除；导出/复制/报告改成
+// 「已加载 → 位置点」行尾的 3 个小图标（下面另断言）。
+chk(body.includes('ld-acts'), '位置点行尾有图标按钮容器 .ld-acts');
 chk(/<span class="ab-title" data-i18n="Track map">Track map<\/span>/.test(html),
   '「轨迹地图」标题在悬浮条第一行（.ab-title）');
 chk(/<h2[^>]*>Loaded<\/h2>/.test(html),
@@ -1659,7 +1661,7 @@ console.log('\n=== 按钮尺寸一致性 ===');
 
 console.log('\n=== 标记点报告（Word）===');
 {
-  chk(/<button id="markerReportBtn"/.test(html), '标记点卡片里有「生成 Word 报告」按钮');
+  chk(/function buildCheckedMarkersReport\(/.test(body), '报告入口改由图标按钮调用 buildCheckedMarkersReport()');
   chk(/<div id="reportModal" class="mini-modal"/.test(html), '有报告生成前的弹窗');
   chk((html.match(/<input type="radio" name="reportImageMode"/g) || []).length === 2,
     '弹窗里两个截图尺寸选项（原分辨率 / 压缩至 320ppi）');

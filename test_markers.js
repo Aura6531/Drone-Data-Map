@@ -82,6 +82,7 @@ ${extractFn('applyMarkerLayout')}
 ${extractFn('sortedMarkers')}
 ${extractFn('selectedMarkers')}
 ${extractFn('updateMarkerBar')}
+${extractFn('applyReportCapabilities')}
 ${extractFn('renderMarkerList')}
 ${extractFn('pickedForExport')}
 ${extractFn('markerKmlFileName')}
@@ -94,11 +95,13 @@ return {
   nextMarkerName, markerListLayout, applyMarkerLayout,
   sortedMarkers, selectedMarkers, updateMarkerBar, renderMarkerList, pickedForExport,
   markerKmlFileName, buildMarkersKml, markersTsv, kmlEscape, deleteMarkers, jumpToMarker,
+  applyReportCapabilities,
   getMarkers: () => projectMarkers,
   getChecked: () => markerChecked,
   getActive: () => activeMarkerId
 };`;
 
+let reportMissingDeps = [];
 const calls = { setView: [], opened: [], autoPlay: [], saved: 0, drew: 0, alerts: [], confirmAnswer: true };
 const markerList = el.markerList;
 
@@ -106,7 +109,7 @@ const build = new Function(
   'projectMarkers', 'markerChecked', 'activeMarkerId',
   'markerList', 'markerCount', 'markerSelectAll',
   'markerDeleteBtn', 'markerKmlBtn', 'markerCopyBtn',
-  'markerReportBtn', 'reportAvailable',
+  'markerReportBtn', 'reportAvailable', 'reportMissingDeps',
   'videoStatus', 'drawProjectMarkers', 'saveProjectMarkers',
   'map', 'geoFiles', 'videoPathFromGeojson', 'openVideoFromPopup',
   'shortFileName', 'formatTime', 'projectSelect', 'TRACK_FOCUS_ZOOM',
@@ -116,6 +119,7 @@ const build = new Function(
 );
 
 function fresh(markers, reportAvailable = true) {
+  reportMissingDeps = [];
   const state = {
     projectMarkers: markers,
     markerChecked: new Set(),
@@ -125,7 +129,7 @@ function fresh(markers, reportAvailable = true) {
     state.projectMarkers, state.markerChecked, state.activeMarkerId,
     markerList, el.markerCount, el.markerSelectAll,
     el.markerDeleteBtn, el.markerKmlBtn, el.markerCopyBtn,
-    el.markerReportBtn, reportAvailable,
+    el.markerReportBtn, reportAvailable, reportMissingDeps,
     { textContent: '' },
     () => { calls.drew++; },
     async () => { calls.saved++; },
@@ -221,20 +225,20 @@ console.log('\n=== 3) 列表渲染 ===');
     '纬度 / 经度各占一格，6 位小数', rows[0].children[2].textContent + ',' + rows[0].children[3].textContent);
   chk(el.markerDeleteBtn.disabled === false, '有标记点时批量按钮可用');
 
-  const noDeps = fresh([A], false);
-  noDeps.api.renderMarkerList();
-  chk(el.markerReportBtn.disabled === true,
-    '服务端缺 python-docx/Pillow/ffmpeg 时「生成 Word 报告」停用（其余三个照常可用）');
-  chk(el.markerDeleteBtn.disabled === false, '缺报告依赖不影响删除/导出/复制');
-  fresh([A]).api.renderMarkerList();
-  chk(el.markerReportBtn.disabled === false, '依赖齐全时报告按钮可用');
+  // 2026-10-24：标记点卡片里的按钮组已删除（导出/复制/报告移到
+  // 「已加载 → 位置点」行尾的小图标），这里只验证「依赖是否齐全」仍被正确记录。
+  // 2026-10-24：标记点卡片的按钮组已删除（导出/复制/报告移到「已加载 → 位置点」行尾）。
+  // 这里只验证「缺依赖时会把缺的项记下来」，供图标按钮的悬停提示用。
+  chk(/reportMissingDeps=missing/.test(html),
+    '缺依赖时把缺的东西记下来（图标按钮的提示用）');
+  chk(/function applyReportCapabilities\(/.test(html) && /reportAvailable=missing\.length===0/.test(html),
+    '依赖齐全时不记缺失项');
 
   const empty = fresh([]);
   el.markerList.children = [];
   empty.api.renderMarkerList();
   chk(el.markerList.children.length === 1 && /No markers yet/.test(el.markerList.children[0].textContent),
     '没有标记点时给出说明文字，而不是空白列表');
-  chk(el.markerDeleteBtn.disabled === true, '没有标记点时批量按钮禁用');
 }
 
 console.log('\n=== 4) 单个删除 / 批量删除 ===');

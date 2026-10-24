@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Make Word report": "生成 Word 报告",
     "Clear the photos from the loaded list (files on disk are kept)": "从「已加载」清除照片（磁盘文件保留）",
     "Photos cleared. Use “Load all photos” to bring them back.": "照片已清除 —— 点「加载全部照片」可以恢复。",
     "Delete this marker from the project": "从项目里删除这个标记点",

@@ -912,6 +912,13 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .remove-danger-hint{color:#b91c1c;font-size:11px;margin-top:6px}
 /* 展开的子项缩进 + 左侧竖线：一眼能看出「属于上面那一条」 */
 /* 分类小标签 */
+/* 位置点行尾的 3 个小图标 */
+.ld-acts{display:flex;align-items:center;gap:3px;margin-left:6px;flex:0 0 auto}
+.ld-act{width:20px;height:20px;display:flex;align-items:center;justify-content:center;
+    padding:0;border:1px solid #e2e8f0;border-radius:5px;background:#fff;color:#475569;
+    cursor:pointer}
+.ld-act:hover{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+
 .ld-tag{flex:0 0 auto;font-size:10.5px;line-height:1;padding:2px 5px;border-radius:4px;
     background:#e0e7ff;color:#3730a3;white-space:nowrap}
 
@@ -1535,16 +1542,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <label class="marker-all"><input type="checkbox" id="markerSelectAll">Select all</label>
           <span class="marker-cols">Name · Lat · Lng (newest first)</span>
         </div>
-        <div class="card-tools marker-tools">
-          <button id="markerDeleteBtn" class="secondary" type="button"
-                  title="Delete checked markers (removes from project only; videos and data untouched)" data-i18n-title="Delete checked markers (removes from project only; videos and data untouched)">Delete</button>
-          <button id="markerKmlBtn" class="secondary" type="button"
-                  title="Export checked markers as KML (opens in Google Earth and similar apps)" data-i18n-title="Export checked markers as KML (opens in Google Earth and similar apps)">Export KML</button>
-          <button id="markerCopyBtn" class="secondary" type="button"
-                  title="Copy checked markers as Name / Lat / Lng, tab-separated, ready to paste into Excel" data-i18n-title="Copy checked markers as Name / Lat / Lng, tab-separated, ready to paste into Excel">Copy lat/lng</button>
-          <button id="markerReportBtn" type="button"
-                  title="Build a Word report for checked markers (clickable contents, summary table, one video and one map image per marker)" data-i18n-title="Build a Word report for checked markers (clickable contents, summary table, one video and one map image per marker)">Make Word report</button>
-        </div>
+        
         <div id="markerList" class="marker-list"></div>
         <div id="reportStatus" class="marker-hint" style="display:none"></div>
       </section>
@@ -2625,7 +2623,7 @@ async function initBaseMap(){
 // 报告依赖（服务端有没有 python-docx / Pillow / ffmpeg）。
 // 缺哪个就把「生成 Word 报告」按停，并在悬停里写清缺什么 —— 总比点了才报错好。
 function applyReportCapabilities(caps){
-  if(!markerReportBtn||!caps)return;   // 老后端不带这段信息：保持可用
+  if(!caps)return;   // 老后端不带这段信息：保持可用
 
   const missing=[];
   if(!caps.docx)missing.push('python-docx');
@@ -2634,9 +2632,8 @@ function applyReportCapabilities(caps){
 
   reportAvailable=missing.length===0;
 
-  if(!reportAvailable){
-    markerReportBtn.title=t('The report needs:')+' '+missing.join(' / ')+' '+t('(restart the server after installing)');
-  }
+  // 缺依赖时把原因记下来，图标按钮的悬停提示会用（见 markerActionIcons）
+  reportMissingDeps=missing;
 
   updateMarkerBar();
 }
@@ -4849,10 +4846,6 @@ const markerCard=document.getElementById('markerCard');
 const markerList=document.getElementById('markerList');
 const markerCount=document.getElementById('markerCount');
 const markerSelectAll=document.getElementById('markerSelectAll');
-const markerDeleteBtn=document.getElementById('markerDeleteBtn');
-const markerKmlBtn=document.getElementById('markerKmlBtn');
-const markerCopyBtn=document.getElementById('markerCopyBtn');
-const markerReportBtn=document.getElementById('markerReportBtn');
 const reportStatus=document.getElementById('reportStatus');
 const reportModal=document.getElementById('reportModal');
 const reportModalHint=document.getElementById('reportModalHint');
@@ -4873,6 +4866,7 @@ function reportBasemapKind(){
 
 let markerChecked=new Set();   // 勾选中的标记点 id（重绘不丢）
 let activeMarkerId='';         // 最后跳转到的那个，列表里高亮
+let reportMissingDeps=[];
 let reportAvailable=true;      // 服务端报告依赖是否齐（/api/config 里报）
 let reportBusy=false;          // 生成中：同一次只跑一个
 
@@ -4901,10 +4895,7 @@ function updateMarkerBar(){
   if(markerCount)markerCount.textContent=total?`(${picked} ${t('of')} ${total} ${t('selected')})`:t('(empty)');
 
   // 按钮不因为「没勾选」而禁用 —— 按要求：一个都没选就点，直接在页面上提示需要选择
-  const usable=total>0;
-  for(const b of [markerDeleteBtn,markerKmlBtn,markerCopyBtn])if(b)b.disabled=!usable;
-  // 报告按钮多一条：服务端缺 python-docx / Pillow / ffmpeg 时停用
-  if(markerReportBtn)markerReportBtn.disabled=!usable||!reportAvailable;
+  // 按钮已移到「已加载 → 位置点」那一行（小图标），这里不再管禁用状态
 
   if(markerSelectAll){
     markerSelectAll.checked=total>0&&picked===total;
@@ -7445,26 +7436,30 @@ if(markerSelectAll)markerSelectAll.addEventListener('change',()=>{
   renderMarkerList();
 });
 
-if(markerDeleteBtn)markerDeleteBtn.addEventListener('click',()=>{
-  const list=pickedForExport();
-  if(list)deleteMarkers(list.map(m=>m.id),true);
-});
-
-if(markerKmlBtn)markerKmlBtn.addEventListener('click',()=>{
+// 「已加载 → 位置点」行右侧的三个小图标调用这三个函数
+function exportCheckedMarkersKml(){
   const list=pickedForExport();
   if(!list)return;
-
   const name=markerKmlFileName();
   downloadBlob(name,new Blob([buildMarkersKml(list)],
     {type:'application/vnd.google-earth.kml+xml;charset=utf-8'}));
-
   if(videoStatus)videoStatus.textContent=`Exported ${list.length} markers to ${name}.`;
-});
+}
 
-if(markerCopyBtn)markerCopyBtn.addEventListener('click',()=>{
+function copyCheckedMarkersLatLng(){
   const list=pickedForExport();
   if(list)copyMarkersTsv(list);
-});
+}
+
+function buildCheckedMarkersReport(){
+  const list=pickedForExport();
+  if(!list)return;
+  if(!reportAvailable){
+    alert(t('The report needs:')+' '+(reportMissingDeps||[]).join(' / '));
+    return;
+  }
+  startWordReport(list);
+}
 
 /* ============================================================
    生成 Word 报告
@@ -7804,11 +7799,6 @@ function startWordReport(list){
 
   reportModal.style.display='flex';
 }
-
-if(markerReportBtn)markerReportBtn.addEventListener('click',()=>{
-  const list=pickedForExport();
-  if(list)startWordReport(list);
-});
 
 if(reportOkBtn)reportOkBtn.addEventListener('click',()=>{
   const mode=reportImageMode();
@@ -9218,7 +9208,8 @@ function ldGroup(title,items,onAll,opts={}){
 }
 
 // 位置点专用：位置点 → 分类 → 具体点（两层折叠）
-function ldCategoryGroup(title,cats,onAllAll,key,onCategoryAll){
+function ldCategoryGroup(title,cats,onAllAll,key,onCategoryAll,opts){
+  const actions=(opts&&opts.icons)||null;
   const wrap=document.createElement('div');
   wrap.className='ld-group';
   const head=document.createElement('div');
@@ -9257,6 +9248,24 @@ function ldCategoryGroup(title,cats,onAllAll,key,onCategoryAll){
   count.className='ld-count';
   count.textContent=`(${shown}/${allItems.length})`;
   head.appendChild(count);
+
+  // 行尾的小图标（导出 KML / 复制经纬度 / 生成报告）—— 悬停显示名字
+  if(actions&&actions.length){
+    const acts=document.createElement('span');
+    acts.className='ld-acts';
+    for(const a of actions){
+      const b=document.createElement('button');
+      b.type='button';
+      b.className='ld-act';
+      b.title=a.title;
+      b.setAttribute('aria-label',a.title);
+      b.innerHTML=a.icon;
+      b.addEventListener('click',(ev)=>{ ev.stopPropagation(); try{a.onClick();}catch(e){} });
+      acts.appendChild(b);
+    }
+    head.appendChild(acts);
+  }
+
   wrap.appendChild(head);
 
   if(!collapsed){
@@ -9708,6 +9717,12 @@ function renderLoadedPanelInner(){
         loadedUiSave();
         try{ drawProjectMarkers(); }catch(e){}
         renderLoadedPanel();
+      },{
+        icons:[
+          {title:t('Export KML'), icon:'<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3.5 1.8h6l3 3v9.4h-9z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M9.5 1.8v3h3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7v4.4M6.2 9.6 8 11.4l1.8-1.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', onClick:exportCheckedMarkersKml},
+          {title:t('Copy lat/lng'), icon:'<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="5.5" y="1.8" width="8.7" height="9.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.8" y="4.8" width="8.7" height="9.4" rx="1.2" fill="#fff" stroke="currentColor" stroke-width="1.3"/></svg>', onClick:copyCheckedMarkersLatLng},
+          {title:t('Make Word report'), icon:'<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="2.4" y="1.8" width="11.2" height="12.4" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4.8 5h5.4M4.8 7.4h6.4M4.8 9.8h4.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>', onClick:buildCheckedMarkersReport},
+        ],
       }));
     }
   }catch(e){}
