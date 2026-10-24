@@ -1576,12 +1576,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <!-- 第一行：标题 + 地图工具（原卡片标题行，整体搬进来） -->
         <div class="ab-row ab-tools">
           <span class="ab-title" data-i18n="Track map">Track map</span>
-          <button id="photoLayerBtn" class="photo-layer-btn" type="button" aria-pressed="false"
-                  title="Show all photo points on the map and zoom to fit them (click again to hide)" data-i18n-title="Show all photo points on the map and zoom to fit them (click again to hide)" data-i18n="Load all photos">Load all photos</button>
-          <span class="photo-tools">
-            <span id="photoLayerCount" class="photo-sub"></span><span id="photoLayerCountExtra"
-                  class="photo-sub"></span>
-          </span>
+          <!-- 2026-10-24：「加载全部照片」按钮已删除 —— 显隐与飞到全部照片都走左栏「已加载 → 照片」那一处。 -->
           <!-- 正射影像叠加层：把项目里的 GeoTIFF 正射影像当瓦片底图贴在地图上。
                金字塔在后台建（几分钟），建好之后缩放就是读文件（实测 3 ms / 块）。
                没有 .tif 时按钮本身不出现，不占位置。 -->
@@ -2155,9 +2150,10 @@ const clearProbeBtn=document.getElementById('clearProbeBtn');
 const findFramesBtn=document.getElementById('findFramesBtn');
 const hitDetail=document.getElementById('hitDetail');
 // 照片图层开关 + 地图下方的照片展示区（容器已写死在 HTML 里，这里只取引用）
-const photoLayerBtn=document.getElementById('photoLayerBtn');
-const photoLayerCount=document.getElementById('photoLayerCount');
-const photoLayerCountExtra=document.getElementById('photoLayerCountExtra');
+// 2026-10-24：按钮已删除（勾选「已加载 → 照片」即可显隐/飞过去）
+const photoLayerBtn=null;
+const photoLayerCount=null;
+const photoLayerCountExtra=null;
 const photoCard=document.getElementById('photoCard');
 const photoTitle=document.getElementById('photoTitle');
 const photoSub=document.getElementById('photoSub');
@@ -6466,6 +6462,9 @@ function updatePhotoLayerUI(){
   if(photoLayerCountExtra)photoLayerCountExtra.textContent='';
 }
 
+// 2026-10-24：按钮已删除；留一个入口给控制台/单元测试打开照片图层
+window.__photoToggle=(on)=>{ setPhotoLayer(!!on); };
+
 function applyPhotoLayerVisibility(){
   updatePhotoLayerUI();
   renderPhotoLayer();
@@ -7428,21 +7427,6 @@ function panoInlineInit(){
 // 「加载全部照片」：点亮照片图层，并把视野缩放到所有照片都看得见 ——
 // 用户点它要的就是「一次把全部点摆进画面」，不用自己滚轮找。
 // 再点一次收起图层（保持它还是个开关，否则就没法把照片点关掉了）。
-if(photoLayerBtn)photoLayerBtn.addEventListener('click',()=>{
-  if(photoLayerOn){
-    setPhotoLayer(false);
-    return;
-  }
-
-  // 被 × 清掉过的照片：重新打开时恢复显示
-  if(photosHidden){
-    photosHidden=false;
-    try{ loadedUiState.photosHidden=false; loadedUiSave(); }catch(e){}
-    try{ renderLoadedPanel(); }catch(e){}
-  }
-  setPhotoLayer(true);
-  zoomToAllPhotos();
-});
 // 用 ?. ：这两个按钮在卡片内部，理论上传进来的事件对象一定带 stopPropagation，
 // 但不能因为这个可选项把整块功能拖崩（曾经就这么崩过一次）。
 if(photoCloseBtn)photoCloseBtn.addEventListener('click',event=>{event?.stopPropagation?.();closePhotoCard()});

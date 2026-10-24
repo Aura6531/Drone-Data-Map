@@ -505,22 +505,8 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     await new Promise((r) => setImmediate(r));
   }
 
-  // 照片统计**不摆在页面上**（用户 2026-10-13：「没必要直接摆放在页面上，
-  // 做成鼠标放到 Load all photos 按钮上悬停时才出现」）。
-  // 所以现在断言两件事：① 页面上那两处是空的；② 按钮的 title 里带着完整统计。
-  const count = sb.els.get('photoLayerCount');
-  const countExtra = sb.els.get('photoLayerCountExtra');
-  const layerBtn = sb.els.get('photoLayerBtn');
-  chk(count && String(count.textContent) === '',
-    '统计不再摆在页面上（photoLayerCount 为空）', count ? `"${String(count.textContent)}"` : '-');
-  chk(countExtra && String(countExtra.textContent) === '',
-    '原来那第二段也清空了', countExtra ? `"${String(countExtra.textContent)}"` : '-');
-  chk(layerBtn && /3 photos → 2 targets/.test(String(layerBtn.title || '')),
-    '改到按钮悬停提示里（3 photos → 2 targets）',
-    layerBtn ? String(layerBtn.title || '-') : '-');
-  chk(layerBtn && /1 merged/.test(String(layerBtn.title || '')),
-    '合并了几处也一并写进悬停提示',
-    layerBtn ? String(layerBtn.title || '-') : '-');
+  // 2026-10-24：「加载全部照片」按钮与它旁边的计数都删了
+  // （显隐改由「已加载 → 照片」的勾选控制）。
 
   // 左栏「项目 ↔ 标记点」切换：2026-10-24 随标记点页一起删除
   // （全选/编辑/删除都并入「已加载」）。这里断言旧入口确实不存在。
@@ -530,11 +516,8 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     chk(!sb.els.has('markerList'), '旧标记点列表已删除');
   }
 
-  const btn = sb.els.get('photoLayerBtn');
-  chk(btn && !btn._classes.has('photo-on'), '照片图层默认关（不挡航迹）');
-  chk(btn && String(btn.textContent || '') === '', '开关按钮取得到');
 
-  // 点一下「加载全部照片」：应该把照片点画出来，并把视野缩放到全部照片
+  // 打开照片图层（按钮已删，走 window.__photoToggle）：应该把照片点画出来，
   //
   // 2026-10-19：照片点现在**按缩放级别聚合**（用户选的方案 A：
   // z<17 合并成带数字的圆圈，z>=17 一律不合并）。
@@ -545,12 +528,12 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
   let before = svgHolder.length;
   let markerBase = sb.calls.markers.length;
   let toggleErr = null;
-  if (btn) { try { btn._fire('click') } catch (e) { toggleErr = e } }
+  if (sb.window.__photoToggle) { try { sb.window.__photoToggle(true) } catch (e) { toggleErr = e } }
   const made = svgHolder.length - before;
-  chk(!toggleErr, '点「加载全部照片」不抛异常', toggleErr ? toggleErr.message : '');
+  chk(!toggleErr, '打开照片图层不抛异常', toggleErr ? toggleErr.message : '');
   chk(made >= 1, '低层级至少画出一个聚合点', made + ' 个');
-  chk(btn && btn._classes.has('photo-on'), '打开后按钮带 photo-on（主色实心）');
-  chk(btn && String(btn.getAttribute('aria-pressed')) !== 'false' || !btn, 'aria-pressed 跟着变');
+  chk(!!sb.window.__photoToggle, '照片图层仍可由代码打开（__photoToggle）');
+  chk(svgHolder.length > before, '打开后地图上出现了照片图标', String(svgHolder.length - before));
 
   // 照片聚合靠 map.on('zoomend') 重算，先确认这个处理器真的注册上了
   const mapStub = sb.calls && sb.calls.mapStub;
@@ -583,17 +566,9 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     markerBase = markerBase2;
   }
 
-  // 视野缩放：桩里记下 fitBounds 的调用，验证「一次把全部照片摆进画面」
-  chk(sb.calls.fitBounds.length === 1, '点按钮时调了一次 fitBounds（自动缩放到全部照片）',
-    String(sb.calls.fitBounds.length) + ' 次');
-  {
-    const call = sb.calls.fitBounds[0];
-    chk(!!call, '拿到了 fitBounds 的参数');
-    chk(call && call.points === 2, '外接矩形覆盖了 2 个照片点', call ? String(call.points) : '-');
-    chk(call && call.maxZoom === 15, '带 maxZoom 上限（复用 TRACK_FIT_MAX_ZOOM=15，看得全而不是看得近）',
-      call ? String(call.maxZoom) : '-');
-    chk(call && Array.isArray(call.padding) && call.padding.length === 2, '带 padding（点不会贴边）');
-  }
+  // 2026-10-24：按钮删除后，「打开图层」与「缩放到全部照片」拆成了两件事 ——
+  // 前者由「已加载 → 照片」的勾选控制，后者点那一行的名称时触发。
+  // 这里只验图层能被打开（fitBounds 的断言随按钮一起删掉了）。
 
   // 上图那段已经把地图放到"不再聚合"的层级并重画过，所以下面检查的图标
   // 是**每个组一个照片点**的那一批。`before` 要跟着挪到重画之后的下标，
