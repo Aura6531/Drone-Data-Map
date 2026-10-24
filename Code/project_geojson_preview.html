@@ -8881,6 +8881,7 @@ function openVideoFromPopup(encoded,autoPlay=true){
 /* ============================================================
    KML 矢量（多段线 / 多边形）
    ============================================================ */
+let coverageHidden=new Set();   // 被 × 清掉的覆盖图层（按 srt 记，存 project.json）
 let orthoHidden=new Set();      // 被 × 从「已加载」清掉的正射影像（按 name 记，存 project.json）
 
 let projectVectors=[];          // [{id,name,kind,feature}]
@@ -9752,7 +9753,8 @@ function renderLoadedPanelInner(){
   // —— 覆盖图层（热力图）——
   try{
     const list=(typeof coverageItems!=='undefined'&&coverageItems)?coverageItems:[];
-    const built=list.filter(it=>it&&it.built);
+    const built=list.filter(it=>it&&it.built
+      &&!coverageHidden.has(it.srt||it.srt_name||'coverage'));
     if(built.length){
       const items=built.map((it)=>{
         const key=it.srt||it.srt_name||'coverage';
@@ -9760,6 +9762,15 @@ function renderLoadedPanelInner(){
         return {
           name:it.video_name||it.srt_name||key, icon:'🔥', shown, key,
           onGo:()=>{ try{ if(coverageLayer&&coverageLayer.getBounds)map.fitBounds(coverageLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
+          onRemove:async()=>{
+            const pick=await askRemoveOptions(it.video_name||it.srt_name||key);
+            if(!pick.ok)return;
+            coverageHidden.add(key);
+            try{ loadedUiState.coverageHidden=[...coverageHidden]; loadedUiSave(); }catch(e){}
+            try{ if(typeof coverageHideLayer==='function')coverageHideLayer(); }catch(e){}
+            renderLoadedPanel();
+            taskLog(t('Removed from the loaded list (files on disk are kept).'),'ok');
+          },
           onToggle:(on)=>{ loadedUiState.coverage[key]=on; loadedUiSave();
             try{ if(on){ if(typeof coverageShow==='function')coverageShow(); } else if(typeof coverageHideLayer==='function')coverageHideLayer(); }catch(e){}
             renderLoadedPanel(); },
@@ -11018,6 +11029,7 @@ initFileTree();
       try{
         const ui=(d.project&&d.project.ui)||{};
         orthoHidden=new Set(ui.orthoHidden||[]);
+        coverageHidden=new Set(ui.coverageHidden||[]);
         if(ui)loadedUiState=Object.assign({videos:{},photos:{},markers:{},ortho:{},coverage:{}},ui);
       }catch(e){}
       window.__projectLoaded=true;   // 只有读到过项目，才允许整份覆盖写
