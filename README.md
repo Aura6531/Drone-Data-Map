@@ -170,6 +170,7 @@ python -B test_report.py # 报告后端（逆地理编码/地图截图/抽帧/do
 |---|---|
 | 项目约定（DSH 会话会自动读取） | **`AGENTS.md`** |
 | 实现细节、踩过的坑、验证记录 | `docs/交接说明.md`（最全的一份） |
+| 左栏（三段化 / 「已加载」面板）的现状与坑 | docs/左栏三段化_已加载面板.md |
 | 只想知道怎么用 | 本文档 + `docs/使用说明.md` |
 | 打安装包 | `packaging\build_installer.ps1`（首次先跑 `fetch_build_libs.py` / `fetch_deps.py`） |
 
