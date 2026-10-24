@@ -10180,6 +10180,8 @@ function renderLogHistory(){
 function openLogModal(){
   const modal=document.getElementById('logModal');
   if(!modal)return;
+  // 弹窗标记在 <script> 之后，页面初始化时取不到它的子元素 —— 这里补绑一次
+  try{ initLogUi(); }catch(e){}
   logModalOpen=true;
   renderLogHistory();
   modal.style.display='flex';
@@ -10201,11 +10203,6 @@ function initLogUi(){
   if(close&&!close.dataset.bound){
     close.dataset.bound='1';
     close.addEventListener('click',()=>closeLogModal());
-  }
-  const clear=document.getElementById('logClear');
-  if(clear&&!clear.dataset.bound){
-    clear.dataset.bound='1';
-    clear.addEventListener('click',()=>{ taskLogHistory=[]; renderLogHistory(); });
   }
   const modal=document.getElementById('logModal');
   if(modal&&!modal.dataset.bound){
@@ -14383,7 +14380,6 @@ function initTimelineSyncUI(){
       <div class="mini-modal-title">日志</div>
       <div id="logHistory" class="log-history"></div>
       <div class="row mini-modal-actions">
-        <button id="logClear" class="secondary">清空</button>
         <button id="logClose">关闭</button>
       </div>
     </div>
