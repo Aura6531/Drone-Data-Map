@@ -9690,7 +9690,7 @@ function renderLoadedPanelInner(){
       const items=projectLabels.map((it)=>{
         const shown=true;
         return {
-          name:it.text||'(空)', icon:'✎', shown, key:it.id,
+          name:it.text||'(空)', iconHtml:ICON_TEXTBOX, shown, key:it.id,
           onGo:()=>{ try{ map.setView([it.lat,it.lng],Math.max(map.getZoom(),17)); labelSelectedId=it.id; renderLabels(); renderLoadedPanel(); }catch(e){} },
           onToggle:()=>{ renderLoadedPanel(); },
           onRemove:async()=>{
@@ -10073,6 +10073,13 @@ const ICON_TILE='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="tr
   +'<rect x="1" y="8.6" width="6.4" height="6.4" rx="0.6" fill="#57b06a"/>'
   +'<rect x="8.6" y="8.6" width="6.4" height="6.4" rx="0.6" fill="#7ac887"/>'
   +'<rect x="12.2" y="12.2" width="2.8" height="2.8" rx="0.4" fill="#ffffff" fill-opacity="0.85"/>'
+  +'</svg>';
+
+// 「文字标注」图标：方框里一个 A（PPT 文本框那种），不带横线，简约
+const ICON_TEXTBOX='<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">'
+  +'<rect x="1.6" y="2.6" width="12.8" height="10.8" rx="2" fill="none" stroke="#0f766e" stroke-width="1.4"/>'
+  +'<text x="8" y="11.3" text-anchor="middle" font-size="7.4" font-weight="700"'
+  +' font-family="Segoe UI, Arial, sans-serif" fill="#0f766e">A</text>'
   +'</svg>';
 
 // 广角 / 变焦 / 全景 三个小图标（同一套线条风格）
