@@ -8919,7 +8919,8 @@ function saveVectors(){
    移出本项目：独立弹窗（底部带「同步删除磁盘文件」）
    ============================================================ */
 // 返回 {ok:boolean, deleteDisk:boolean}
-function askRemoveOptions(label,diskHint){
+function askRemoveOptions(label,opts){
+  const mode=(opts&&opts.mode)||'remove';   // 'remove' = 移出（可删盘）｜'delete' = 删除
   return new Promise((resolve)=>{
     const modal=document.getElementById('removeModal');
     const title=document.getElementById('removeModalTitle');
@@ -8930,11 +8931,26 @@ function askRemoveOptions(label,diskHint){
     const noBtn=document.getElementById('removeCancel');
     if(!modal){resolve({ok:false,deleteDisk:false});return}
 
-    // 用专门的键：'Remove' 是「删除项目」弹窗在用的，措辞不一样
-    title.textContent=`${t('Remove from this project')} “${label}”`;
-    hint.textContent=t('It disappears from the map and from this list. Nothing on disk is touched unless you tick the box below.');
-    document.getElementById('removeDeleteDiskLabel').textContent=t('Also delete the file on disk');
-    dangerHint.textContent=t('Tick this only if you want the file itself deleted — this cannot be undone.');
+    const dangerRow=modal.querySelector('.remove-danger');
+    const okLabelDefault=t('Remove');
+
+    if(mode==='delete'){
+      // 删除类：不需要「同步删除磁盘文件」那一行
+      if(dangerRow)dangerRow.style.display='none';
+      dangerHint.style.display='none';
+      title.textContent=t('Delete this marker from the project?');
+      hint.textContent=t('It will be removed from this project. Files on disk are untouched.');
+      okBtn.textContent=t('Delete');
+    }else{
+      if(dangerRow)dangerRow.style.display='flex';
+      dangerHint.style.display='';
+      // 用专门的键：'Remove' 是「删除项目」弹窗在用的，措辞不一样
+      title.textContent=`${t('Remove from this project')} “${label}”`;
+      hint.textContent=t('It disappears from the map and from this list. Nothing on disk is touched unless you tick the box below.');
+      document.getElementById('removeDeleteDiskLabel').textContent=t('Also delete the file on disk');
+      dangerHint.textContent=t('Tick this only if you want the file itself deleted — this cannot be undone.');
+      okBtn.textContent=okLabelDefault;
+    }
     chk.checked=false;
     modal.style.display='flex';
 
@@ -9448,8 +9464,8 @@ function renderLoadedPanelInner(){
       onGo:()=>{ try{ if(!photoLayerOn)setPhotoLayer(true); zoomToAllPhotos(); }catch(e){} },
       removeTitle:t('Clear the photos from the loaded list (files on disk are kept)'),
       onRemove:async()=>{
-        const sure=confirm(t('Clear the photos from the loaded list (files on disk are kept)'));
-        if(!sure)return;
+        const pick=await askRemoveOptions(t('Photos'),{mode:'delete'});
+        if(!pick.ok)return;
         photosHidden=true;
         try{ loadedUiState.photosHidden=true; loadedUiSave(); }catch(e){}
         try{ setPhotoLayer(false); }catch(e){}
@@ -9687,8 +9703,8 @@ function renderLoadedPanelInner(){
           },
           removeTitle:t('Delete this marker from the project'),
           onRemove:async()=>{
-            const sure=confirm(`${t('Delete this marker from the project')}\n\n“${key}”`);
-            if(!sure)return;
+            const pick=await askRemoveOptions(key,{mode:'delete'});
+            if(!pick.ok)return;
             projectMarkers=projectMarkers.filter(x=>x!==m);
             try{ markerChecked.delete(m.id); }catch(e){}
             drawProjectMarkers();
