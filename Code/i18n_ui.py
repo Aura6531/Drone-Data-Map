@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Load the checked files into the project (register + build tracks + show on the map)": "把勾选的文件加载进项目（登记 + 生成航迹 + 显示在地图上）",
     "个 GeoJSON 文件": "个 GeoJSON 文件",
     "of which": "其中",
     "段线条": "段线条",
