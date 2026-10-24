@@ -82,6 +82,8 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Project not loaded yet — the label was not saved.": "项目还没加载完，这条标注没有保存。",
+    "Could not save the label:": "标注保存失败：",
     "Edit text label": "编辑文字标注",
     "Bold": "加粗",
     "No log entries yet.": "还没有日志。",

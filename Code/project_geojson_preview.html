@@ -9065,12 +9065,42 @@ function renderLabels(){
   }
 }
 
-function saveLabels(){
-  // 没读到过项目就别写：否则会用空数组覆盖掉磁盘上已有的标注
-  if(!window.__projectLoaded)return;
+// 本地改过标注（还没成功写盘）—— 用来防止「异步读完项目把本地覆盖掉」
+let labelsDirty=false;
+
+async function saveLabels(){
+  labelsDirty=true;
+
+  // 项目还没读完时先等一下：以前这里是直接 return，
+  // 于是「刚打开页面就放的标注」永远写不进磁盘（用户 2026-10-25 反馈刷新就没了）
+  if(!window.__projectLoaded){
+    for(let i=0;i<24&&!window.__projectLoaded;i++){
+      await new Promise(r=>setTimeout(r,250));
+    }
+    if(!window.__projectLoaded){
+      taskLog(t('Project not loaded yet — the label was not saved.'),'err');
+      return false;
+    }
+  }
+
   try{
-    jsonPost('/api/project/labels',{project_name:projectSelect.value,labels:projectLabels});
-  }catch(e){}
+    await jsonPost('/api/project/labels',{project_name:projectSelect.value,labels:projectLabels});
+    labelsDirty=false;
+    return true;
+  }catch(e){
+    taskLog(t('Could not save the label:')+' '+(e&&e.message?e.message:e),'err');
+    return false;
+  }
+}
+
+// 读回项目里的标注：本地改过就保留本地（并补写一次），否则用服务端的
+function applyLoadedLabels(incoming){
+  const list=Array.isArray(incoming)?incoming:[];
+  if(labelsDirty&&projectLabels.length){
+    saveLabels();
+    return;
+  }
+  projectLabels=list;
 }
 
 function setLabelPlacing(on){
@@ -11255,7 +11285,7 @@ initFileTree();
   (async()=>{
     try{
       const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
-      projectLabels=(d.project&&d.project.labels)||[];
+      applyLoadedLabels(d.project&&d.project.labels);
       projectVectors=(d.project&&d.project.vectors)||[];
       try{
         const ui=(d.project&&d.project.ui)||{};
@@ -11427,7 +11457,7 @@ projectSelect.addEventListener('change',()=>{
   (async()=>{
     try{
       const d=await api('/api/project/get?name='+encodeURIComponent(projectSelect.value||''));
-      projectLabels=(d.project&&d.project.labels)||[];
+      applyLoadedLabels(d.project&&d.project.labels);
       projectVectors=(d.project&&d.project.vectors)||[];
       // 标记点也要在「已加载」里显示，所以换项目时就把它读进来
       try{ if(typeof loadProjectMarkers==='function')await loadProjectMarkers(); }catch(e){}
