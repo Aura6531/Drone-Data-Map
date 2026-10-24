@@ -9180,7 +9180,13 @@ async function saveLabels(){
   }
 
   try{
-    await jsonPost('/api/project/labels',{project_name:projectName,labels:projectLabels});
+    // keepalive：就算加完标注马上刷新页面，这个请求也不会被浏览器打断
+    await api('/api/project/labels',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({project_name:projectName,labels:projectLabels}),
+      keepalive:true,
+    });
     labelsDirty=false;
     return true;
   }catch(e){
@@ -9197,6 +9203,8 @@ function applyLoadedLabels(incoming){
     return;
   }
   projectLabels=list;
+  // 读回来就立刻画到地图上（列表那边由调用方刷新）
+  try{ if(typeof renderLabels==='function')renderLabels(); }catch(e){}
 }
 
 function setLabelPlacing(on){
