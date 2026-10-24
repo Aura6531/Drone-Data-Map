@@ -117,34 +117,17 @@ html::-webkit-scrollbar-button,body::-webkit-scrollbar-button{display:none;width
 .side-toggle.side-pin:hover{background:#e2e8f0;color:#1e293b}
 .side-toggle.side-pin[aria-pressed="true"]{background:#2563eb;color:#fff;border-color:#2563eb}
 .side-toggle.side-pin[aria-pressed="true"]:hover{background:#1d4ed8;border-color:#1d4ed8}
-/* 当前正显示哪一页：没显示的那一页整体隐藏。
-   .left-view 只是个外层包裹层，负责「让卡片纵向铺满」；真正显隐的是
-   #viewProject / #markerCard —— 两个都写清楚 display，免得被别的规则盖住。 */
-.col-left .left-view{display:none}
-.col-left.view-project .left-view,
-.col-left.view-markers .left-view{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
-.col-left #viewProject{display:none}
-.col-left #markerCard{display:none}
-.col-left.view-project #viewProject{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
-.col-left.view-markers #markerCard{display:flex;flex-direction:column;min-height:0;flex:1}
+/* 2026-10-24：标记点页整页删除（功能并入「已加载」），左栏只有项目这一页。 */
+.col-left .left-view{display:flex;flex-direction:column;gap:16px;min-height:0;flex:1}
 
 /* ---- 横扫卷帘过场 ----
    切页时给新出现的那一页加一段横向滑入动画；左栏 overflow:hidden，
    所以滑出画布的部分被裁掉，看着就是「卷帘」扫过去。
    方向：去标记点（往左）从右边滑进来；回项目（往右）从左边滑进来。
    只动 transform，不动布局 —— 不会让地图/列表重排，也不会引起滚动条跳动。 */
-.col-left.view-markers #markerCard{animation:leftPaneInLeft .26s ease-out both}
-.col-left.view-project #viewProject{animation:leftPaneInRight .26s ease-out both}
 @keyframes leftPaneInLeft{from{transform:translateX(100%)}to{transform:translateX(0)}}
 @keyframes leftPaneInRight{from{transform:translateX(-100%)}to{transform:translateX(0)}}
-/* 用户在系统里关了动画就照旧直接出现（尊重 prefers-reduced-motion） */
-@media(prefers-reduced-motion:reduce){
-  .col-left.view-markers #markerCard,
-  .col-left.view-project #viewProject{animation:none}
-}
 
-/* 标记点页里列表要能撑满并自己滚（和右栏那版一样） */
-.col-left .marker-card{min-height:0}
 /* 导出这四个按钮：左栏 380px 放不下「删除 / 导出 KML / 复制经纬度 / 生成 Word 报告」
    一行，让它们自己换行；用 .card-tools.marker-tools 而不是 .row，
    这样「三张卡片各一个 .card-tools」那套结构保持一致。 */
@@ -647,7 +630,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 /* 标记点卡片原来还有一套「默认收起 / 点箭头展开」的样式（.is-collapsed +
    .marker-collapse-toggle）。2026-10-07 用户把它挪到左栏、改成「与项目数据
    共用一块地方、由标签开关切换」之后，那套已经删掉 —— 显示/隐藏整页由
-   .col-left.view-project / .view-markers 决定，不需要再叠一层收起。 */
+   项目页那一层决定，不需要再叠一层收起。 */
 
 /* 标记点列表：默认一栏；数量多了由 JS 按可用宽度自动分栏
    （markerListLayout：每栏最多 8 行，宽度够就并栏）；
@@ -1442,10 +1425,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
                （实测全页只有 `setLeftOpen(true)`，没有 false）。
                用户要的是"选好文件后收起侧边栏把宽度让给地图"，所以补上。 -->
           <!-- 顺序（用户 2026-10-22 指定，从左到右）：标记点 · 固定 · 收起 -->
-          <button id="sideToggle" class="side-toggle" type="button"
-                  aria-pressed="false"
-                  title="Switch to markers (list and export)" data-i18n-title="Switch to markers (list and export)"
-                  aria-label="Switch to markers" data-i18n-aria="Switch to markers" data-i18n="‹ Markers">‹ Markers</button>
+          
           <!-- 固定侧栏：钉住就保持展开，不被窄屏自动收窄、Esc 也收不起来 -->
           <button id="leftPinBtn" class="side-toggle side-pin" type="button" aria-pressed="false"
                   title="Pin the left panel (keep it expanded)" data-i18n-title="Pin the left panel (keep it expanded)"
@@ -1533,26 +1513,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div id="flowStatus" class="detect-result" style="display:none"></div>
               </section>
       </div><!-- /#viewProject -->
-
-      <!-- 标记点页：与项目页共用左栏这一块，标签开关切换。
-           原来是右栏最下面的卡片，2026-10-07 用户要求挪到这里。 -->
-      <section class="card marker-card card-fill" id="markerCard">
-        <div class="card-head">
-          <!-- 方向在左边：这个按钮从「标记点页」往右扫回项目页 -->
-          <button id="sideToggleBack" class="side-toggle" type="button"
-                  title="Back to project / tracks" data-i18n-title="Back to project / tracks" aria-label="Back to project" data-i18n-aria="Back to project">Project ›</button>
-          <h2>Markers<span id="markerCount" class="marker-count">(empty)</span></h2>
-          <button class="hdr-caret" type="button" data-collapse="markerCard"
-                  title="Collapse / expand this list" data-i18n-title="Collapse / expand this list" aria-label="Collapse this list" data-i18n-aria="Collapse this list">▾</button>
-        </div>
-        <div class="marker-head">
-          <label class="marker-all"><input type="checkbox" id="markerSelectAll">Select all</label>
-          <span class="marker-cols">Name · Lat · Lng (newest first)</span>
-        </div>
-        
-        <div id="markerList" class="marker-list"></div>
-        <div id="reportStatus" class="marker-hint" style="display:none"></div>
-      </section>
+      
     </div>
   </aside>
 
@@ -3091,8 +3052,6 @@ const mapPipDiv=document.getElementById('mapPip');
 const mapPipCanvas=document.getElementById('mapPipCanvas');
 const mapPipToggle=document.getElementById('mapPipToggle');
 /* 自制「全屏」按钮与 fullscreenToggle 常量均已删除：全屏统一用 <video> 自带的控件。 */
-const sideToggle=document.getElementById('sideToggle');
-const sideToggleBack=document.getElementById('sideToggleBack');
 const videoThermal=document.getElementById('videoThermal');
 const videoCrosshair=document.getElementById('videoCrosshair');
 const videoCountdown=document.getElementById('videoCountdown');
@@ -4849,11 +4808,11 @@ function confirmVideoMark(){
    导出 KML / 复制「名称 + 纬度 + 经度」表格 / 点行跳转
    ============================================================ */
 
-const markerCard=document.getElementById('markerCard');
-const markerList=document.getElementById('markerList');
-const markerCount=document.getElementById('markerCount');
-const markerSelectAll=document.getElementById('markerSelectAll');
-const reportStatus=document.getElementById('reportStatus');
+// 标记点页已删除（2026-10-24）：这些元素不存在，保留 null 让下游的守卫生效
+const markerList=null;
+const markerCount=null;
+const markerSelectAll=null;
+const reportStatus=null;
 const reportModal=document.getElementById('reportModal');
 const reportModalHint=document.getElementById('reportModalHint');
 const reportBasemapRadios=Array.from(document.querySelectorAll('input[name="reportBasemap"]'));
@@ -7434,14 +7393,6 @@ function markerKmlFileName(){
   return `markers_${proj}_${stamp}.kml`;
 }
 
-if(markerSelectAll)markerSelectAll.addEventListener('change',()=>{
-  if(markerSelectAll.checked){
-    for(const m of projectMarkers)markerChecked.add(m.id);
-  }else{
-    markerChecked.clear();
-  }
-  renderMarkerList();
-});
 
 // 「已加载 → 位置点」行右侧的三个小图标调用这三个函数
 function exportCheckedMarkersKml(){
@@ -8575,34 +8526,9 @@ try{refreshKeyState()}catch(e){}
    而变，所以仍然让 Leaflet 重算一次尺寸。
    ============================================================ */
 
+// 2026-10-24：标记点页已删除，左栏只剩「项目」这一页。
+// 这个函数保留成薄壳，只负责让地图重算尺寸（boot 会调它）。
 function applyLeftView(view){
-  const markers=view==='markers';
-
-  const aside=document.getElementById('colLeft');
-  if(aside){
-    aside.classList.toggle('view-markers',markers);
-    aside.classList.toggle('view-project',!markers);
-  }
-
-  // 两个开关的文案：处在哪一页，按钮就写「去另一页」的名字，并带上方向箭头
-  // （用户要求「加上箭头标示方向」：项目页右上 `‹ 标记点` 往左扫，
-  //   标记点页左上 `项目数据 ›` 往右扫回来）。
-  if(sideToggle){
-    sideToggle.textContent=markers?'Project ›':'‹ Markers';
-    sideToggle.title=markers?t('Back to project / tracks'):t('Switch to markers (list and export)');
-    sideToggle.setAttribute('aria-label',sideToggle.title);
-    // aria-pressed 表示「标记点页是否正显示」
-    sideToggle.setAttribute('aria-pressed',markers?'true':'false');
-  }
-  if(sideToggleBack){
-    sideToggleBack.textContent='Project ›';
-    sideToggleBack.title=t('Back to project / tracks');
-  }
-
-  // 布局没变宽窄，但列表的可用宽度/高度变了：重排一次列表栏数
-  if(markers)renderMarkerList();
-
-  // 地图还没建起来（boot 阶段的默认视图）时不必重算，也没有计时器要挂
   if(!map)return;
 
   const relayout=()=>{
@@ -8614,14 +8540,6 @@ function applyLeftView(view){
 
   setTimeout(relayout,60);
   setTimeout(relayout,320);
-}
-
-if(sideToggle){
-  sideToggle.addEventListener('click',()=>applyLeftView('markers'));
-}
-
-if(sideToggleBack){
-  sideToggleBack.addEventListener('click',()=>applyLeftView('project'));
 }
 
 // 窗口尺寸变化同样要让 Leaflet 重算（分栏布局对宽度很敏感）。

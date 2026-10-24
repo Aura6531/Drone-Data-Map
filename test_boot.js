@@ -522,34 +522,12 @@ console.log('\n=== 照片图层真的能点亮吗（真跑一次点击）===');
     '合并了几处也一并写进悬停提示',
     layerBtn ? String(layerBtn.title || '-') : '-');
 
-  // 左栏「标签开关」：项目数据/轨迹文件 ↔ 标记点（用户 2026-10-07 要求）
+  // 左栏「项目 ↔ 标记点」切换：2026-10-24 随标记点页一起删除
+  // （全选/编辑/删除都并入「已加载」）。这里断言旧入口确实不存在。
   {
-    const colLeft = sb.els.get('colLeft');
-    const toggle = sb.els.get('sideToggle');
-    const back = sb.els.get('sideToggleBack');
-
-    chk(colLeft && colLeft._classes.has('view-project'), '左栏默认显示「项目数据 / 轨迹文件」页');
-    chk(colLeft && !colLeft._classes.has('view-markers'), '默认不是标记点页');
-    chk(toggle && String(toggle.textContent) === '‹ Markers',
-      '开关按钮默认写「‹ Markers」（带左箭头，点它往左扫到标记点页）',
-      toggle ? String(toggle.textContent) : '-');
-    chk(toggle && String(toggle.getAttribute('aria-pressed')) === 'false', '默认 aria-pressed=false');
-
-    if (toggle) toggle._fire('click');
-    chk(colLeft && colLeft._classes.has('view-markers'), '点一下切到标记点页');
-    chk(toggle && String(toggle.textContent) === 'Project ›',
-      '切过去之后按钮写「Project ›」（带右箭头）',
-      toggle ? String(toggle.textContent) : '-');
-    chk(toggle && String(toggle.getAttribute('aria-pressed')) === 'true', '标记点页时 aria-pressed=true');
-    chk(toggle && /Back to project/.test(String(toggle.title)), '悬停提示跟着变');
-
-    if (back) back._fire('click');
-    chk(colLeft && colLeft._classes.has('view-project'), '点标记点页里的「Project ›」切回来');
-    chk(toggle && String(toggle.textContent) === '‹ Markers', '切回来按钮又写「‹ Markers」');
-
-    // 旧的「收起成窄轨」应当已经删干净
-    chk(!sb.els.has('sideRail') || !html.includes('id="sideRail"'), '窄轨（sideRail）已删除');
-    chk(!html.includes('side-collapsed'), 'side-collapsed 那套样式已删除');
+    chk(!sb.els.has('sideToggle'), '旧的「‹ Markers」开关已删除');
+    chk(!sb.els.has('sideToggleBack'), '旧标记点页的返回开关已删除');
+    chk(!sb.els.has('markerList'), '旧标记点列表已删除');
   }
 
   const btn = sb.els.get('photoLayerBtn');
