@@ -883,6 +883,18 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .ld-row.hidden .ld-name{color:#94a3b8;text-decoration:line-through}
 .ld-ico{width:16px;flex:0 0 16px;text-align:center}
 /* 文字标注：半透明定位点 + 白色底板文字牌 */
+/* 点照片时在地图上闪一下的位置提示（虚线圆 + 半透明，闪 4 次后消失） */
+.photo-ping-wrap{background:none;border:0}
+.photo-ping{position:absolute;left:-15px;top:-15px;width:30px;height:30px;border-radius:50%;
+    border:2px dashed rgba(37,99,235,.8);background:rgba(37,99,235,.12);
+    animation:photoPingBlink .8s ease-in-out 4 both}
+.photo-ping-core{position:absolute;left:-3px;top:-3px;width:6px;height:6px;border-radius:50%;
+    background:rgba(37,99,235,.75);box-shadow:0 0 0 1px rgba(255,255,255,.9)}
+@keyframes photoPingBlink{
+  0%,100%{opacity:.12;transform:scale(.82)}
+  50%{opacity:.9;transform:scale(1.08)}
+}
+
 .map-label{background:none;border:0}
 .map-label .lab-wrap{display:flex;align-items:center;gap:5px;transform:translate(-50%,-50%)}
 .map-label .lab-dot{width:11px;height:11px;border-radius:50%;
@@ -9072,6 +9084,28 @@ function labelIcon(item){
   });
 }
 
+// 点照片时：在对应位置闪一个虚线圆，提示「照片在这里」（几秒后自动移除）
+let photoPingLayer=null;
+let photoPingTimer=0;
+
+function showPhotoPing(latlng){
+  if(!map||!latlng)return;
+  try{
+    if(photoPingLayer){ map.removeLayer(photoPingLayer); photoPingLayer=null; }
+    if(photoPingTimer)clearTimeout(photoPingTimer);
+    const icon=L.divIcon({
+      className:'photo-ping-wrap',
+      html:'<span class="photo-ping"></span><span class="photo-ping-core"></span>',
+      iconSize:[0,0],
+      iconAnchor:[0,0],
+    });
+    photoPingLayer=L.marker(latlng,{icon,interactive:false,keyboard:false}).addTo(map);
+    photoPingTimer=setTimeout(()=>{
+      try{ if(photoPingLayer){ map.removeLayer(photoPingLayer); photoPingLayer=null; } }catch(e){}
+    },4200);
+  }catch(e){}
+}
+
 function renderLabels(){
   if(!map)return;
   if(!labelLayer)labelLayer=L.layerGroup().addTo(map);
@@ -9641,6 +9675,8 @@ function renderLoadedPanelInner(){
         name.title=`${t('Jump to')} ${label}`;
         name.addEventListener('click',()=>{
           try{ map.setView([Number(g.lat),Number(g.lon)],Math.max(map.getZoom(),PHOTO_ZOOM)); }catch(e){}
+          // 地图上临时闪一下位置（虚线圆），用户一眼看到照片在哪里
+          try{ showPhotoPing(L.latLng(Number(g.lat),Number(g.lon))); }catch(e){}
           try{ selectPhotoGroup(i); }catch(e){}
         });
         row.appendChild(name);
