@@ -7410,6 +7410,12 @@ if(photoLayerBtn)photoLayerBtn.addEventListener('click',()=>{
     return;
   }
 
+  // 被 × 清掉过的照片：重新打开时恢复显示
+  if(photosHidden){
+    photosHidden=false;
+    try{ loadedUiState.photosHidden=false; loadedUiSave(); }catch(e){}
+    try{ renderLoadedPanel(); }catch(e){}
+  }
   setPhotoLayer(true);
   zoomToAllPhotos();
 });
@@ -8881,6 +8887,7 @@ function openVideoFromPopup(encoded,autoPlay=true){
 /* ============================================================
    KML 矢量（多段线 / 多边形）
    ============================================================ */
+let photosHidden=false;        // 照片整组被 × 清掉（存 project.json 的 ui.photosHidden）
 let coverageHidden=new Set();   // 被 × 清掉的覆盖图层（按 srt 记，存 project.json）
 let orthoHidden=new Set();      // 被 × 从「已加载」清掉的正射影像（按 name 记，存 project.json）
 
@@ -9125,17 +9132,20 @@ function ldRow(opts){
     row.dataset.orthoPath=opts.orthoPath;
   }
 
-  // 移出项目：只从地图和列表里去掉，磁盘文件不动
-  const del=document.createElement('button');
-  del.type='button';
-  del.className='ld-del';
-  del.textContent='×';
-  del.title=t('Remove from this project (files on disk are kept)');
-  del.addEventListener('click',(ev)=>{
-    ev.stopPropagation();
-    opts.onRemove&&opts.onRemove();
-  });
-  row.appendChild(del);
+  // × 只在这一行真的支持「清除/移出」时出现 ——
+  // 否则会出现「点了没反应」的死按钮（用户问过这个）
+  if(opts.onRemove){
+    const del=document.createElement('button');
+    del.type='button';
+    del.className='ld-del';
+    del.textContent='×';
+    del.title=opts.removeTitle||t('Remove from this project (files on disk are kept)');
+    del.addEventListener('click',(ev)=>{
+      ev.stopPropagation();
+      opts.onRemove();
+    });
+    row.appendChild(del);
+  }
   return row;
 }
 
@@ -9418,7 +9428,7 @@ function renderLoadedPanelInner(){
 
   // —— 照片（整层开关；单条显隐下一步做）——
   const pg=(typeof photoGroups!=='undefined')&&photoGroups.length?photoGroups.length:0;
-  if(pg){
+  if(pg&&!photosHidden){
     const shown=!!photoLayerOn;
     const grp=ldGroup(t('Photos'),[{
       name:`${pg} ${t('photo points')}`,
@@ -9427,6 +9437,16 @@ function renderLoadedPanelInner(){
       expanded:photoListOpen,
       onExpand:()=>{ photoListOpen=!photoListOpen; renderLoadedPanel(); },
       onGo:()=>{ try{ if(!photoLayerOn)setPhotoLayer(true); zoomToAllPhotos(); }catch(e){} },
+      removeTitle:t('Clear the photos from the loaded list (files on disk are kept)'),
+      onRemove:async()=>{
+        const sure=confirm(t('Clear the photos from the loaded list (files on disk are kept)'));
+        if(!sure)return;
+        photosHidden=true;
+        try{ loadedUiState.photosHidden=true; loadedUiSave(); }catch(e){}
+        try{ setPhotoLayer(false); }catch(e){}
+        renderLoadedPanel();
+        taskLog(t('Photos cleared. Use “Load all photos” to bring them back.'),'ok');
+      },
       onToggle:(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
     }],(on)=>{ try{ setPhotoLayer(on); }catch(e){} loadedUiSave(); renderLoadedPanel(); },
     {collapsible:false});
@@ -9655,6 +9675,17 @@ function renderLoadedPanelInner(){
             loadedUiState.markers[key]=on; loadedUiSave();
             try{ drawProjectMarkers(); }catch(e){}
             renderLoadedPanel();
+          },
+          removeTitle:t('Delete this marker from the project'),
+          onRemove:async()=>{
+            const sure=confirm(`${t('Delete this marker from the project')}\n\n“${key}”`);
+            if(!sure)return;
+            projectMarkers=projectMarkers.filter(x=>x!==m);
+            try{ markerChecked.delete(m.id); }catch(e){}
+            drawProjectMarkers();
+            await saveProjectMarkers();
+            renderLoadedPanel();
+            taskLog(t('Marker deleted.')+` “${key}”`,'ok');
           },
         };
       });
@@ -11030,6 +11061,7 @@ initFileTree();
         const ui=(d.project&&d.project.ui)||{};
         orthoHidden=new Set(ui.orthoHidden||[]);
         coverageHidden=new Set(ui.coverageHidden||[]);
+        photosHidden=!!ui.photosHidden;
         if(ui)loadedUiState=Object.assign({videos:{},photos:{},markers:{},ortho:{},coverage:{}},ui);
       }catch(e){}
       window.__projectLoaded=true;   // 只有读到过项目，才允许整份覆盖写

@@ -82,6 +82,10 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Clear the photos from the loaded list (files on disk are kept)": "从「已加载」清除照片（磁盘文件保留）",
+    "Photos cleared. Use “Load all photos” to bring them back.": "照片已清除 —— 点「加载全部照片」可以恢复。",
+    "Delete this marker from the project": "从项目里删除这个标记点",
+    "Marker deleted.": "已删除标记点",
     "Wide angle": "广角",
     "Tracks were not loaded automatically — click “Load all tracks” if needed.": "航迹没能自动加载 —— 需要的话点一下「加载全部航迹」。",
     "New marker": "新建标记点",
