@@ -972,7 +972,35 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .tree-hint{font-size:11px;color:#64748b}
 
 /* 左下角任务日志：最多 3 行，成功刷新、失败停留 */
-.task-log{position:fixed;left:12px;bottom:12px;z-index:9400;max-width:420px;pointer-events:none;
+/* 统计卡改成悬浮：加载航迹时淡入，几秒后淡出 */
+.stats-float{position:fixed;left:12px;bottom:96px;z-index:9350;margin:0;
+    background:rgba(255,255,255,.94);border:1px solid #e2e8f0;border-radius:12px;
+    padding:8px 10px;box-shadow:0 6px 20px rgba(15,23,42,.14);
+    opacity:0;transform:translateY(6px);pointer-events:none;
+    transition:opacity .45s ease,transform .45s ease}
+.stats-float.show{opacity:1;transform:none}
+
+/* 左下角「日志」按钮：只在鼠标移到那个角落时出现 */
+.log-hotspot{position:fixed;left:8px;bottom:8px;width:340px;height:44px;z-index:9410}
+.log-btn{position:absolute;left:0;bottom:0;width:26px;height:26px;padding:0;display:flex;
+    align-items:center;justify-content:center;border:1px solid #cbd5e1;border-radius:7px;
+    background:#fff;color:#475569;cursor:pointer;opacity:0;transition:opacity .2s;
+    box-shadow:0 2px 8px rgba(15,23,42,.12)}
+.log-hotspot:hover .log-btn{opacity:1}
+.log-btn:hover{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+
+/* 日志弹窗里的历史列表 */
+.log-box{max-width:560px;width:min(92vw,560px)}
+.log-history{max-height:52vh;overflow:auto;margin:6px 0 10px;
+    border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:6px}
+.log-line{display:flex;gap:8px;padding:3px 6px;border-radius:6px;font-size:12px;color:#334155}
+.log-line:nth-child(odd){background:rgba(255,255,255,.7)}
+.log-line .ts{flex:0 0 auto;color:#94a3b8;font-variant-numeric:tabular-nums}
+.log-line.err .tx{color:#b91c1c}
+.log-line.ok .tx{color:#15803d}
+.log-empty{color:#94a3b8;font-size:12px;padding:10px;text-align:center}
+
+.task-log{position:fixed;left:12px;bottom:44px;z-index:9400;max-width:420px;pointer-events:none;
     display:flex;flex-direction:column;gap:4px}
 .task-log .tline{pointer-events:none;padding:5px 9px;border-radius:8px;font-size:12px;
     background:rgba(15,23,42,.86);color:#e2e8f0;box-shadow:0 3px 12px rgba(15,23,42,.28);
@@ -1679,7 +1707,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     <!-- 地图下面：次要内容，整体缩小 -->
     <div class="below-map">
       <div id="altVideos" class="alt-videos" style="display:none"></div>
-      <div id="stats" class="stats stats-compact"></div>
+      <!-- 2026-10-24：从地图下方挪成「左下角悬浮信息」，加载航迹时出现几秒后淡出 -->
+<div id="stats" class="stats stats-compact stats-float"></div>
       <!-- 该点轨迹信息也放这里：放在上面会把地图挤出可视区 -->
       <div id="hitDetail" class="hit-detail" style="display:none"></div>
     </div>
@@ -9893,6 +9922,69 @@ const taskLogLines=[];
 const TASKLOG_TTL=4000;         // 提示保留 4 秒
 let taskLogTimer=0;
 
+// 全部历史（带时间戳），供「日志」弹窗查看；最多留 300 条
+let taskLogHistory=[];
+
+function pushLogHistory(text,kind,stamp){
+  taskLogHistory.push({text:String(text||''),kind:kind||'info',stamp});
+  if(taskLogHistory.length>300)taskLogHistory.splice(0,taskLogHistory.length-300);
+  if(logModalOpen)renderLogHistory();
+}
+
+let logModalOpen=false;
+
+function renderLogHistory(){
+  const box=document.getElementById('logHistory');
+  if(!box)return;
+  if(!taskLogHistory.length){
+    box.innerHTML=`<div class="log-empty">${esc(t('No log entries yet.'))}</div>`;
+    return;
+  }
+  // 最新在上
+  box.innerHTML=[...taskLogHistory].reverse().map(l=>{
+    const cls=l.kind==='err'?' err':l.kind==='ok'?' ok':'';
+    return `<div class="log-line${cls}"><span class="ts">${esc(l.stamp)}</span>`
+      +`<span class="tx">${esc(l.text)}</span></div>`;
+  }).join('');
+}
+
+function openLogModal(){
+  const modal=document.getElementById('logModal');
+  if(!modal)return;
+  logModalOpen=true;
+  renderLogHistory();
+  modal.style.display='flex';
+}
+
+function closeLogModal(){
+  const modal=document.getElementById('logModal');
+  if(modal)modal.style.display='none';
+  logModalOpen=false;
+}
+
+function initLogUi(){
+  const btn=document.getElementById('logBtn');
+  if(btn&&!btn.dataset.bound){
+    btn.dataset.bound='1';
+    btn.addEventListener('click',()=>openLogModal());
+  }
+  const close=document.getElementById('logClose');
+  if(close&&!close.dataset.bound){
+    close.dataset.bound='1';
+    close.addEventListener('click',()=>closeLogModal());
+  }
+  const clear=document.getElementById('logClear');
+  if(clear&&!clear.dataset.bound){
+    clear.dataset.bound='1';
+    clear.addEventListener('click',()=>{ taskLogHistory=[]; renderLogHistory(); });
+  }
+  const modal=document.getElementById('logModal');
+  if(modal&&!modal.dataset.bound){
+    modal.dataset.bound='1';
+    modal.addEventListener('click',(ev)=>{ if(ev.target===modal)closeLogModal(); });
+  }
+}
+
 function paintTaskLog(){
   const box=document.getElementById('taskLog');
   if(!box)return;
@@ -9929,6 +10021,11 @@ function taskLog(text,kind){
   const stamp=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   // 成功的消息自动过期（保留 3 条），失败的一直留着直到下一次操作
   // 同一句话连着重播就别叠三条了（自动流程会重复触发同一条提示）
+  // 每个新消息都进历史（同一句重复也只记一次时间，避免刷屏）
+  if(!(taskLogHistory.length&&taskLogHistory[taskLogHistory.length-1].text===text)){
+    pushLogHistory(text,kind,stamp);
+  }
+
   if(taskLogLines.length&&taskLogLines[0].text===text){
     taskLogLines[0].stamp=stamp;
     taskLogLines[0].at=Date.now();
@@ -10600,6 +10697,13 @@ async function deleteGeoFile(index){
 function updateStats(datas){
   let records=0,segments=0,features=0;
   datas.forEach(d=>{const p=d.properties||{};records+=Number(p.record_count||0);segments+=Number(p.segment_count||0);features+=(d.features||[]).length});
+  // 悬浮卡：加载/更新统计时淡入，4.5 秒后淡出（用户要求「出现几秒然后缓缓消失」）
+  try{
+    stats.classList.add('show');
+    if(updateStats._timer)clearTimeout(updateStats._timer);
+    updateStats._timer=setTimeout(()=>{ try{ stats.classList.remove('show'); }catch(e){} },4500);
+  }catch(e){}
+
   stats.innerHTML=`<div class="stat"><div class="stat-title">${t('GeoJSON files')}</div><div class="stat-value">${datas.length}</div></div><div class="stat"><div class="stat-title">${t('segments')}</div><div class="stat-value">${segments}</div></div><div class="stat"><div class="stat-title">${t('Features')}</div><div class="stat-value">${features}</div></div><div class="stat"><div class="stat-title">${t('Position records')}</div><div class="stat-value">${records.toLocaleString()}</div></div>`;
 }
 
@@ -11132,6 +11236,7 @@ async function importScannedFolder(folder,quiet){
 }
 
 initFileTree();
+  try{ initLogUi(); }catch(e){}
   initLeftSplitter();
   (async()=>{
     try{
@@ -14035,7 +14140,26 @@ function initTimelineSyncUI(){
     <div id="syncProgress" class="sync-progress" style="display:none"></div>
   </div>
 </div>
-  <!-- 左下角任务日志（最多 3 行；成功刷新，失败停留） -->
+  <!-- 左下角：任务日志（最多 3 行；几秒后自动消失）+ 悬停出现的「日志」按钮 -->
+  <div id="logHotspot" class="log-hotspot">
+    <button id="logBtn" class="log-btn" type="button" title="日志" aria-label="日志">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M3 3.5h10M3 8h10M3 12.5h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
   <div id="taskLog" class="task-log"></div>
+
+  <!-- 全部历史消息（带时间戳） -->
+  <div id="logModal" class="mini-modal" style="display:none">
+    <div class="mini-modal-box log-box">
+      <div class="mini-modal-title">日志</div>
+      <div id="logHistory" class="log-history"></div>
+      <div class="row mini-modal-actions">
+        <button id="logClear" class="secondary">清空</button>
+        <button id="logClose">关闭</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
