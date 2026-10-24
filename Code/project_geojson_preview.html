@@ -860,9 +860,18 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .card.collapsed{flex:0 0 auto!important;min-height:0!important}
 #fileTree{flex:1 1 auto;min-height:200px}
 /* ===== 「已加载」分组列表 ===== */
-.loaded-groups{flex:1 1 auto;min-height:80px;overflow:auto;margin-top:6px;
+/* 已加载卡片必须被限制在左栏剩余高度内，内部列表才有滚动条可滚 */
+#tracksCard{flex:3 1 0;min-height:0;display:flex;flex-direction:column}
+/* 已加载是主工作区，拿走大部分富余高度；文件树最多占 1/3（它内容自己有滚动条） */
+#treeCard{flex:1 1 0;max-height:34%}
+
+.loaded-groups{flex:1 1 auto;min-height:80px;overflow:auto;overscroll-behavior:contain;margin-top:6px;
     display:flex;flex-direction:column;gap:6px}
-.ld-group{border:1px solid #e2e8f0;border-radius:9px;overflow:hidden;background:#fff}
+/* flex:0 0 auto 必须写：
+   外层 .loaded-groups 是 flex 列且被限高，默认 flex:0 1 auto 会把每个分组压缩，
+   再被 overflow:hidden 裁掉 —— 于是展开的照片列表把下面的「位置点」顶出可视区，
+   又因为没有溢出，外层永远不出现滚动条（2026-10-25 用户反馈）。 */
+.ld-group{flex:0 0 auto;border:1px solid #e2e8f0;border-radius:9px;overflow:hidden;background:#fff}
 .ld-head{display:flex;align-items:center;gap:6px;padding:4px 8px;background:#f8fafc;
     font-size:12px;font-weight:700;color:#334155}
 .ld-head .ld-count{margin-left:auto;font-weight:500;color:#64748b;font-size:11px}
@@ -923,7 +932,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .ld-prog{flex:0 0 54px;height:4px;border-radius:2px;background:#fde68a;overflow:hidden}
 .ld-prog i{display:block;height:100%;width:0;background:#b45309;transition:width .3s}
 /* 照片：分类层与条目逐级缩进（体现从属关系） */
-.ld-sublist{max-height:260px;overflow:auto;padding:2px 0 4px 10px;margin-left:20px;
+.ld-sublist{max-height:none;overflow:visible;padding:2px 0 4px 10px;margin-left:20px;
     border-left:2px solid #e2e8f0}
 .ld-sublist .ld-chead{padding-left:10px}
 /* 子项再往右一层：分类头有折叠按钮（约 20px），子项没有，
