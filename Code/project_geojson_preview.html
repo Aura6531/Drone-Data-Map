@@ -926,10 +926,12 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .ld-sublist{max-height:260px;overflow:auto;padding:2px 0 4px 10px;margin-left:20px;
     border-left:2px solid #e2e8f0}
 .ld-sublist .ld-chead{padding-left:10px}
-.ld-sublist .ld-subrow{padding-left:26px}
+/* 子项再往右一层：分类头有折叠按钮（约 20px），子项没有，
+   所以这里要多给出「按钮宽度 + 缩进」，复选框才明显在分类右侧 */
+.ld-sublist .ld-subrow{padding-left:58px}
 /* 位置点：分类层缩进，具体点再缩进一层 */
 .ld-cat .ld-chead{padding-left:8px}
-.ld-cat .ld-row{padding-left:26px}
+.ld-cat .ld-row{padding-left:36px}
 /* 位置点：分类层 */
 .ld-cat{border-top:1px dashed #e2e8f0;border-left:2px solid #e2e8f0;
     padding:2px 0 2px 4px;margin-left:16px}
