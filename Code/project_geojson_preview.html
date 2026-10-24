@@ -1978,6 +1978,21 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
   </div>
 </div>
 
+<!-- 输入文字（新建/改标注文字、以后的其它单行输入都用它），居中弹窗 -->
+<div id="textModal" class="mini-modal" style="display:none">
+  <div class="mini-modal-box">
+    <div class="mini-modal-title" id="textModalTitle">Label text</div>
+    <label class="mini-modal-field">
+      <span class="mini-modal-field-label" id="textModalLabel">Label text</span>
+      <input id="textModalInput" type="text" maxlength="200" autocomplete="off">
+    </label>
+    <div class="row mini-modal-actions">
+      <button id="textModalCancel" class="secondary">Cancel</button>
+      <button id="textModalOk">OK</button>
+    </div>
+  </div>
+</div>
+
 <div id="videoMarkModal" class="mini-modal" style="display:none">
   <div class="mini-modal-box">
     <div class="mini-modal-title">Mark here</div>
@@ -9130,9 +9145,9 @@ function renderLabels(){
     mk.on('drag',(e)=>{ const p=e.target.getLatLng(); item.lat=p.lat; item.lng=p.lng; });
     mk.on('dragend',()=>{ saveLabels(); });
     mk.on('click',(e)=>{ L.DomEvent.stopPropagation(e); labelSelectedId=item.id; renderLabels(); renderLoadedPanel(); });
-    mk.on('dblclick',(e)=>{
+    mk.on('dblclick',async(e)=>{
       L.DomEvent.stopPropagation(e);
-      const v=prompt(t('Label text'),item.text||'');
+      const v=await askText({title:t('Label text'),value:item.text||''});
       if(v===null)return;
       item.text=String(v).slice(0,200);
       saveLabels(); renderLabels(); renderLoadedPanel();
@@ -9189,6 +9204,55 @@ function setLabelPlacing(on){
   taskLog(labelPlacing?t('Click on the map to place the label.'):'',labelPlacing?'info':'ok');
 }
 
+// 居中弹窗版输入框：返回 Promise<string|null>（取消是 null）
+function askText(opts){
+  const o=opts||{};
+  return new Promise((resolve)=>{
+    const modal=document.getElementById('textModal');
+    const input=document.getElementById('textModalInput');
+    const title=document.getElementById('textModalTitle');
+    const label=document.getElementById('textModalLabel');
+    const ok=document.getElementById('textModalOk');
+    const cancel=document.getElementById('textModalCancel');
+    // 页面上没有这个弹窗（单测沙箱）时退回原生 prompt
+    if(!modal||!input||!ok||!cancel){
+      if(typeof prompt==='function'){ resolve(prompt(o.title||'',o.value||'')); return; }
+      resolve(null); return;
+    }
+
+    if(title)title.textContent=o.title||t('Label text');
+    if(label)label.textContent=o.label||o.title||t('Label text');
+    input.value=(o.value==null?'':String(o.value));
+    input.maxLength=Number(o.maxlength||200);
+    ok.textContent=o.okText||t('OK');
+    cancel.textContent=t('Cancel');
+    modal.style.display='flex';
+
+    const close=(val)=>{
+      modal.style.display='none';
+      ok.removeEventListener('click',onOk);
+      cancel.removeEventListener('click',onNo);
+      input.removeEventListener('keydown',onKey);
+      modal.removeEventListener('click',onMask);
+      resolve(val);
+    };
+    const onOk=()=>close(input.value);
+    const onNo=()=>close(null);
+    const onKey=(ev)=>{
+      if(ev.key==='Enter'){ ev.preventDefault(); close(input.value); }
+      else if(ev.key==='Escape'){ ev.preventDefault(); close(null); }
+    };
+    const onMask=(ev)=>{ if(ev.target===modal)close(null); };
+
+    ok.addEventListener('click',onOk);
+    cancel.addEventListener('click',onNo);
+    input.addEventListener('keydown',onKey);
+    modal.addEventListener('click',onMask);
+
+    setTimeout(()=>{ try{ input.focus(); input.select(); }catch(e){} },30);
+  });
+}
+
 function initLabels(){
   const btn=document.getElementById('labelBtn');
   if(btn&&!btn.dataset.bound){
@@ -9197,10 +9261,10 @@ function initLabels(){
   }
   if(map&&!map._labelBound){
     map._labelBound=true;
-    map.on('click',(e)=>{
+    map.on('click',async(e)=>{
       if(!labelPlacing)return;
-      const v=prompt(t('Label text'),'');
       setLabelPlacing(false);
+      const v=await askText({title:t('Label text')});
       if(v===null||!String(v).trim())return;
       projectLabels.push({
         id:'l'+Date.now().toString(36),
