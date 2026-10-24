@@ -9485,6 +9485,15 @@ function ldCategoryGroup(title,cats,onAllAll,key,onCategoryAll,opts){
       const cname=document.createElement('span');
       cname.className='ld-cname';
       cname.textContent=cat.name;
+      // 点名字 = 展开/收起这一类的清单（和左边的 +/− 等价）
+      cname.style.cursor='pointer';
+      cname.title=catCollapsed?t('Expand'):t('Collapse');
+      cname.addEventListener('click',()=>{
+        if(collapsedGroups.has(catKey))collapsedGroups.delete(catKey);
+        else collapsedGroups.add(catKey);
+        saveCollapsedGroups();
+        renderLoadedPanel();
+      });
       ch.appendChild(cname);
 
       const ccount=document.createElement('span');
@@ -9754,6 +9763,15 @@ function renderLoadedPanelInner(){
         const klab=document.createElement('span');
         klab.className='ld-cname';
         klab.textContent=KIND_LABEL[k];
+        // 点名字 = 展开/收起这一类照片（和左边的 +/− 等价）
+        klab.style.cursor='pointer';
+        klab.title=kCollapsed?t('Expand'):t('Collapse');
+        klab.addEventListener('click',()=>{
+          if(collapsedGroups.has(kindKey))collapsedGroups.delete(kindKey);
+          else collapsedGroups.add(kindKey);
+          saveCollapsedGroups();
+          renderLoadedPanel();
+        });
         head.appendChild(klab);
 
         const kcount=document.createElement('span');
