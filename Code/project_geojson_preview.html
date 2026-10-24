@@ -9953,13 +9953,15 @@ function renderLoadedPanelInner(){
           sw.addEventListener('click',()=>{ sel.color=key; saveLabels(); renderLabels(); renderLoadedPanel(); });
           bar.appendChild(sw);
         }
-        // 加粗（用户 2026-10-25 要求）：开关式按钮，开着的状态是实心
+        // 加粗按钮（用户 2026-10-25）：B 的字重和「地图上这块牌子」保持一致 ——
+        // 没加粗时这个 B 也是纤细的，加粗后 B 跟着变粗（不再用「亮/暗」表示状态）
         const bold=document.createElement('button');
         bold.type='button';
         bold.textContent='B';
         bold.title=t('Bold');
-        bold.style.fontWeight='800';
-        bold.className=sel.bold?'secondary':'';
+        bold.className='lab-bold';
+        bold.style.fontWeight=sel.bold?'800':'400';
+        bold.setAttribute('aria-pressed',sel.bold?'true':'false');
         bold.addEventListener('click',()=>{
           sel.bold=!sel.bold;
           saveLabels(); renderLabels(); renderLoadedPanel();
