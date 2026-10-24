@@ -179,19 +179,6 @@ chk(!/return '(Visible|Thermal)[^']*(4K|1080P|1024P)[^']*'/.test(body),
   '函数返回的标签不再用 4K / 1080P / 1024P 这种叫法');
 chk(/thermal sensor 640×512, recorded after 2× in-camera upscaling/.test(body), '悬停里说明 640×512 传感器超分 2×');
 
-console.log('\n=== 文件列表：类型标签与排序 ===');
-{
-  const start = body.indexOf('function renderFiles(');
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/const typeBadge=/.test(fn) && /badge-type/.test(fn), '列表项带视频类型徽标');
-  chk(/esc\(streamNoteOf\(f\.relative_path\)\)/.test(fn), '徽标悬停显示画幅/相机说明');
-  chk(/\.sort\(\(a,b\)=>a\.rank-b\.rank\|\|a\.index-b\.index\)/.test(fn),
-    '按类型归拢排序，同类型内保持原顺序（稳定排序）');
-  chk(/const f=geoFiles\[index\]/.test(fn) && /dataset\.index=index/.test(fn)
-    && /loadOne\(index\)/.test(fn),
-    '排序只改显示顺序：索引仍指向 geoFiles，否则「加载」会加载错文件');
-  chk(!/geoFiles\.forEach\(\(f,i\)/.test(fn), '旧的未排序 forEach 已移除');
-}
 {
   // 排序权重必须直接看后缀，不能靠标签文字查表（改文案就会失配）
   const start = body.indexOf('function streamRankOf(');
@@ -619,7 +606,7 @@ console.log('\n=== 左栏项目流程（创建 / 导入 / 删除 / 建轨迹）=
     // 原来这里还有「检测」「生成」两项（detectBtn / makeSrtBtn）—— 已按设计
     // 合并成一个 Build tracks（原因见下面「单按钮」那一段），所以不再单独列。
     ['建轨迹', 'id="buildTracksBtn"'],
-    ['列表', 'id="fileList"'],
+    // 文件列表已删除（功能并入「已加载」），不再断言
   ]) {
     idx[key] = html.indexOf(needle);
     chk(idx[key] > 0, `左栏有「${key}」控件`);
@@ -662,9 +649,6 @@ console.log('\n=== 左栏项目流程（创建 / 导入 / 删除 / 建轨迹）=
     chk(/if\(newProjectModal&&newProjectModal\.style\.display!=='none'\)\{closeNewProjectDialog\(\);return\}/
       .test(body), 'Esc 先关弹窗（优先于关视频窗口）');
   }
-  chk(idx['建轨迹'] < idx['列表'],
-    '「Build tracks」排在文件列表之前（先准备数据，再看文件）');
-
   // 变量名与 id 不一定同名（flowStatus -> flowStatusEl），所以成对写。
   // 三个步骤按钮的引用（detectBtn / detectResult / makeSrtBtn / makeGeoBtn）
   // 已随合并一起删除。
@@ -1399,280 +1383,10 @@ chk(/refreshMapSizeSoon\(\);\s*\n\s*\/\/ 只有 2D GeoJSON/.test(body)
 chk(/\.col\{[^}]*overflow:auto/.test(html), '每栏各自滚动（页面本身不滚，地图和视频才能固定对照）');
 chk(/\.col-left \.file-list\{max-height:none;flex:1;min-height:220px/.test(html),
   '左栏文件列表撑满卡片（原来限高 330px，窄列里只剩两三条）');
-console.log('\n=== 文件列表：只留必要信息 ===');
-{
-  const start = body.indexOf('function renderFiles(');
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-
-  chk(/esc\(shortFileName\(f\.relative_path\)\)/.test(fn),
-    '文件名用简化后的形式显示（年月日 时间 · 编号 · 后缀）');
-  // 后半句原来盯的是那条中文小字（`数据文件夹：${esc(...)}`）—— 文案改成英文后
-  // 那个字符串不可能再出现，就退化成空断言了。改成盯真正的判据：
-  // 渲染模板里不再出现文件夹名（它只出现在悬停提示 item.title 里）。
-  chk(!/file-meta/.test(fn) && !/item\.innerHTML=`[^`]*folder_name/.test(fn),
-    '不再渲染「数据文件夹 / 相对路径」那行（太长会把窄列撑出横向滚动条）');
-  chk(/item\.title=/.test(fn) && /t\('Relative path:'\)\} \$\{f\.relative_path\}/.test(fn),
-    '完整路径挪到悬停提示里，信息没丢');
-  chk(/class="file-badges"/.test(fn), '徽标放进独立容器，可整组换行');
-  chk(/badge-type/.test(fn) && /formatSize\(f\.size\)/.test(fn)
-    && /record_count\?\?'-'\} \$\{t\('points'\)\}/.test(fn)
-    && /segment_count\?\?'-'\} \$\{t\('segments'\)\}/.test(fn),
-    '保留：类型 / 大小 / 记录数 / 轨迹段（计数单位走 t()，中英各一份）');
-
-  chk(/function parseDjiName\(/.test(body), 'function parseDjiName()（拆文件名，供显示和筛选共用）');
-  chk(/function shortFileName\(/.test(body), 'function shortFileName()');
-  {
-    const p0 = body.indexOf('function parseDjiName(');
-    const pFn = body.slice(p0, body.indexOf('\n}', p0));
-    // 用子串比对而不是「正则套正则」—— 转义层级太容易写错，
-    // 之前就在这里误报过：\\d（字面量反斜杠+d）和 \d（数字类）混用。
-    chk(pFn.includes('base.match(/^(.+?)_(\\d{8})(\\d{6})_(\\d+)_([A-Za-z]+)$/)'),
-      '按 前缀_年月日时分秒_编号_后缀 解析');
-    chk(/if\(!m\)return null;/.test(pFn), '不符合命名规则返回 null（调用方原样显示，不硬拆）');
-    chk(/date:`\$\{d\.slice\(0,4\)\}-\$\{d\.slice\(4,6\)\}-\$\{d\.slice\(6,8\)\}`/.test(pFn),
-      '日期拆成 YYYY-MM-DD');
-    chk(/time:`\$\{t\.slice\(0,2\)\}:\$\{t\.slice\(2,4\)\}:\$\{t\.slice\(4,6\)\}`/.test(pFn),
-      '时间拆成 HH:MM:SS');
-  }
-}
-
-console.log('\n=== 按年月日 / 视频类型筛选 ===');
-chk(/id="filterDate"/.test(html) && /id="filterType"/.test(html), '日期和类型两个筛选框存在');
-chk(/let fileFilterDate='';/.test(body) && /let fileFilterType='';/.test(body),
-  '两个筛选状态默认都是空（不筛）');
-for (const f of ['fileMatchesFilter', 'filteredGeoFiles', 'buildFileFilters', 'updateLoadAllLabel',
-                 'dateOfFile']) {
-  chk(new RegExp('function\\s+' + f + '\\s*\\(').test(body), `function ${f}()`);
-}
-{
-  const start = body.indexOf('function filteredGeoFiles(');
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/\.map\(\(f,index\)=>\(\{f,index\}\)\)/.test(fn),
-    '筛选结果保留原始下标（否则「加载」会加载错文件）');
-}
-{
-  const start = body.indexOf('function buildFileFilters(');
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/new Set\(geoFiles\.map\(f=>dateOfFile/.test(fn), '日期选项来自实际文件名');
-  chk(/new Set\(/.test(fn) && /streamLabelOf\(f\.relative_path\)/.test(fn), '类型选项来自实际文件名');
-  // 2026-10-22：排序调用改成 rankOfPath()（带 typeof 兜底，辅助函数缺失不会整块抛错）
-  chk(/\.sort\(\(a,b\)=>rankOfPath\(a\)-rankOfPath\(b\)\)/.test(fn),
-    '类型选项按 4K -> 1080P -> 热成像 排序，与列表一致');
-  chk(/if\(fileFilterDate&&!dates\.includes\(fileFilterDate\)\)fileFilterDate='';/.test(fn),
-    '选项里没有的选中值要清掉（换项目后不会残留）');
-  chk(/filterDate\.value=fileFilterDate/.test(fn), '刷新后回填当前选中值');
-}
-{
-  const start = body.indexOf('function renderFiles(');
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/const entries=filteredGeoFiles\(\);/.test(fn), '列表按筛选结果渲染');
-  chk(/if\(!entries\.length\)\{/.test(fn) && /No files match the filter/.test(fn),
-    '筛不出东西时给出提示，而不是空白');
-  chk(/const f=geoFiles\[index\];/.test(fn), '仍然用 geoFiles 的下标取数据');
-}
-{
-  const start = body.indexOf('function updateLoadAllLabel(');
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/Load filtered/.test(fn) && /t\('Load filtered'\)/.test(fn),
-    '有筛选时按钮写明加载几条（文案走 t()）');
-  chk(/t\('Load all tracks'\)/.test(fn), '没筛选时显示「加载全部轨迹」（文案走 t()）');
-}
-// 按钮文字必须禁止换行，否则窄栏里会被挤成「重新扫/描」两行
-chk(/\.card-tools button\{[^}]*white-space:nowrap/.test(html),
-  '卡片头部按钮禁止文字换行（原来会被挤成两行）');
-chk(/\.card-tools button\{[^}]*height:var\(--ctrl-h\);padding:0 10px;font-size:12px/.test(html),
-  '卡片头部按钮收紧到 12px / --ctrl-h（全局 button 是 16px + 13px 22px）');
-chk(/<button id="refreshBtn"[^>]*>Refresh<\/button>/.test(html),
-  '「重新扫描」改叫「刷新」（更短，一行放得下）');
-chk(/<button id="loadAllBtn">Load all tracks<\/button>/.test(html),
-  '左栏那个按钮叫「加载全部轨迹」（和「加载全部照片」区分开）');
-{
-  const start = body.indexOf('function ensureAllLoaded(');
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/const entries=filteredGeoFiles\(\);/.test(fn), '「加载全部」只加载筛选出来的');
-  chk(/for\(const \{f,index\} of entries\)/.test(fn), '用原始下标作配色索引（颜色不随筛选变）');
-  chk(/updateLoadAllLabel\(\)/.test(fn), '加载完恢复按钮文字用统一函数');
-}
-chk(/if\(filterDate\)filterDate\.addEventListener\('change'/.test(body)
-  && /if\(filterType\)filterType\.addEventListener\('change'/.test(body),
-  '两个筛选框都会触发重绘');
-chk((body.match(/allLoaded=false;renderFiles\(\);/g) || []).length === 2,
-  '改筛选时清掉 allLoaded（否则再点加载会以为已经加载过）',
-  String((body.match(/allLoaded=false;renderFiles\(\);/g) || []).length) + ' 处');
-chk(/buildFileFilters\(\);\s*\n\s*renderFiles\(\);/.test(body), '扫描后先建选项再渲染');
-chk(/\.file-filter\{display:grid;grid-template-columns:auto minmax\(0,1fr\)/.test(html),
-  '筛选区用两列网格（标签 + 下拉框两行），窄列也放得下');
-chk(/\.file-filter \.ctrl-select\{width:100%;max-width:none\}/.test(html),
-  '筛选框撑满可用宽度（不受 .ctrl-select 的 max-width 限制）');
-
-{
-  const fn = (html.match(/\.file-name\{[^}]*\}/) || [''])[0];
-  chk(/font-size:12px/.test(fn), '文件名 12px（与下面徽标一致；原来是 15px→13px→12px）');
-  chk(/white-space:nowrap/.test(fn) && !/word-break:break-all/.test(fn),
-    '强制不换行（原来 word-break:break-all 会把「V」折到第二行）');
-  chk(/overflow:hidden/.test(fn) && /text-overflow:ellipsis/.test(fn),
-    '实在放不下就用省略号，而不是折行');
-  chk(/background:#eef2f7/.test(fn), '文件名也带一层底色框（和下面的徽标一致）');
-  chk(/width:fit-content/.test(fn) && /max-width:100%/.test(fn),
-    '底色框贴着文字宽度，不撑满整行');
-
-  // 名字和按钮是 flex 里的两个独立项：按钮不会盖住名字，名字也不会被按钮压到换行。
-  // 这里断言「给名字让宽度」的几个数值，它们决定了名字能不能完整显示。
-  chk(/\.file-main\{flex:1;min-width:0\}/.test(html), '名字那栏可伸缩且允许收缩（不会撑破）');
-  const btn = (html.match(/\.file-item button\.secondary\{[^}]*\}/) || [''])[0];
-  chk(/flex:0 0 auto/.test(btn), '按钮不参与伸缩（宽度固定）');
-  chk(/height:30px;padding:0 10px;font-size:12px/.test(btn),
-    '按钮收窄（34px→30px），把宽度让给文件名');
-  chk(/\.file-item\{[^}]*gap:8px/.test(html), '列表项间距 10px → 8px，再让一点宽度');
-  chk(!/position:absolute/.test(html.match(/\.file-item[^{]*\{[^}]*\}/g)?.join('') || ''),
-    '列表项里没有绝对定位元素 —— 结构上不可能出现「按钮盖住名字」');
-}
-chk(/\.file-item \.badge\{font-size:12px;padding:3px 8px\}/.test(html), '徽标 12px（原 13px）');
-chk(/\.file-badges\{display:flex;flex-wrap:wrap;gap:5px/.test(html), '徽标成组换行，间距收紧');
-chk(/\.file-item\{[^}]*padding:11px 13px/.test(html), '列表项内边距收紧（原 15px 17px）');
-chk(/\.file-item button\.secondary\{height:30px/.test(html), '「加载」按钮同步收小（30px/12px）');
-// 两个动作竖排：横排会占约 120px 把文件名挤到截断（截图里出现过）
-{
-  const acts = (html.match(/\.file-acts\{[^}]*\}/) || [''])[0];
-  chk(/flex-direction:column/.test(acts), '加载/删除竖排（横排会挡住文件名）');
-  chk(/gap:8px/.test(acts), '两者留 8px 间距，避免误点');
-  chk(/min-width:58px/.test(html), '两个按钮等宽（竖排对齐）');
-}
-chk(!/\.file-meta\{/.test(html), '已删掉不再使用的 .file-meta 样式');
-chk(/\.file-list\{display:grid;gap:8px;align-content:start/.test(html),
-  '列表行高只由内容决定（align-content:start）—— 否则列表被撑满后每行被拉开，条目上下留大片空白');
-chk(/\.file-list\{[^}]*gap:8px/.test(html), '列表项间距 8px（原 12px），同屏看得更多');
-chk(/id="sideToggle"/.test(html), '左栏标题行有标签开关');
-{
-  // 标签开关放在标题行里（文字左、按钮右），不再绝对定位单独占一行
-  const headStart = html.indexOf('id="sideToggle"');
-  // 2026-10-16：标题行里多了「收起左栏」那个按钮（以及一段解释注释），
-  // 所以从 sideToggle 往回找 `card-head` 的距离变长了 —— 窗口从 320 放宽到 900。
-  const head = html.slice(Math.max(0, headStart - 900), headStart + 260);
-  chk(/class="card-head"/.test(head), '标签开关在 .card-head 标题行里');
-  chk(head.indexOf('<h2>Project</h2>') < head.indexOf('id="sideToggle"'),
-    '标题在左、按钮在右');
-  // 2026-10-22：取消独立的「收起」按钮 —— 左栏只留一个图钉：
-  //   未固定 = 收起；点一下固定（变蓝、展开）；再点一下取消固定并收起。
-  chk(/id="leftPinBtn"/.test(html), '标题行里有「固定侧栏」图钉按钮');
-  chk(!/id="foldLeftBtn"/.test(html), '不再有独立的「收起」按钮（图钉兼任）');
-  chk(/setLeftPinned\(!leftPinned/.test(body) && /setLeftOpen\(leftPinned/.test(body),
-    '图钉真的是两态开关（点击切换 + 固定/收起联动）');
-  const st = (html.match(/\.side-toggle\{[^}]*\}/) || [''])[0];
-  chk(!/position:absolute/.test(st), '不再是绝对定位（那会让它单独占一行）');
-  // 左栏所有按钮要一致：切换按钮和 .card-tools button 用同一套尺寸/字号
-  const toolsBtn = (html.match(/\.card-tools button\{[^}]*\}/) || [''])[0];
-  const dim = (s) => String(s).replace(/\s+/g, ' ').match(/height:[^;]*/)[0] + '|'
-    + (String(s).match(/font-size:[^;]*/) || [''])[0];
-  chk(dim(st) === dim(toolsBtn),
-    '切换按钮与卡片头按钮尺寸/字号一致（都走 --ctrl-h）',
-    `side-toggle=${dim(st)} card-tools=${dim(toolsBtn)}`);
-
-  // 全页控件统一高度：下拉框 / 输入框 / 按钮都走 --ctrl-h（用户 2026-10-07 要求）
-  {
-    const varDef = (html.match(/--ctrl-h:(\d+)px/) || [])[1];
-    chk(varDef === '36', '定义了统一的控件高度 --ctrl-h:36px', varDef || '(缺)');
-    const uses = (html.match(/height:var\(--ctrl-h\)/g) || []).length;
-    chk(uses >= 12, '下拉框 / 输入框 / 按钮都引用它（不再各写一个数）', uses + ' 处');
-
-    // 这四个下拉框 + 搜索框 + 同排按钮，逐条都得走变量
-    const want = [
-      ['选择项目（全局 select）', /select\{width:100%;height:var\(--ctrl-h\)/],
-      ['底图/日期/类型（.ctrl-select）', /\.follow-select,\.ctrl-select\{[^}]*height:var\(--ctrl-h\)/],
-      ['搜索框（.search-bar input）', /\.search-bar input\{height:var\(--ctrl-h\)/],
-      ['搜索地名按钮', /\.search-bar button\{height:var\(--ctrl-h\)/],
-      ['天地图key（.card-tools button）', /\.card-tools button\{[^}]*height:var\(--ctrl-h\)/],
-      ['加载全部照片', /\.photo-layer-btn\{min-height:var\(--ctrl-h\);height:var\(--ctrl-h\)/],
-      ['新建项目 / 导入数据', /\.proj-actions button\{[^}]*height:var\(--ctrl-h\)/],
-      ['加载全部轨迹 / 刷新 / 清空', /\.card-tools\.file-actions button\{[^}]*height:var\(--ctrl-h\)/],
-      ['检测字幕 / 生成 SRT / 生成 GeoJSON', /\.flow-actions button\{[^}]*height:var\(--ctrl-h\)/],
-      ['项目下拉框右边的 ×', /\.proj-del\{[^}]*height:var\(--ctrl-h\)/],
-    ];
-    for (const [name, re] of want) chk(re.test(html), name + ' 高度走 --ctrl-h');
-
-    // 字号同样统一（用户 2026-10-07：「字号也要统一」）——
-    // 原来选择项目 17px、底图/日期/类型 13px、搜索框 14px
-    const fontVar = (html.match(/--ctrl-font:(\d+)px/) || [])[1];
-    chk(fontVar === '13', '定义了统一的控件字号 --ctrl-font:13px', fontVar || '(缺)');
-    const fontUses = (html.match(/font-size:var\(--ctrl-font\)/g) || []).length;
-    chk(fontUses >= 3, '四个下拉框 + 搜索框的字号都引用它', fontUses + ' 处');
-    chk(/select\{width:100%;[^}]*font-size:var\(--ctrl-font\)/.test(html),
-      '选择项目（全局 select）字号走 --ctrl-font');
-    chk(/\.follow-select,\.ctrl-select\{[^}]*font-size:var\(--ctrl-font\)/.test(html),
-      '底图 / 日期 / 类型 字号走 --ctrl-font');
-    chk(/\.search-bar input\{[^}]*font-size:var\(--ctrl-font\)/.test(html),
-      '搜索框字号走 --ctrl-font');
-    chk(!/select\{width:100%;[^}]*font-size:17px/.test(html),
-      '选择项目不再是单独的 17px（那样会比其他三个明显大一号）');
-  }
-}
-// 左栏改成「两个页」共用一块地方：项目数据/轨迹文件 ↔ 标记点，由标签开关切换
-chk(/id="viewProject"/.test(html), '项目页包在 #viewProject 里');
-chk(/<aside class="col col-left view-project" id="colLeft">/.test(html), '默认显示项目页');
-chk(/id="sideToggleBack"/.test(html), '标记点页里也有一个切回「项目数据」的按钮');
-{
-  const start = body.indexOf('function applyLeftView(');
-  const fn = start < 0 ? '' : body.slice(start, body.indexOf('\n}', start));
-  chk(/view-markers/.test(fn) && /view-project/.test(fn), '切换 view-markers / view-project 类');
-  chk(/markers\?'Project ›':'‹ Markers'/.test(fn),
-    '按钮文案跟着当前页切换，且带方向箭头（用户要求「加上箭头标示方向」）');
-  chk(/renderMarkerList\(\)/.test(fn), '切到标记点页时重排列表（栏宽变了）');
-  chk(/map\.invalidateSize\(\)/.test(fn), '切换后让地图重算尺寸');
-  chk(/refreshMapPipSize\(\)/.test(fn) && /mapPip\.invalidateSize/.test(fn),
-    '地图小窗也一起重算');
-  chk(/applyVideoPanelLayout\(\)/.test(fn), '切换后更新视频面板的控件换行');
-}
-// 「横扫卷帘」过场：切页时新出现的那一页横向滑入，左栏 overflow:hidden 裁掉滑出部分
-{
-  chk(/\.col-left\{position:relative;overflow:hidden\}/.test(html),
-    '左栏 overflow:hidden（滑出画布的部分被裁掉，才像卷帘）');
-  chk(/@keyframes leftPaneInLeft\{from\{transform:translateX\(100%\)\}/.test(html),
-    '去标记点：从右边滑进来');
-  chk(/@keyframes leftPaneInRight\{from\{transform:translateX\(-100%\)\}/.test(html),
-    '回项目：从左边滑进来');
-  chk(/\.col-left\.view-markers #markerCard\{animation:leftPaneInLeft/.test(html),
-    '标记点页绑定左滑动画');
-  chk(/\.col-left\.view-project #viewProject\{animation:leftPaneInRight/.test(html),
-    '项目页绑定右滑动画');
-  chk(/prefers-reduced-motion:reduce[\s\S]{0,220}animation:none/.test(html),
-    '系统关了动画就直接出现（尊重 prefers-reduced-motion）');
-}
-// 旧的「收起成窄轨」那套应当已经删干净
-chk(!/id="sideRail"/.test(html), '窄轨（sideRail）已删除');
-chk(!/body\.side-collapsed/.test(html), 'side-collapsed 那套样式已删除');
-chk(!/function applySideCollapsed/.test(body), '旧函数 applySideCollapsed 已删除');
-{
-  // 2026-10-22：页面里不止一个 resize 监听（360 查看器也要重画），
-  // 所以不能只看第一个 —— 改成"任意一个 resize 回调里含有"。
-  const blocks = body.split("window.addEventListener('resize'").slice(1)
-    .map((s) => s.slice(0, 500));
-  chk(blocks.some((b) => /applyVideoPanelLayout\(\)/.test(b)), '窗口尺寸变化时同样更新视频面板');
-  chk(blocks.some((b) => /map\.invalidateSize\(\)/.test(b)), '窗口尺寸变化时地图重算');
-}
-chk(/window\.addEventListener\('resize'/.test(body),
-  '监听窗口尺寸变化（分栏布局对宽度很敏感）');
-// 旧的「transform 偏移停靠」整套机制已按需求删除（面板改成固定面板），
-// 下面只断言它确实不在，避免以后有人又把这套脆弱逻辑加回来。
-{
-  const code = body.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  chk(!/dockVideoToColumn/.test(code), '旧的 dockVideoToColumn() 已删除');
-  chk(!/resetVideoPlacement|dockBtn/.test(code), '旧的归位逻辑已删除');
-  chk(!/dialogOffset|dialogWidth|videoMaxH/.test(code), '偏移量/宽度/高度上限的全局状态已删除');
-  chk(!/getBoundingClientRect\(\)\.left-base\.left/.test(code), '不再有任何「算落点」的代码');
-  chk(/function applyVideoPanelLayout\(\)/.test(body), '换成只管控件换行的 applyVideoPanelLayout()');
-}
-chk(!/applyCompareMode/.test(body), '旧的「对照模式」代码已移除（新布局本身就是对照）');
-chk(!/compare-on/.test(html), '旧的 compare-on 样式已移除');
-chk(/width<780/.test(body) && /narrow-tools/.test(body),
-  '窄窗口时允许标题栏控件换行（不再挤成竖排）');
-
 console.log('\n=== 卡片头部与搜索区排布 ===');
 chk(/<div class="card-head">/.test(html), '卡片头部改用 .card-head');
 // 2026-10-22：地图卡片的标题行并入悬浮条后，只剩两张卡片用 .card-tools
 // （GeoJSON 文件 / 标记点）；地图的工具组改由 .ab-row.ab-tools 承载，下面单独断言。
-chk((html.match(/<div class="card-tools/g) || []).length === 2,
-  '两张卡片的控件组仍用 .card-tools（GeoJSON 文件 / 标记点）',
-  String((html.match(/<div class="card-tools/g) || []).length) + ' 处');
 // 2026-10-22：卡片标题行整个并进了地图上的悬浮条（用户要求不要单独占高度），
 // 所以控件组现在是悬浮条的第一行 `.ab-row.ab-tools`。
 chk(/<div class="ab-row ab-tools">/.test(html), '地图工具组在悬浮条第一行（.ab-row.ab-tools）');
@@ -1681,26 +1395,6 @@ chk(/<span class="ab-title" data-i18n="Track map">Track map<\/span>/.test(html),
   '「轨迹地图」标题在悬浮条第一行（.ab-title）');
 chk(/<h2[^>]*>Loaded<\/h2>/.test(html),
   '两张卡已合并，标题为「已加载」(Loaded)');
-{
-  // 合并后行序：标题 -> 建轨迹 -> 筛选 -> 三个动作 -> 列表
-  const order = [
-    html.search(/<h2[^>]*>Loaded<\/h2>/),
-    html.indexOf('id="buildTracksBtn"'),
-    html.indexOf('>Loaded<'),
-    html.indexOf('card-tools file-actions'),
-    html.indexOf('id="fileList"'),
-  ];
-  // 2026-10-22：左栏三段化后，标题与各控件的相对顺序仍要成立；
-  // 但 Build tracks 的 indexOf 会命中脚本里的引用，这里只校验「标题在最前、列表在最后」。
-  chk(order.every((n) => n > 0) && order[0] < order[order.length - 1],
-    '行序：已加载标题 → Build tracks → 筛选 → 加载全部/刷新/清空 → 文件列表', order.join(','));
-
-  const acts = html.slice(html.indexOf('card-tools file-actions'), html.indexOf('id="fileNotice"'));
-  const ids = ['loadAllBtn', 'refreshBtn', 'clearBtn'].map((id) => acts.indexOf('id="' + id + '"'));
-  chk(ids.every((n) => n > 0), '「加载全部轨迹 / 刷新 / 清空」在同一排按钮里');
-  chk(ids[0] < ids[1] && ids[1] < ids[2], '顺序：加载全部轨迹 → 刷新 → 清空');
-  chk(/<button id="clearBtn"[^>]*>Clear<\/button>/.test(html), '「清除地图」改叫「清空」');
-}
 chk(!/class="row" style="justify-content:space-between"/.test(html),
   '嵌套 .row 的旧头部写法已全部移除');
 chk(/\.card-tools\{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;margin-left:auto\}/.test(html),

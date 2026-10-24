@@ -1517,26 +1517,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
         <div id="loadedGroups" class="loaded-groups"></div>
         <div id="missingHint" class="missing-hint" style="display:none"></div>
         <div id="flowStatus" class="detect-result" style="display:none"></div>
-        <!-- 日期 / 类型筛选：并成一行（原来上下两行太占高度） -->
-      <!-- 以下整块已由「已加载」面板取代（分组显隐/飞过去/移出），先隐藏保留代码。
-           要彻底删除需要同步改 8 处 JS 与页面断言，留待单独一轮。 -->
-      <div id="legacyTrackTools" style="display:none">
-        <div class="file-filter" style="flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px 10px">
-          <label class="ctrl-label" for="filterDate" data-i18n="Date">Date</label>
-          <select id="filterDate" class="ctrl-select"></select>
-          <label class="ctrl-label" for="filterType" data-i18n="Type">Type</label>
-          <select id="filterType" class="ctrl-select"></select>
-        </div>
-        <!-- 对地图上轨迹内容的三个动作，放在筛选下面（按需求的行序） -->
-        <div class="card-tools file-actions">
-          <button id="loadAllBtn">Load all tracks</button>
-          <button id="refreshBtn" class="secondary" data-i18n="Refresh">Refresh</button>
-          <button id="clearBtn" class="secondary" data-i18n="Clear">Clear</button>
-        </div>
-        <div id="fileNotice" class="notice" style="display:none"></div>
-        <div id="fileList" class="file-list" style="margin-top:16px"></div>
-      </div><!-- /#legacyTrackTools -->
-      </section>
+              </section>
       </div><!-- /#viewProject -->
 
       <!-- 标记点页：与项目页共用左栏这一块，标签开关切换。
@@ -2127,18 +2108,11 @@ window.addEventListener('unhandledrejection',e=>{
 
 const projectSelect=document.getElementById('projectSelect');
 const projectNotice=document.getElementById('projectNotice');
-const fileNotice=document.getElementById('fileNotice');
 const mapNotice=document.getElementById('mapNotice');
-const fileList=document.getElementById('fileList');
 const missingHint=document.getElementById('missingHint');
-const filterDate=document.getElementById('filterDate');
-const filterType=document.getElementById('filterType');
 const stats=document.getElementById('stats');
 const tileHint=document.getElementById('tileHint');
-const loadAllBtn=document.getElementById('loadAllBtn');
-const refreshBtn=document.getElementById('refreshBtn');
 const baseMapSelect=document.getElementById('baseMap');
-const clearBtn=document.getElementById('clearBtn');
 const placeInput=document.getElementById('placeInput');
 const placeSearchBtn=document.getElementById('placeSearchBtn');
 const poiList=document.getElementById('poiList');
@@ -2392,69 +2366,12 @@ function dateOfFile(relativePath){
 }
 
 // 文件列表的筛选：按「年月日」和「视频类型」。空串表示不筛。
-let fileFilterDate='';
-let fileFilterType='';
-
-function fileMatchesFilter(f){
-  if(fileFilterDate&&dateOfFile(f.relative_path)!==fileFilterDate)return false;
-  if(fileFilterType&&streamLabelOf(f.relative_path)!==fileFilterType)return false;
-  return true;
-}
 
 // 返回 [{f,index}]，index 始终指向 geoFiles ——「加载」和 dataset.index 都靠它，
 // 不能因为筛选而错位。
+// 筛选功能已并入「已加载」，这里就是「全部 GeoJSON」
 function filteredGeoFiles(){
-  // 「日期/类型筛选」那块已经隐藏（功能并入「已加载」）。
-  // 如果仍按隐藏下拉里的旧值过滤，会出现「明明有 GeoJSON 却一条都不加载」，
-  // 左栏「视频」分组因此空着 —— 用户会以为刷新后数据没了。
-  let filtersHidden=false;
-  try{
-    // 测试沙箱里没有 document / getComputedStyle，这里要容错
-    if(typeof document!=='undefined'&&document.getElementById&&typeof getComputedStyle==='function'){
-      const legacy=document.getElementById('legacyTrackTools');
-      filtersHidden=!!(legacy&&getComputedStyle(legacy).display==='none');
-    }
-  }catch(e){ filtersHidden=false; }
-  if(filtersHidden)return geoFiles.map((f,index)=>({f,index}));
-
-  return geoFiles
-    .map((f,index)=>({f,index}))
-    .filter(x=>fileMatchesFilter(x.f));
-}
-
-// 「加载全部轨迹」加载的就是当前筛选出来的那些，筛选时把数量写进按钮，
-// 免得用户以为加载的还是全部
-function updateLoadAllLabel(){
-  const filtered=Boolean(fileFilterDate||fileFilterType);
-  const n=filteredGeoFiles().length;
-  // t() 只认「整串当键」，不做 {n} 参数替换（见 i18n 那段的说明），
-  // 所以带数量的文案用「变量 + t('固定部分')」拼，别指望 t('{n} …', {n})。
-  loadAllBtn.textContent=filtered?(t('Load filtered')+` (${n})`):t('Load all tracks');
-}
-
-// 依据当前文件列表刷新两个下拉框；选项里没有的选中值要清掉
-function buildFileFilters(){
-  const dates=[...new Set(geoFiles.map(f=>dateOfFile(f.relative_path)).filter(Boolean))].sort();
-
-  const types=[...new Set(
-    geoFiles.map(f=>streamLabelOf(f.relative_path)).filter(t=>t&&t!=='Other')
-  )].sort((a,b)=>rankOfPath(a)-rankOfPath(b));
-
-  if(filterDate){
-    filterDate.innerHTML=`<option value="">${esc(t('All dates'))}</option>`
-      +dates.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
-  }
-
-  if(filterType){
-    filterType.innerHTML=`<option value="">${esc(t('All types'))}</option>`
-      +types.map(lbl=>`<option value="${esc(lbl)}">${esc(lbl)}</option>`).join('');
-  }
-
-  if(fileFilterDate&&!dates.includes(fileFilterDate))fileFilterDate='';
-  if(fileFilterType&&!types.includes(fileFilterType))fileFilterType='';
-
-  if(filterDate)filterDate.value=fileFilterDate;
-  if(filterType)filterType.value=fileFilterType;
+  return geoFiles.map((f,index)=>({f,index}));
 }
 
 function initMap(){
@@ -2778,12 +2695,9 @@ async function loadProjects(){
 async function scanGeoJSON(){
   const name=projectSelect.value;
   if(!name)return;
-  hide(fileNotice);fileList.innerHTML='<div style="color:#64748b;padding:15px">'+t('Scanning GeoJSON files…')+'</div>';
   try{
     const d=await api('/api/project/geojson-list?name='+encodeURIComponent(name));
     geoFiles=pickOneGeoFilePerVideo(d.files||[]);
-    buildFileFilters();
-    renderFiles();
     // 这里原来会显示一行「当前项目：xxx」，但上面下拉框已经写着它是哪个项目了，
     // 属于重复信息，去掉。projectNotice 留给真正的消息（创建/删除/出错）。
     hide(projectNotice);
@@ -2795,7 +2709,7 @@ async function scanGeoJSON(){
     // 顺带看看这个项目有没有正射影像（.tif）。有就把叠加层按钮亮出来。
     // 失败不阻塞 —— 这是附加功能，不能让文件列表跟着报错。
     try{ loadOrthoList() }catch(e){}
-  }catch(e){fileList.innerHTML='';show(fileNotice,t('Failed to load the file list:')+' '+e.message,true)}
+  }catch(e){taskLog(t('Failed to load the file list:')+' '+e.message,'err')}
 }
 
 // 检查当前项目有没有缺失的 SRT / GeoJSON，有就在三个按钮下面写一行字。
@@ -2833,71 +2747,6 @@ async function refreshMissingHint(name){
     const a=document.getElementById('flowActions');
     if(a)a.style.display='none';
   }
-}
-
-function renderFiles(){
-  fileList.innerHTML='';
-  if(!geoFiles.length){
-    // 同样只是提示：放到左下角任务日志，面板里不再常驻一条绿块
-    hide(fileNotice);
-    taskLog(t('This project has no GeoJSON yet — import data above (tracks are generated automatically).'),'info');
-    return}
-  hide(fileNotice);
-
-  // 按视频类型归拢（同类型内保持原顺序）。
-  // 注意：排序只影响显示顺序，dataset.index 和 loadOne 仍然用 geoFiles 的下标，
-  // 否则点“加载”会加载错文件。
-  const entries=filteredGeoFiles();
-
-  if(!entries.length){
-    show(fileNotice,t('No files match the filter. Try setting Date or Type back to “All”.'),false);
-    updateLoadAllLabel();
-    return;
-  }
-
-  const order=entries
-    .map(x=>({index:x.index,rank:rankOfPath(x.f.relative_path)}))
-    .sort((a,b)=>a.rank-b.rank||a.index-b.index);
-
-  order.forEach(({index})=>{
-    const f=geoFiles[index];
-    const item=document.createElement('div');item.className='file-item';item.dataset.index=index;
-
-    const typeLabel=streamLabelOf(f.relative_path);
-    const typeBadge=(typeLabel&&typeLabel!==t('Other'))
-      ?`<span class="badge badge-type" title="${esc(streamNoteOf(f.relative_path))}">${esc(typeLabel)}</span>`
-      :'';
-
-    // 360 素材（`_D` 流）：给一个「360」按钮，直接开全景播放器。
-    // 视频列表里点 `.OSV` 本来是被跳过的（浏览器解不了），不给入口就只能手拼 URL。
-    const isPano360=/_d(\.3d)?\.geojson$/i.test(String(f.relative_path||''));
-    const panoBadge=isPano360
-      ?`<span class="badge badge-type" title="${t('360 panorama material (dual fisheye). Open the panorama player to look around.')}">360</span>`
-      :'';
-    const panoBtn=isPano360
-      ?`<button class="secondary" data-act="pano" title="${t('Open in the 360 panorama player (drag to look around)')}">360</button>`
-      :'';
-
-    // 只留：文件名（简化）、类型、大小、记录数、轨迹段。
-    // 「数据文件夹 / 相对路径」那行太长会把窄列撑出横向滚动条，挪到悬停提示里。
-    item.title=`${f.file_name}\n${t('Folder:')} ${f.folder_name}  ·  ${t('Relative path:')} ${f.relative_path}`;
-
-    item.innerHTML=`<div class="file-main"><div class="file-name">${esc(shortFileName(f.relative_path))}</div><div class="file-badges">${typeBadge}${panoBadge}<span class="badge">${formatSize(f.size)}</span><span class="badge">${f.record_count??'-'} ${t('points')}</span><span class="badge">${f.segment_count??'-'} ${t('segments')}</span></div></div><div class="file-acts">${panoBtn}<button class="secondary" data-act="load">${t('Load')}</button><button class="secondary danger" data-act="del" title="${t('Remove this GeoJSON from the project (source video and SRT are kept)')}">${t('Delete')}</button></div>`;
-    item.querySelector('button[data-act="load"]').addEventListener('click',ev=>{ev.stopPropagation();loadOne(index)});
-    if(panoBtn)item.querySelector('button[data-act="pano"]').addEventListener('click',ev=>{
-      ev.stopPropagation();
-      // `.OSV` 与 `.geojson` 同目录同主名，换后缀就能拿到素材路径
-      openPano360(String(f.relative_path||'').replace(/\.geojson$/i,'.OSV'));
-    });
-    item.querySelector('button[data-act="del"]').addEventListener('click',ev=>{
-      ev.stopPropagation();
-      deleteGeoFile(index);
-    });
-    item.addEventListener('click',()=>loadOne(index));
-    fileList.appendChild(item);
-  });
-
-  updateLoadAllLabel();
 }
 
 async function fetchGeo(f){
@@ -10676,14 +10525,12 @@ async function ensureAllLoaded(){
 
   // 丢掉此前可能只加载了一部分的状态，避免同一条航迹被重复登记
   layerGroup.clearLayers();if(trackArrowLayer)trackArrowLayer.clearLayers();loadedTracks=[];hideDroneMarker();rebuildLegend();
-  loadAllBtn.disabled=true;loadAllBtn.textContent=t('Loading…');
   try{
     const datas=[];
     // 注意用原始下标 i 作为配色索引：筛选后颜色不会跟着变
     for(const {f,index} of entries){const d=await fetchGeo(f);datas.push(d);addGeo(d,index,f.file_name,f)}
     updateStats(datas);allLoaded=true;return true;
   }catch(e){show(mapNotice,e.message,true);return false}
-  finally{loadAllBtn.disabled=false;updateLoadAllLabel()}
 }
 
 async function loadAll(){
@@ -10708,28 +10555,7 @@ function foldLeftForWork(){
   setLeftOpen(false,false);
 }
 
-clearBtn.addEventListener('click',()=>{
-  // 标记点不保存：清空地图时一起清掉。
-  // （它们只存在内存里，刷新页面同样会清空 —— 这是需求定的行为。）
-  if(videoMarkLayer)videoMarkLayer.clearLayers();
-  initMap();layerGroup.clearLayers();if(trackArrowLayer)trackArrowLayer.clearLayers();loadedTracks=[];allLoaded=false;
-  clearProbe();clearHighlight();hideDroneMarker();hideNearbyResult();rebuildLegend();stats.innerHTML='';
-  // 照片图层跟着一起收：只收展示区与高亮，数据和开关状态留着 ——
-  // 照片图层那个开关是独立的，用户点「清空」不该把开关也按掉。
-  closePhotoCard();
-  document.querySelectorAll('.file-item').forEach(x=>x.classList.remove('active'));
-});
-refreshBtn.addEventListener('click',scanGeoJSON);
-// 筛选只影响「显示哪些文件」和「加载全部时加载哪些」；
-// allLoaded 要清掉，否则改了筛选后点加载会误以为已经加载过了
-if(filterDate)filterDate.addEventListener('change',()=>{
-  fileFilterDate=filterDate.value;allLoaded=false;renderFiles();
-});
-if(filterType)filterType.addEventListener('change',()=>{
-  fileFilterType=filterType.value;allLoaded=false;renderFiles();
-});
 baseMapSelect.addEventListener('change',()=>setBaseMap(baseMapSelect.value));
-loadAllBtn.addEventListener('click',loadAll);
 /* ============================================================
    项目流程：新建项目 / 导入数据 / 移出列表 / 检测 / 生成
    ------------------------------------------------------------
@@ -13972,9 +13798,7 @@ function onLangChanged(){
     try{fn()}catch(e){console.warn('onLangChanged/'+name+':',e&&e.message)}
   };
   // 文件列表（含流标签、点数/段数、相对路径）
-  if(typeof renderFiles==='function'&&Array.isArray(geoFiles))each(renderFiles,'files');
   // 日期/类型筛选下拉的选项文案
-  if(typeof buildFileFilters==='function')each(buildFileFilters,'filters');
   // 覆盖图层的按钮与状态文字
   if(typeof coverageUpdateButtons==='function')each(coverageUpdateButtons,'coverage-buttons');
   if(typeof rebuildLegend==='function')each(rebuildLegend,'legend');
@@ -13990,7 +13814,6 @@ function onLangChanged(){
     each(()=>frameGalleryRender(frameGalleryLastData),'frame-gallery');
   }
   // 静态 HTML 里剩下的按钮文案（有些是脚本里设的，不在 data-i18n 范围内）
-  each(()=>{if(typeof updateLoadAllLabel==='function')updateLoadAllLabel()},'load-all-label');
   // 该点信息面板：用上次的参数重渲染一遍
   if(lastHitDetailArgs&&hitDetail&&hitDetail.style.display!=='none'){
     each(()=>renderNearbyResult(...lastHitDetailArgs),'hit-detail');

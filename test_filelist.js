@@ -38,18 +38,6 @@ const src = 'const t=k=>k;\n'
 const { streamLabelOf, streamNoteOf, streamRankOf, streamKeyOf, is3dTrack,
         parseDjiName, shortFileName, dateOfFile } = new Function(src)();
 
-// 筛选逻辑：把两个筛选状态做成闭包，便于反复改值测试
-const buildFilter = new Function('dateOfFile', 'streamLabelOf', 'geoFiles', `
-let fileFilterDate='';
-let fileFilterType='';
-${extractFn('fileMatchesFilter')}
-${extractFn('filteredGeoFiles')}
-return {
-  set(d,t){fileFilterDate=d;fileFilterType=t},
-  match(f){return fileMatchesFilter(f)},
-  filtered(){return filteredGeoFiles()},
-};`);
-
 // SHOW_3D_FILES 作为参数注入，这样两种取值都能测。
 // isCoverageExport 也要一起注入 —— pickOneGeoFilePerVideo 会调它滤掉覆盖导出产物
 // （用户 2026-10-13：「这几个 coverage 的矢量图层……图上不要加载出来」）。
@@ -218,41 +206,6 @@ console.log('\n=== 按年月日 / 视频类型筛选 ===');
     dateOfFile('DJI_20260924095258_0001_V.geojson'));
   chk(dateOfFile('随手起的名字.geojson') === '', '拆不出日期就返回空串（不会被误筛掉）');
 
-  const files = [
-    { relative_path: 'DJI_20260924095258_0001_V.geojson' },
-    { relative_path: 'DJI_20260924095258_0001_S.geojson' },
-    { relative_path: 'DJI_20260924095258_0001_T.geojson' },
-    { relative_path: 'DJI_20260925120000_0001_V.geojson' },
-  ];
-  const f = buildFilter(dateOfFile, streamLabelOf, files);
-
-  const show = (label) => {
-    const got = f.filtered().map((x) => `${x.index}:${streamLabelOf(x.f.relative_path)}`);
-    console.log(`    ${label.padEnd(26)} -> ${got.length} 条  [${got.join('  ')}]`);
-    return got;
-  };
-
-  f.set('', '');
-  chk(f.filtered().length === 4, '不筛时全部返回', String(f.filtered().length));
-
-  f.set('2026-09-24', '');
-  chk(show('日期 2026-09-24').length === 3, '按日期筛出 3 条');
-
-  f.set('2026-09-25', '');
-  chk(show('日期 2026-09-25').length === 1, '另一天只剩 1 条');
-
-  f.set('', 'Wide 4K');
-  chk(show('类型 Wide 4K').length === 2, '按类型筛出 2 条');
-
-  f.set('2026-09-24', 'Thermal 1280×1024');
-  chk(show('日期 + 类型组合').length === 1, '两个条件同时生效');
-
-  f.set('2026-09-24', '');
-  const idx = f.filtered().map((x) => x.index);
-  chk(idx.join(',') === '0,1,2', '保留原始下标（「加载」不会错位）', idx.join(','));
-
-  f.set('2020-01-01', '');
-  chk(show('不存在的日期').length === 0, '筛不出就是空，界面会给出提示');
 }
 
 console.log('\n=== 三个标签的悬停说明 ===');
