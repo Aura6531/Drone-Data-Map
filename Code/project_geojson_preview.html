@@ -261,7 +261,12 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .danger-btn{color:#b91c1c;border-color:#fecaca;background:#fef2f2}
 .danger-btn:hover{background:#fee2e2}
 
-.mini-modal-actions{margin-top:16px;gap:8px;justify-content:flex-end}
+/* 「编辑标记点」里的删除放左下角：margin-right:auto 把它顶到最左，
+   取消/保存在右边；浅桃红底，和破坏性操作对上 */
+.mini-modal-actions{margin-top:16px;gap:8px;justify-content:flex-end;align-items:center}
+.mini-modal-actions #markerEditDelete{margin-right:auto}
+#markerEditDelete.delete-soft{background:#ffe4e6;border:1px solid #fecdd3;color:#be123c;font-weight:600}
+#markerEditDelete.delete-soft:hover{background:#fecdd3;border-color:#fda4af}
 .mini-modal-actions button{height:38px;padding:0 18px;font-size:14px}
 /* 底图瓦片之类的次要提示：小字、灰底，放地图下面，不抢地图的位置 */
 .tile-hint{margin-top:8px;padding:6px 10px;border-radius:7px;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.5;word-break:break-word}.legend-item{display:flex;align-items:center;gap:6px;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.line{width:18px;height:3px;border-radius:3px;flex:0 0 auto}
@@ -1955,7 +1960,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     <div id="markerEditError" class="mini-modal-error" style="display:none"></div>
     <div class="row mini-modal-actions">
       <!-- 只有「编辑已有标记点」时才出现：从项目里删掉这个点 -->
-      <button id="markerEditDelete" class="secondary danger-btn" style="display:none"
+      <button id="markerEditDelete" class="delete-soft" style="display:none"
               data-i18n="Delete">删除</button>
       <button id="markerEditCancel" class="secondary">Cancel</button>
       <button id="markerEditOk">Save</button>
