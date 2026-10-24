@@ -258,6 +258,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .mini-modal-field{display:block;margin-top:12px}
 .mini-modal-field-label{display:block;font-size:12px;font-weight:600;color:#334155;margin-bottom:6px}
 .mini-modal-hint-small{margin:6px 0 0;font-size:11px;color:#94a3b8}
+.danger-btn{color:#b91c1c;border-color:#fecaca;background:#fef2f2}
+.danger-btn:hover{background:#fee2e2}
+
 .mini-modal-actions{margin-top:16px;gap:8px;justify-content:flex-end}
 .mini-modal-actions button{height:38px;padding:0 18px;font-size:14px}
 /* 底图瓦片之类的次要提示：小字、灰底，放地图下面，不抢地图的位置 */
@@ -1888,6 +1891,9 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     <div class="mini-modal-hint mini-modal-hint-small" id="markerEditCategoryHint"></div>
     <div id="markerEditError" class="mini-modal-error" style="display:none"></div>
     <div class="row mini-modal-actions">
+      <!-- 只有「编辑已有标记点」时才出现：从项目里删掉这个点 -->
+      <button id="markerEditDelete" class="secondary danger-btn" style="display:none"
+              data-i18n="Delete">删除</button>
       <button id="markerEditCancel" class="secondary">Cancel</button>
       <button id="markerEditOk">Save</button>
     </div>
@@ -4531,7 +4537,7 @@ function groundPointAtEvent(e){
 }
 
 // 在地图上打一个带名称的点
-function addVideoMark(latlng,name){
+function addVideoMark(latlng,name,markerId){
   const layer=ensureVideoMarkLayer();
   if(!layer)return null;
 
@@ -4540,7 +4546,9 @@ function addVideoMark(latlng,name){
     color:'#b45309',
     weight:2,
     fillColor:'#f59e0b',
-    fillOpacity:.9
+    fillOpacity:.9,
+    // 点标记点只做「编辑/删除」，不要再冒泡到地图触发选点检索
+    bubblingMouseEvents:false
   }).addTo(layer);
 
   // 名称常驻显示，不用悬停
@@ -4549,6 +4557,17 @@ function addVideoMark(latlng,name){
     direction:'top',
     offset:[0,-6]
   });
+
+  // 点已生成的位置点 = 编辑/删除它（不是检索）。
+  // stopPropagation 必须加，否则会同时触发地图的「选点检索」弹窗。
+  if(markerId){
+    marker.on('click',(e)=>{
+      try{ L.DomEvent.stopPropagation(e); }catch(err){}
+      // 把「检索弹窗」收掉，免得两个窗口同时挂在画面上
+      try{ clearProbe(); }catch(err){}
+      try{ openMarkerEdit(markerId); }catch(err){}
+    });
+  }
 
   return marker;
 }
@@ -4707,7 +4726,7 @@ function drawProjectMarkers(){
     // 「已加载」里取消勾选的点不该画出来（显隐状态存在 project.json 的 ui.markers）
     const shown=!loadedUiState||!loadedUiState.markers||loadedUiState.markers[m.name]!==false;
     if(!shown)continue;
-    addVideoMark(L.latLng(m.lat,m.lng),m.name);
+    addVideoMark(L.latLng(m.lat,m.lng),m.name,m.id);
   }
 
   renderMarkerList();
@@ -5026,6 +5045,8 @@ function openMarkerEdit(id){
   const catEl=document.getElementById('markerEditCategory');
   const listEl=document.getElementById('markerEditCategoryList');
   const errEl=document.getElementById('markerEditError');
+  const delBtn=document.getElementById('markerEditDelete');
+  if(delBtn)delBtn.style.display='';
 
   if(nameEl)nameEl.value=String(m.name||'');
   const selEl=document.getElementById('markerEditCategorySel');
@@ -5121,6 +5142,9 @@ function openMarkerCreate(latlng){
 
   const errEl=document.getElementById('markerEditError');
   if(errEl)errEl.style.display='none';
+  // 新建模式没有「删除」
+  const delBtnNew=document.getElementById('markerEditDelete');
+  if(delBtnNew)delBtnNew.style.display='none';
 
   // 打开时下拉一定可见；输入框的可见性由上面的选中值决定
   if(selEl)selEl.style.display='';
@@ -10939,6 +10963,20 @@ if(videoMarkModal)videoMarkModal.addEventListener('click',e=>{
 // ---- 事后编辑标记点：改名 / 改类别（= 移到别的分组）----
 {
   const ok=document.getElementById('markerEditOk');
+const markerEditDeleteBtn=document.getElementById('markerEditDelete');
+if(markerEditDeleteBtn)markerEditDeleteBtn.addEventListener('click',async()=>{
+  const m=projectMarkers.find(x=>x&&x.id===editingMarkerId);
+  if(!m)return;
+  const pick=await askRemoveOptions(m.name,{mode:'delete'});
+  if(!pick.ok)return;
+  closeMarkerEdit();
+  projectMarkers=projectMarkers.filter(x=>x.id!==m.id);
+  try{ markerChecked.delete(m.id); }catch(e){}
+  drawProjectMarkers();
+  await saveProjectMarkers();
+  renderLoadedPanel();
+  taskLog(t('Marker deleted.')+` “${m.name}”`,'ok');
+});
   const cancel=document.getElementById('markerEditCancel');
   const modal=document.getElementById('markerEditModal');
   const nameEl=document.getElementById('markerEditName');

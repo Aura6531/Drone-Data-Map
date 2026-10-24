@@ -980,7 +980,9 @@ console.log('\n=== 画面右键取点 -> 地图标记 ===');
   chk(/const i=currentTelemetryIndex\(\)/.test(body),
     '取的是「当前播放时刻」的遥测（和视场框同一个索引）');
 
-  chk(/function addVideoMark\(latlng,name\)/.test(body), 'function addVideoMark() —— 在地图上打点');
+  // 2026-10-24：签名多了一个 markerId（点地图上的点要能打开编辑弹窗）
+  chk(/function addVideoMark\(latlng,name,markerId\)/.test(body),
+    'function addVideoMark() —— 在地图上打点');
   chk(/L\.circleMarker\(latlng/.test(body), '用圆点标记');
   chk(/bindTooltip\(name,\{[\s\S]{0,80}permanent:true/.test(body),
     '名称常驻显示（不用悬停才看得到）');
