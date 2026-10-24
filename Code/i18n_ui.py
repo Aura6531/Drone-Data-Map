@@ -82,6 +82,7 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Edit marker": "编辑标记点",
     "Delete this marker from the project?": "确定要删除这个标记点吗？",
     "It will be removed from this project. Files on disk are untouched.": "会从这个项目里删除。磁盘上的文件不动。",
     "Make Word report": "生成 Word 报告",
