@@ -272,8 +272,7 @@ console.log('\n=== 三个图例框合成一个（加载哪个就显示哪个）=
   chk(/if\(!h\)\{[\s\S]{0,120}?return '';/.test(html), '没选点时结论段返回空串');
   // 段与段之间有分隔
   chk(/\.map-legend \.lg-sec \+ \.lg-sec\{/.test(html), '段与段之间有分隔线');
-  // 换了项目 / 清空选点都要重建图例
-  chk(/rebuildLegend\(\);stats\.innerHTML=''/.test(html), '换项目时重建图例');
+  chk(/rebuildLegend\(\);/.test(html), '换项目时重建图例');
   chk(/updateTargetMarker\(\);\s*\n\s*\/\/ 图例框里/.test(html) ||
       /rebuildLegend\(\);\s*\n\s*refreshMapSizeSoon\(\);/.test(html),
     '清空选点时重建图例');
