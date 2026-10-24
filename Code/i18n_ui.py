@@ -82,6 +82,12 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "The browser blocked automatic copying — copy it manually.": "浏览器拦截了自动复制，请手动复制。",
+    "Generating KML": "KML 生成中",
+    "KML exported": "KML 已导出",
+    "Coordinates copied to clipboard": "经纬度已复制到剪贴板",
+    "Generating report": "报告生成中",
+    "Report created": "报告已生成",
     "Project not loaded yet — the label was not saved.": "项目还没加载完，这条标注没有保存。",
     "Could not save the label:": "标注保存失败：",
     "Edit text label": "编辑文字标注",

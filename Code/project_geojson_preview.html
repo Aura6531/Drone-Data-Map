@@ -5352,7 +5352,7 @@ function kmlEscape(s){
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function buildMarkersKml(list){
+function buildMarkersKml(list,onStep){
   const out=[
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<kml xmlns="http://www.opengis.net/kml/2.2">',
@@ -5361,6 +5361,7 @@ function buildMarkersKml(list){
     '  <Style id="markStyle"><IconStyle><color>ff09b4f5</color><scale>1.1</scale></IconStyle></Style>'
   ];
 
+  let done=0;
   for(const m of list){
     const note='Lat '+Number(m.lat).toFixed(6)+'  Lng '+Number(m.lng).toFixed(6)
       +(m.video?'  Video '+m.video:'')
@@ -5372,6 +5373,9 @@ function buildMarkersKml(list){
     out.push('    <styleUrl>#markStyle</styleUrl>');
     out.push('    <Point><coordinates>'+Number(m.lng)+','+Number(m.lat)+',0</coordinates></Point>');
     out.push('  </Placemark>');
+
+    done++;
+    if(typeof onStep==='function')onStep(done,list.length);
   }
 
   out.push('</Document>','</kml>');
@@ -5415,11 +5419,13 @@ async function copyMarkersTsv(list){
     document.body.removeChild(ta);
     if(!ok){
       alert(t('The browser blocked automatic copying. Copy this text manually:')+'\n\n'+text);
+      taskLog(t('The browser blocked automatic copying — copy it manually.'),'err');
       return;
     }
   }
 
   if(videoStatus)videoStatus.textContent=`Copied ${list.length} markers as Name / Lat / Lng (ready to paste into Excel).`;
+  taskLog(`${t('Coordinates copied to clipboard')}（${list.length}）`,'ok');
 }
 
 function pickedForExport(){
@@ -7459,9 +7465,14 @@ function exportCheckedMarkersKml(){
   const list=pickedForExport();
   if(!list)return;
   const name=markerKmlFileName();
-  downloadBlob(name,new Blob([buildMarkersKml(list)],
+  // 左下角日志里报进度：KML 生成中（1/13）…
+  const kml=buildMarkersKml(list,(i,n)=>{
+    taskLog(`${t('Generating KML')}（${i}/${n}）`,'info');
+  });
+  downloadBlob(name,new Blob([kml],
     {type:'application/vnd.google-earth.kml+xml;charset=utf-8'}));
   if(videoStatus)videoStatus.textContent=`Exported ${list.length} markers to ${name}.`;
+  taskLog(`${t('KML exported')}：${name}（${list.length}）`,'ok');
 }
 
 function copyCheckedMarkersLatLng(){
@@ -7742,6 +7753,7 @@ async function runWordReport(list,mode,basemapKind){
   try{
     for(const m of list){
       setReportStatus(`Generating ${done+1}/${list.length}: ${m.name}…`);
+      taskLog(`${t('Generating report')}（${done+1}/${list.length}）`,'info');
 
       const mapShot=await reportMapImageOf(m,basemap);
 
@@ -7780,6 +7792,7 @@ async function runWordReport(list,mode,basemapKind){
     link.click();
     document.body.removeChild(link);
 
+    taskLog(`${t('Report created')}：${result.download_name||result.file}`,'ok');
     setReportStatus(`Created ${result.download_name||result.file}`
       +` (${points.length} markers, ${mode==='a4'?'compressed to 320ppi':'full resolution'})`);
 
