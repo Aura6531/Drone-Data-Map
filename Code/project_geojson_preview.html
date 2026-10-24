@@ -2848,8 +2848,6 @@ function popup(feature, fileInfo){
   const encoded=encodeURIComponent(JSON.stringify(payload));
 
   return `<div class="popup-title">${esc(videoName||t('Track'))}</div>
-    <div class="popup-row">${esc(t('Segments:'))} ${esc(p.segment_index??'-')}</div>
-    <div class="popup-row">${esc(t('Points:'))} ${esc(p.point_count??'-')}</div>
     <div class="popup-row">${esc(t('Time at click:'))} ${formatTime(clickStart)}</div>
     <div class="popup-row">${esc(t('Segment end:'))} ${formatTime(p.video_end)}</div>
     <div class="popup-row">${esc(t('Remaining:'))} ${formatTime(Math.max(0,Number(p.video_end||0)-clickStart))}</div>
