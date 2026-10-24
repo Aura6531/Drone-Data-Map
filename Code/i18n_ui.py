@@ -82,6 +82,8 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "Edit text label": "编辑文字标注",
+    "Bold": "加粗",
     "No log entries yet.": "还没有日志。",
     "日志": "日志",
     "Remove from list": "从列表移除",

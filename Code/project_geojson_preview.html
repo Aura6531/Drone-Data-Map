@@ -9038,7 +9038,8 @@ function labelIcon(item){
   return L.divIcon({
     className:'map-label'+sel,
     html:`<div class="lab-wrap"><span class="lab-dot"></span>`
-      +`<span class="lab-text" style="font-size:${fs}px;color:${color}">${esc(item.text||'')}</span></div>`,
+      +`<span class="lab-text" style="font-size:${fs}px;color:${color};`
+      +(item.bold?'font-weight:800':'' )+`">${esc(item.text||'')}</span></div>`,
     iconSize:[0,0],
     iconAnchor:[0,0],
   });
@@ -9691,6 +9692,12 @@ function renderLoadedPanelInner(){
         const shown=true;
         return {
           name:it.text||'(空)', iconHtml:ICON_TEXTBOX, shown, key:it.id,
+          // 铅笔：开/关这条标注的编辑条（字号 / 颜色 / 加粗）
+          onEdit:()=>{
+            labelSelectedId=(labelSelectedId===it.id)?null:it.id;
+            renderLabels(); renderLoadedPanel();
+          },
+          editTitle:t('Edit text label'),
           onGo:()=>{ try{ map.setView([it.lat,it.lng],Math.max(map.getZoom(),17)); labelSelectedId=it.id; renderLabels(); renderLoadedPanel(); }catch(e){} },
           onToggle:()=>{ renderLoadedPanel(); },
           onRemove:async()=>{
@@ -9703,9 +9710,10 @@ function renderLoadedPanelInner(){
           },
         };
       });
-      const grp=ldGroup(t('Text labels'),items,(on)=>{ renderLoadedPanel(); });
-      // 选中某条时，底下出现编辑条（字号 / 颜色 / 删除）
-      const sel=projectLabels.find(x=>x.id===labelSelectedId);
+      const grp=ldGroup(t('Text labels'),items,(on)=>{ renderLoadedPanel(); },{key:'labels'});
+      // 选中某条时，底下出现编辑条（字号 / 颜色 / 加粗）。
+      // 分组收起（点 +）时**不再显示** —— 否则编辑按钮会挂在收起后的标题下面。
+      const sel=collapsedGroups.has('labels')?null:projectLabels.find(x=>x.id===labelSelectedId);
       if(sel){
         const bar=document.createElement('div');
         bar.className='lab-editor';
@@ -9726,16 +9734,20 @@ function renderLoadedPanelInner(){
           sw.addEventListener('click',()=>{ sel.color=key; saveLabels(); renderLabels(); renderLoadedPanel(); });
           bar.appendChild(sw);
         }
-        const del=document.createElement('button');
-        del.type='button';
-        del.textContent=t('Delete');
-        del.className='secondary';
-        del.addEventListener('click',()=>{
-          projectLabels=projectLabels.filter(x=>x.id!==sel.id);
-          labelSelectedId=null;
+        // 加粗（用户 2026-10-25 要求）：开关式按钮，开着的状态是实心
+        const bold=document.createElement('button');
+        bold.type='button';
+        bold.textContent='B';
+        bold.title=t('Bold');
+        bold.style.fontWeight='800';
+        bold.className=sel.bold?'secondary':'';
+        bold.addEventListener('click',()=>{
+          sel.bold=!sel.bold;
           saveLabels(); renderLabels(); renderLoadedPanel();
         });
-        bar.appendChild(del);
+        bar.appendChild(bold);
+
+        // 删除只保留行尾那个 ×（删掉这里重复的「删除」按钮）
         grp.appendChild(bar);
       }
       box.appendChild(grp);
