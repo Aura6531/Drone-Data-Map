@@ -1027,7 +1027,8 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .task-log{flex:1 1 auto;min-width:0;display:flex;flex-direction:column-reverse;gap:3px;
     max-height:62px;overflow:hidden;pointer-events:none;
     display:flex;flex-direction:column;gap:4px}
-.task-log .tline{pointer-events:none;padding:5px 9px;border-radius:8px;font-size:12px;
+.task-log .tline{pointer-events:none;padding:4px 8px;border-radius:8px;font-size:11px;
+    line-height:1.4;white-space:normal;word-break:break-word;
     background:rgba(15,23,42,.86);color:#e2e8f0;box-shadow:0 3px 12px rgba(15,23,42,.28);
     display:flex;gap:6px;align-items:flex-start}
 .task-log .tline.err{background:#b91c1c;color:#fff}
@@ -10939,11 +10940,9 @@ function updateStats(datas){
   // 「已加载 1 个 GeoJSON 文件；其中 1 段线条 · 1 个要素 · 36,542 个定位记录」
   const files=datas.length;
   const nf=(n)=>Number(n||0).toLocaleString('en-US');
-  taskLog(
-    `${t('Loaded')} ${files} ${t('个 GeoJSON 文件')}；${t('of which')} `
-    +`${segments} ${t('段线条')} · ${features} ${t('个要素')} · ${nf(records)} ${t('个定位记录')}`,
-    'ok'
-  );
+  // 太长会折成两行不好看 —— 拆成两句，各自都在一行内
+  taskLog(`${t('Loaded')} ${files} ${t('个 GeoJSON 文件')}`,'ok');
+  taskLog(`${segments} ${t('segs')} · ${features} ${t('feats')} · ${nf(records)} ${t('recs')}`,'ok');
 }
 
 async function loadOne(i){
