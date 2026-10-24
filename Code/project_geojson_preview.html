@@ -9376,6 +9376,7 @@ function renderLoadedPanelInner(){
     }
     return {
       name:tr.video||tr.name||key,
+      tag:videoTagOf(tr.video||''),
       icon:(function(){ const k=streamKindOf(tr.video||''); return k==='thermal'?'🔥':k==='pano'?'🌐':'🎬'; })(),
       shown, key,
       onGo:()=>{ try{ map.fitBounds(tr.group.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
@@ -12755,6 +12756,15 @@ function streamTagOfPath(relativePath){
   const base=String(relativePath||'').replace(/\.[^.]+$/,'').replace(/\.3d$/i,'');
   const m=base.match(/_([A-Za-z]+)$/);
   return m?m[1].toUpperCase():'';
+}
+
+// 「已加载 → 视频」行尾的小标签：只留最短的可辨识信息（画质或热成像/全景）
+function videoTagOf(relativePath){
+  const kind=streamKindOf(relativePath);
+  if(kind==='thermal')return t('Thermal');
+  if(kind==='pano')return '360';
+  if(kind==='night')return t('Full-color night vision');
+  return STREAM_QUAL[streamTagOfPath(relativePath)]||'';
 }
 
 function streamKindOf(relativePath){
