@@ -1271,9 +1271,9 @@ console.log('\n=== 重要按钮合并成一条操作栏，其余挪到地图下�
   chk(/\.action-bar\{position:absolute/.test(html), '操作栏是覆盖在地图上的浮层（不再占地图上方一行）');
   chk(probeIdx > 0 && mapIdx > 0 && probeIdx > mapIdx && probeIdx < stackEnd,
     '操作栏落在地图容器里面（#map 之后，.map-stack 之内）');
-  chk(statsIdx > mapIdx && detailIdx > mapIdx && altIdx > mapIdx,
-    '统计 / 其他视频 / 该点信息都在地图下面',
-    `地图@${mapIdx} 统计@${statsIdx} 其他视频@${altIdx} 该点信息@${detailIdx}`);
+  chk(detailIdx > mapIdx && altIdx > mapIdx,
+    '其他视频 / 该点信息都在地图下面',
+    `地图@${mapIdx} 其他视频@${altIdx} 该点信息@${detailIdx}`);
   chk(detailIdx > legendIdx, '顺序：地图 -> 图例 -> 该点信息');
 
   // 4 个重要按钮在同一栏、同一行
@@ -1329,9 +1329,9 @@ console.log('\n=== 结果按钮改成常驻按钮（不再每次重建 DOM）===
 }
 
 console.log('\n=== 地图下面的次要内容要缩小 ===');
-chk(/\.stats-compact \.stat\{padding:7px 12px;min-width:112px/.test(html),
-  '统计格子缩小（原来 padding 12px 18px / min-width 150px）');
-chk(/\.stats-compact \.stat-value\{font-size:17px/.test(html), '统计数值 17px（原 23px）');
+// 2026-10-25：统计卡片整个删了，改成左下角日志里的一句话
+chk(!/id="stats"/.test(html), '统计卡片已移除（改为日志一句话）');
+chk(/个定位记录/.test(html), '日志文案里带「个定位记录」');
 chk(/\.alt-videos button\{height:30px;padding:0 11px;font-size:12px/.test(html),
   '其他视频按钮缩小');
 chk(/\.below-map\{display:flex;flex-direction:column;gap:10px/.test(html), '地图下面用统一容器排布');

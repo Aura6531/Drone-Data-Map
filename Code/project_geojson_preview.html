@@ -983,13 +983,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 .tree-hint{font-size:11px;color:#64748b}
 
 /* 左下角任务日志：最多 3 行，成功刷新、失败停留 */
-/* 统计卡改成悬浮：加载航迹时淡入，几秒后淡出 */
-.stats-float{position:fixed;left:12px;bottom:96px;z-index:9350;margin:0;
-    background:rgba(255,255,255,.94);border:1px solid #e2e8f0;border-radius:12px;
-    padding:8px 10px;box-shadow:0 6px 20px rgba(15,23,42,.14);
-    opacity:0;transform:translateY(6px);pointer-events:none;
-    transition:opacity .45s ease,transform .45s ease}
-.stats-float.show{opacity:1;transform:none}
 
 /* 左下角「日志」按钮：只在鼠标移到那个角落时出现 */
 .log-hotspot{position:fixed;left:8px;bottom:8px;width:340px;height:44px;z-index:9410}
@@ -1713,8 +1706,6 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     <!-- 地图下面：次要内容，整体缩小 -->
     <div class="below-map">
       <div id="altVideos" class="alt-videos" style="display:none"></div>
-      <!-- 2026-10-24：从地图下方挪成「左下角悬浮信息」，加载航迹时出现几秒后淡出 -->
-<div id="stats" class="stats stats-compact stats-float"></div>
       <!-- 该点轨迹信息也放这里：放在上面会把地图挤出可视区 -->
       <div id="hitDetail" class="hit-detail" style="display:none"></div>
     </div>
@@ -2120,7 +2111,8 @@ const projectSelect=document.getElementById('projectSelect');
 const projectNotice=document.getElementById('projectNotice');
 const mapNotice=document.getElementById('mapNotice');
 const missingHint=document.getElementById('missingHint');
-const stats=document.getElementById('stats');
+// 2026-10-25：统计卡片已删除，统计改成左下角日志里的一句话
+const stats=null;
 const tileHint=document.getElementById('tileHint');
 const baseMapSelect=document.getElementById('baseMap');
 const placeInput=document.getElementById('placeInput');
@@ -10753,15 +10745,17 @@ async function deleteGeoFile(index){
 
 function updateStats(datas){
   let records=0,segments=0,features=0;
-  datas.forEach(d=>{const p=d.properties||{};records+=Number(p.record_count||0);segments+=Number(p.segment_count||0);features+=(d.features||[]).length});
-  // 悬浮卡：加载/更新统计时淡入，4.5 秒后淡出（用户要求「出现几秒然后缓缓消失」）
-  try{
-    stats.classList.add('show');
-    if(updateStats._timer)clearTimeout(updateStats._timer);
-    updateStats._timer=setTimeout(()=>{ try{ stats.classList.remove('show'); }catch(e){} },4500);
-  }catch(e){}
+  datas.forEach(d=>{const p=d.properties||{};records+=Number(p.record_count||0);segments+=Number(p.segment_count||0);features+=Number(p.feature_count||0||1);});
 
-  stats.innerHTML=`<div class="stat"><div class="stat-title">${t('GeoJSON files')}</div><div class="stat-value">${datas.length}</div></div><div class="stat"><div class="stat-title">${t('segments')}</div><div class="stat-value">${segments}</div></div><div class="stat"><div class="stat-title">${t('Features')}</div><div class="stat-value">${features}</div></div><div class="stat"><div class="stat-title">${t('Position records')}</div><div class="stat-value">${records.toLocaleString()}</div></div>`;
+  // 2026-10-25：不再画那个带背景的统计卡片，改成左下角日志里的一句话
+  // 「已加载 1 个 GeoJSON 文件；其中 1 段线条 · 1 个要素 · 36,542 个定位记录」
+  const files=datas.length;
+  const nf=(n)=>Number(n||0).toLocaleString('en-US');
+  taskLog(
+    `${t('Loaded')} ${files} ${t('个 GeoJSON 文件')}；${t('of which')} `
+    +`${segments} ${t('段线条')} · ${features} ${t('个要素')} · ${nf(records)} ${t('个定位记录')}`,
+    'ok'
+  );
 }
 
 async function loadOne(i){
@@ -11436,8 +11430,7 @@ if(deleteProjectBtn)deleteProjectBtn.addEventListener('click',async()=>{
       layerGroup.clearLayers();if(trackArrowLayer)trackArrowLayer.clearLayers();
       loadedTracks=[];
       rebuildLegend();
-      stats.innerHTML='';
-      hideDroneMarker();
+            hideDroneMarker();
       hideNearbyResult();
     }
 
@@ -11479,7 +11472,7 @@ projectSelect.addEventListener('change',()=>{
       renderLabels(); renderVectors(); renderLoadedPanel();
     }catch(e){}
   })();
-  if(map){layerGroup.clearLayers();if(trackArrowLayer)trackArrowLayer.clearLayers();rebuildLegend();stats.innerHTML=''}
+  if(map){layerGroup.clearLayers();if(trackArrowLayer)trackArrowLayer.clearLayers();rebuildLegend()}
   loadedTracks=[];allLoaded=false;clearProbe();clearHighlight();hideDroneMarker();hideNearbyResult();
   // 换项目：文件夹路径、航迹遥测、照片（组与匹配结果）全部作废
   projectFolderPaths=null;

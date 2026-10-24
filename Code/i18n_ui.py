@@ -82,6 +82,11 @@ UI_ZH: dict[str, str] = {
 
     # ---------------- 地图 / 搜索 ----------------
     "Track map": "轨迹地图",
+    "个 GeoJSON 文件": "个 GeoJSON 文件",
+    "of which": "其中",
+    "段线条": "段线条",
+    "个要素": "个要素",
+    "个定位记录": "个定位记录",
     "The browser blocked automatic copying — copy it manually.": "浏览器拦截了自动复制，请手动复制。",
     "Generating KML": "KML 生成中",
     "KML exported": "KML 已导出",
