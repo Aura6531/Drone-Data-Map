@@ -9166,20 +9166,22 @@ let labelsDirty=false;
 async function saveLabels(){
   labelsDirty=true;
 
-  // 项目还没读完时先等一下：以前这里是直接 return，
-  // 于是「刚打开页面就放的标注」永远写不进磁盘（用户 2026-10-25 反馈刷新就没了）
-  if(!window.__projectLoaded){
-    for(let i=0;i<24&&!window.__projectLoaded;i++){
-      await new Promise(r=>setTimeout(r,250));
-    }
-    if(!window.__projectLoaded){
-      taskLog(t('Project not loaded yet — the label was not saved.'),'err');
-      return false;
-    }
+  // 只需要「项目名」就能写盘 —— 跟项目数据读没读完无关。
+  // （以前等 __projectLoaded 最多 6 秒，等不到就报「没加载完」，用户看到莫名其妙的红字）
+  const nameOf=()=>(projectSelect&&projectSelect.value)
+    ?projectSelect.value
+    :((typeof currentProjectName==='function')?currentProjectName():'');
+  for(let i=0;i<12&&!nameOf();i++){
+    await new Promise(r=>setTimeout(r,150));
+  }
+  const projectName=nameOf();
+  if(!projectName){
+    taskLog(t('Pick a project before saving labels.'),'err');
+    return false;
   }
 
   try{
-    await jsonPost('/api/project/labels',{project_name:projectSelect.value,labels:projectLabels});
+    await jsonPost('/api/project/labels',{project_name:projectName,labels:projectLabels});
     labelsDirty=false;
     return true;
   }catch(e){
@@ -10241,6 +10243,8 @@ function paintTaskLog(){
 function taskLog(text,kind){
   const box=document.getElementById('taskLog');
   if(!box)return;
+  // 空字符串不记（关掉落点模式时以前会写一条只剩时间戳的空行）
+  if(!String(text==null?'':text).trim())return;
   const now=new Date();
   const stamp=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   // 成功的消息自动过期（保留 3 条），失败的一直留着直到下一次操作
