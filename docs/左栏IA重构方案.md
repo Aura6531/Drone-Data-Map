@@ -758,3 +758,77 @@ P2 上线前跑一次"旧项目体检"：打开项目 → 记录 `ui` 全部键 
 > 为什么要保留三个 `*Hidden`：它们是"整组被清空"的黑名单，
 > 展开成逐项（190 张照片 / 149 张全景）会产生上百条无意义键，
 > 且"重新登记后自动恢复"这个语义靠清单本身更直观。
+
+---
+
+## 11. P2 字段/API 对应表（2026-10-25 定稿，实施依据）
+
+> 原则：**优先复用现有接口**，不为新左栏另造数据通道；写操作只写 `ui.items`
+> （`ui-state` 由后端改成**合并**写，避免覆盖 `items/legacy/*Hidden`）。
+
+### 11.1 ① 项目区块
+
+| 用途 | API | 读取字段 | 写入 |
+|---|---|---|---|
+| 项目下拉 | `GET /api/project/list` | `projects[].name` | — |
+| 当前项目详情 | `GET /api/project/get?name=` | `project.name / folders / ui / markers / labels / vectors` | — |
+| 新建 / 移出列表 | 现有 `createProjectBtn` / `deleteProjectBtn` 流程（不改） | — | 项目元数据 |
+| 来源数量 / 最近索引 | `GET /api/project/sources?name=` | `sources[].id / name / path / exists / index_status / indexed_at` | — |
+| 内容数量 | 前端汇总（见 11.3） | — | — |
+
+### 11.2 ② 数据来源区块
+
+| 动作 | API | 读取 | 写入 |
+|---|---|---|---|
+| 列出 | `GET /api/project/sources?name=` | `id, name, path, exists, index_status, index_warnings, indexed_at, file_count` | — |
+| 添加来源（多选） | 复用现有 Windows 文件夹选择流程（`addFolderBtn` → 导入弹窗 → 后端对话框） | — | `folders[]` |
+| 单来源刷新 | `POST /api/project/source/reindex` | `source.status / indexed_at / counts / warnings / kept_uncertain / dropped` | `index_*`、`files[]` |
+| 全部刷新 | `POST /api/project/sources/reindex` | `sources[]、count、ok` | 同上 |
+| 重新定位（两步） | `POST /api/project/source/relocate` | 预检：`verdict / matched / missing / added / match_ratio`；确认：`ui_keys_migrated / ui_keys_shared / ui_keys_unmatched / ui_orphans` | `folders[].path`、`ui.items` |
+| 移除来源 | `POST /api/project/source/detach` | `removed / sources_left / ui_items_kept / ui_items_shared / ui_items_orphan` | 只删 `folders[]` 条目 |
+
+**状态 → 可执行动作**
+
+| `status` | 文案 | 允许动作 |
+|---|---|---|
+| `ok` | ✓ 在线 · 索引于 HH:MM | 刷新、移除 |
+| `partial` | ⚠ 部分不可读（N 项） | 刷新、移除 |
+| `missing` | ⚠ 找不到目录 | 刷新、**重新定位**、移除 |
+| `denied` | ⚠ 无权限 | 刷新、**重新定位**、移除 |
+| `timeout` | ⚠ 扫描超时 | 刷新、移除 |
+| `busy` | ⟳ 正在扫描 | 只读（按钮禁用） |
+| 未扫描（无 `indexed_at`） | ○ 未扫描 | 刷新、移除 |
+
+### 11.3 ③ 内容区块
+
+数据来源（全部为**内存中已有集合**，本轮不新增拉取）：
+
+| 分组 | 数据来源 | 行内字段 | 动作 |
+|---|---|---|---|
+| 视频 | `loadedTracks[].fileInfo` | 名称、来源（`folder_index` → 来源名）、处理状态（有 `.geojson` = 已生成；`.srt` 缺失 = 缺 SRT） | 上图、定位、移除 |
+| 照片 | `photoGroups[]`（按 `photoKindOf` 分 广角/变焦/360） | 名称、来源、张数 | 上图、定位、移除 |
+| 正射 | `orthoList[]`（`kind==='ortho'`） | 文件名、来源、金字塔状态 | 上图、定位、移除 |
+| KML/矢量 | `projectVectors[]`（`kind: line/polygon`） | 名称、来源（项目）、类型 | 上图、定位、移除 |
+| 覆盖 | `coverageItems[]` | SRT 名、来源、是否 built | 上图、定位、移除 |
+| 位置点 | `projectMarkers[]` | 名称、分类、来源（项目） | 上图、定位、编辑、移除 |
+| 文字标注 | `projectLabels[]` | 文字、来源（项目） | 上图、定位、编辑、移除 |
+
+**显隐键**：`ui.items[itemId]`；`itemId` 来自
+`GET /api/project/ui-items` 的 `files[]`（本轮给该接口补 `files: [{source_id, relative_path, itemId, pending}]`），
+标记点/标注用 `marker:<marker.id>` / `label:<label.id>`。
+
+**兼容读取**（只读兜底，不写）：`ui.videos[相对路径]` → `ui.ortho[文件名]` → `ui.coverage[srt]` → `ui.markers[名字]`。
+
+### 11.4 迁移
+
+| 时机 | 调用 | 处理 |
+|---|---|---|
+| 打开项目后（每个会话一次） | `POST /api/project/ui-migrate` | 显示 `migrated / pending / ambiguous / legacy_saved`；有 `pending` 时在内容区顶部提示"还有 N 条旧状态待补迁（来源离线）"，旧键继续可读 |
+| 迁移失败 | — | 保留旧入口提示，新面板仍读 items + 旧键兜底，不写 |
+
+### 11.5 本轮明确不做
+
+- 不做 P3 的全项目索引化（内容清单仍基于内存集合 + 现有接口）；
+- 不改中间地图、右侧视频/照片区布局；
+- 不提供"删除生成物/原始媒体"的选项；
+- 不新增项目复制/导出等未定义功能。
