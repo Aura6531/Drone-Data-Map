@@ -1502,6 +1502,16 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
     background:#fef3c7;color:#92400e}
 .ia-more{display:block;width:100%;height:24px;font-size:11px;border:0;background:#f8fafc;color:#2563eb}
 
+
+/* 窄屏：来源路径与行尾来源徽标让位，保证名称和动作不被挤掉 */
+@media (max-width:1400px){
+  .ia-source-path{display:none}
+  .ia-src{display:none}
+}
+@media (max-width:1100px){
+  .ia-filters select{max-width:110px}
+}
+
 </style>
 </head>
 <body>
@@ -14573,8 +14583,13 @@ function initTimelineSyncUI(){
     try{
       const f=iaState.project.folders && iaState.project.folders[Number(folderIndex)];
       if(!f) return false;
-      const want=normRel(String(geoRel||'').replace(/\.3d\.geojson$/i,'.srt').replace(/\.geojson$/i,'.srt'));
-      return !(f.files||[]).some(x=>normRel(x.relative_path)===want);
+      // 合并航迹叫 DJI_xxx_0001.geojson，而 SRT 是 DJI_xxx_0001_V.srt / _T / _S，
+      // 所以不能只按「同名换后缀」找 —— 按「主干相同 + .srt」匹配。
+      const stem=normRel(String(geoRel||'').replace(/\.3d\.geojson$/i,'').replace(/\.geojson$/i,''));
+      return !(f.files||[]).some(x=>{
+        const n=normRel(x.relative_path);
+        return n.endsWith('.srt') && (n===stem+'.srt' || n.startsWith(stem+'_'));
+      });
     }catch(e){ return false; }
   }
 
@@ -14937,11 +14952,6 @@ function initTimelineSyncUI(){
     const name=currentName();
     iaState.projectName=name;
     if(!name){ iaState.project={}; iaState.sources=[]; iaState.items={}; iaState.groups=[]; iaRender(); return; }
-    if(!iaState.migrated[name]){
-      iaState.migrated[name]=true;
-      try{ iaState.migrate=await jsonPost('/api/project/ui-migrate',{project_name:name}); }
-      catch(e){ iaState.migrate={success:false,error:String(e&&e.message||e)}; }
-    }
     try{
       const [pj, src, ui]=await Promise.all([
         api('/api/project/get?name='+encodeURIComponent(name)),
@@ -14955,6 +14965,31 @@ function initTimelineSyncUI(){
       iaState.pending=(ui&&ui.pending)||[];
       iaState.ui=Object.assign({},iaState.project.ui||{});
       iaState.filesByRel=null; iaState.filesByName=null;
+
+      // 只在确实需要时迁移（迁移会写 project.json）：
+      // 没有 itemsVersion，或旧键里还有条目。
+      if(!iaState.migrated[name]){
+        const ui0=iaState.project.ui||{};
+        const legacyLeft=Object.keys(ui0.videos||{}).length+Object.keys(ui0.ortho||{}).length
+          +Object.keys(ui0.coverage||{}).length+Object.keys(ui0.markers||{}).length;
+        if(!ui0.itemsVersion || legacyLeft){
+          iaState.migrated[name]=true;
+          try{
+            iaState.migrate=await jsonPost('/api/project/ui-migrate',{project_name:name});
+            const [ui2]=await Promise.all([
+              api('/api/project/ui-items?name='+encodeURIComponent(name)),
+            ]);
+            iaState.files=(ui2&&ui2.files)||iaState.files;
+            iaState.items=Object.assign({},(ui2&&ui2.items)||{});
+            iaState.pending=(ui2&&ui2.pending)||[];
+            iaState.project=(await api('/api/project/get?name='+encodeURIComponent(name)))['project']||iaState.project;
+            iaState.ui=Object.assign({},iaState.project.ui||{});
+            iaState.filesByRel=null; iaState.filesByName=null;
+          }catch(e){ iaState.migrate={success:false,error:String(e&&e.message||e)}; }
+        }else{
+          iaState.migrate={success:true, stats:{migrated:0,pending:0,ambiguous:0,legacy_saved:0}, skipped:true};
+        }
+      }
     }catch(e){
       try{ taskLog('读取项目失败：'+e.message,'err'); }catch(_){}
     }
