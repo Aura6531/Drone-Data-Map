@@ -686,12 +686,28 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
 {
   chk(html.includes("/api/project/photos?name="), '接了后端的照片接口');
   chk(html.includes("/photo?path="), '图片走后端 /photo（不用绝对路径直接喂浏览器）');
-  chk(/id="photoLayerBtn"/.test(html), '有照片图层开关');
-  chk(/>Load all photos</.test(html), '按钮叫「加载全部照片」（用户定的名字）');
-  chk(/<button id="loadAllBtn">Load all tracks<\/button>/.test(html),
-    '左栏那个改叫「加载全部轨迹」（和「加载全部照片」区分开）');
-  chk(/textContent=filtered\?\(t\('Load filtered'\)\+` \(\$\{n\}\)`\):t\('Load all tracks'\)/.test(html),
-    '筛选后按钮文案也跟着「加载全部轨迹」');
+  // 2026-10-25：「加载全部照片」按钮已删除，照片显隐由「已加载 → 照片」的勾选控制。
+  // 断言改成验「现在的入口存在、旧入口确实没了、接线指向正确的函数」。
+  chk(!/id="photoLayerBtn"/.test(html), '独立的「加载全部照片」按钮已移除（不再有重复入口）');
+  chk(/function setPhotoLayer\(/.test(html), '照片图层开关函数 setPhotoLayer() 仍在');
+  chk(/window\.__photoToggle=/.test(html), '保留代码入口 __photoToggle（控制台/单测可开关图层）');
+  chk(/onToggle:\(on\)=>\{ try\{ setPhotoLayer\(on\); \}catch\(e\)\{\}/.test(html),
+    '「已加载 → 照片」分组勾选框接到 setPhotoLayer(on)（这就是现在的开关）');
+  {
+    // 照片分组那一段：行级 onToggle 与分组级回调都要走 setPhotoLayer(on)
+    const pi = html.indexOf("t('Photos')");
+    const seg = pi >= 0 ? html.slice(pi, pi + 1400) : '';
+    chk((seg.match(/setPhotoLayer\(on\)/g) || []).length >= 2,
+      '分组全选（表头复选框）与行级勾选都走 setPhotoLayer(on)',
+      String((seg.match(/setPhotoLayer\(on\)/g) || []).length) + ' 处');
+  }
+  // 旧的「加载全部轨迹」按钮与筛选栏已在左栏三段化里删除：
+  // 现在没有「选中/筛选后加载」这个概念，自动流程直接 loadAll()。
+  chk(!/id="loadAllBtn"/.test(html), '旧的左栏「加载全部轨迹」按钮已移除');
+  chk(!/id="filterDate"/.test(html) && !/id="filterType"/.test(html),
+    '旧的日期/类型筛选控件已移除（不再有「筛选后文案」这回事）');
+  chk(/function loadAll\(\)/.test(html) && /runAutoPipeline[\s\S]{0,3000}await loadAll\(\)/.test(html),
+    'loadAll() 仍在，并由自动流程 runAutoPipeline 调用（替代原来的按钮）');
   // 这一行的三段（用户 2026-10-07 定的顺序）：
   //   ① 加载全部照片（贴左，就在「轨迹地图」标题正下方，不留空）
   //   ② 计数（它是按钮的说明，紧跟按钮右边）
@@ -700,11 +716,15 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   // 取法是「工具行起点 + 固定窗口」。
   const toolsAt = html.indexOf('ab-row ab-tools');
   const toolsRow = toolsAt >= 0 ? html.slice(toolsAt, toolsAt + 3000) : '';
-  chk(/id="photoLayerBtn"/.test(toolsRow) && /id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow),
-    '三个控件在同一行（.ab-row.ab-tools）');
-  chk(toolsRow.indexOf('id="photoLayerBtn"') < toolsRow.indexOf('id="photoLayerCount"')
-      && toolsRow.indexOf('id="photoLayerCount"') < toolsRow.indexOf('id="orthoBtn"'),
-    '顺序：加载全部照片 -> 计数（它的说明） -> 后面才是正射/底图');
+  // 2026-10-25：照片按钮与它的计数都删了，这一行现在是
+  // 视场覆盖 / 文字标注 / 底图 / 天地图 key（正射状态与「收起」也在里面）
+  chk(/id="coverageToggleBtn"/.test(toolsRow) && /id="labelBtn"/.test(toolsRow)
+      && /id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow),
+    '工具行里是：视场覆盖 / 文字标注 / 底图 / 天地图 key');
+  chk(toolsRow.indexOf('id="coverageToggleBtn"') < toolsRow.indexOf('id="labelBtn"')
+      && toolsRow.indexOf('id="labelBtn"') < toolsRow.indexOf('id="baseMap"')
+      && toolsRow.indexOf('id="baseMap"') < toolsRow.indexOf('id="keyBtn"'),
+    '顺序：覆盖 -> 标注 -> 底图 -> 天地图 key（照片按钮已不在这一行）');
   chk(/\.card-tools\.map-tools\{[^}]*margin-left:0/.test(html),
     '这一行 margin-left:0 —— 否则被 .card-tools 的 auto 推到中间（实测偏 61px），'
     +'就不是「贴着左边、在标题正下方」了');
@@ -728,7 +748,8 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     chk(/\.photo-layer-btn\.photo-on/.test(html), '开启态用 .photo-on 表示（替代原来那套灰白 off）');
     chk(!/photoLayerBtn[^>]*class="toggle-btn/.test(html), '不再用 toggle-btn 那套（灰白看着像禁用）');
   }
-  chk((html.match(/id="photoLayerCount"/g) || []).length === 1, '计数只有一处（没留重复元素）');
+  chk(!/id="photoLayerCount"/.test(html),
+    '旧的独立计数元素已移除；条数改由「已加载」分组头的 (n/n) 显示');
   chk(/max-width:1780px\)\{[\s\S]{0,200}#photoLayerCountExtra\{display:none\}/.test(html),
     '窄窗口时「· N 处合并」整段让位（阈值按实测：这一行满了就先舍补充信息）');
   chk(/max-width:1650px\)\{[\s\S]{0,200}#photoLayerCount\{display:none\}/.test(html),
@@ -761,10 +782,15 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '标记点卡片在右栏之前（也就是左栏里）',
     `markerCard@${html.indexOf('id="markerCard"')} col-right@${iRight}`);
   // 注意用 `<aside class="col col-left` 做前缀匹配：实际的标签带 view-project 与 id
-  const iLeft = html.indexOf('<aside class="col col-left');
-  chk(iLeft > 0 && html.indexOf('id="markerCard"') > iLeft,
-    '标记点卡片确实在左栏那个 aside 里',
-    `aside@${iLeft} markerCard@${html.indexOf('id="markerCard"')}`);
+  chk(!/id="markerCard"/.test(html), '旧的独立标记点卡片已移除（并入「已加载」）');
+  chk(/ldCategoryGroup\(t\('Positions'\)/.test(html),
+    '位置点用 ldCategoryGroup 渲染在「已加载」里（分类 → 点两级）');
+  {
+    const iLeft = html.indexOf('<aside class="col col-left');
+    chk(iLeft > 0 && html.indexOf('id="loadedGroups"') > iLeft,
+      '「已加载」容器确实在左栏那个 aside 里',
+      `aside@${iLeft} loadedGroups@${html.indexOf('id="loadedGroups"')}`);
+  }
   chk(html.indexOf('id="photoCard"') > html.indexOf('id="videoModal"'),
     '照片展示区仍在视频面板之后（右栏里）');
   chk(!/id="photoCard"[\s\S]{0,20000}id="photoCard"/.test(html), 'photoCard 只有一处');
@@ -792,13 +818,14 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   chk(/id="photoCard"/.test(html), '有地图下方的展示区容器');
   chk(/id="photoGallery"/.test(html), '展示区里有图片区');
   chk(/id="photoJump"/.test(html), '展示区里有「跳视频」那块');
-  chk(/photoLayerBtn\.addEventListener\('click',\(\)=>\{/.test(html),
-    '开关接线到一个处理函数（点它加载 + 缩放，再点收起）');
-  chk(/if\(photoLayerOn\)\{\s*setPhotoLayer\(false\);/.test(html),
-    '已经显示时再点一次收起图层');
+  chk(/onGo:\(\)=>\{ try\{ if\(!photoLayerOn\)setPhotoLayer\(true\); zoomToAllPhotos\(\); \}/.test(html),
+    '点「照片」那一行的名称：图层没开就先打开，再缩放到全部照片');
+  chk(/setPhotoLayer\(on\)/.test(html) && /window\.__photoToggle=\(on\)=>\{ setPhotoLayer\(!!on\); \}/.test(html),
+    '取消勾选（或 __photoToggle(false)）即隐藏图层');
   chk(/setPhotoLayer\(true\);\s*zoomToAllPhotos\(\)/.test(html),
     '从关到开这一下会顺便缩放到全部照片');
-  chk((html.match(/photoLayerBtn\.addEventListener/g) || []).length === 1, '开关的监听只挂一次');
+  chk((html.match(/window\.__photoToggle=/g) || []).length === 1,
+    '照片开关的代码入口只定义一次（不再重复挂监听）');
   chk((html.match(/photoCloseBtn\.addEventListener/g) || []).length === 1, '收起按钮的监听只挂一次');
   chk((html.match(/loadProjectPhotos\(\)/g) || []).length >= 3,
     '换项目 / 载入项目 / 导入之后都会刷新照片',
@@ -1243,9 +1270,59 @@ console.log('\n=== 11) 遥测请求必须带对参数（这条错了，画面内
       chk(false, '真实分组接口请求没抛异常', e.message);
     }
 
+    // 不再写死 folder_index / 文件名：文件夹顺序会随用户登记来源而变，
+    // 而且**合并航迹**的文件名没有 _V/_T/_S，直接 .geojson -> .mp4 推出的
+    // DJI_xxx_0001.mp4 并不存在（真实文件是 DJI_xxx_0001_V.MP4）。
+    // 所以先问后端：有哪些 geojson（含 folder_index）→ 查同目录的真实 MP4 →
+    // 用真实视频路径拼遥测请求（path 永远是 .mp4，和页面一致）。
+    let resolved = null;
+    try {
+      const jl = await (await fetch(base + '/api/project/geojson-list?name=' + encodeURIComponent(PROJECT),
+        { signal: AbortSignal.timeout(30000) })).json();
+      const files = (jl && jl.files) || [];
+      const geo = files.find((f) => /_V\.geojson$/i.test(f.relative_path || ''))
+        || files.find((f) => /\.geojson$/i.test(f.relative_path || ''));
+
+      if (geo) {
+        const rootsResp = await (await fetch(base + '/api/project/tree?name=' + encodeURIComponent(PROJECT),
+          { signal: AbortSignal.timeout(30000) })).json();
+        const root = (rootsResp.roots || [])[geo.folder_index];
+        const rel = String(geo.relative_path || '').replace(/\\/g, '/');
+        const slash = rel.lastIndexOf('/');
+        const subdir = slash >= 0 ? rel.slice(0, slash) : '';
+        const geoName = rel.slice(slash + 1);
+        const stem = geoName.replace(/\.3d\.geojson$/i, '').replace(/\.geojson$/i, '');
+
+        if (root) {
+          const levelPath = [root.path, subdir].filter(Boolean).join('\\');
+          const lv = await (await fetch(
+            base + '/api/project/tree?name=' + encodeURIComponent(PROJECT)
+            + '&path=' + encodeURIComponent(levelPath),
+            { signal: AbortSignal.timeout(30000) })).json();
+          const vids = ((lv && lv.entries) || []).filter((e) =>
+            e.kind === 'file' && /\.(mp4|mov)$/i.test(e.name || '')
+            && String(e.name || '').toUpperCase().startsWith(stem.toUpperCase()));
+          const pick = vids.find((v) => /_V\./i.test(v.name)) || vids[0];
+          if (pick) {
+            resolved = {
+              folder_index: geo.folder_index,
+              relative_path: (subdir ? subdir + '/' : '') + pick.name,
+            };
+          }
+        }
+      }
+    } catch (e) { /* 服务没起/没数据 -> 下面 SKIP */ }
+
+    if (!resolved) {
+      console.log('  [SKIP] 找不到与航迹同名的真实视频（环境无数据），跳过遥测实测');
+      return;
+    }
+    console.log(`  （用 ${resolved.relative_path} @ folder_index=${resolved.folder_index} 实测）`);
+
     const url = base + '/api/project/telemetry?' + new URLSearchParams(
-      page.telemetryQuery({ folder_index: 0, relative_path: 'DJI_20260924095258_0001_V.geojson' }, PROJECT)
+      page.telemetryQuery(resolved, PROJECT)
     ).toString();
+    console.log(`  （用 ${resolved.relative_path} @ folder_index=${resolved.folder_index} 实测）`);
 
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(30000) });
