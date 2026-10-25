@@ -7,6 +7,7 @@
 · detach 默认只解除关联，磁盘文件不动；delete_generated=True 暂不支持。
 """
 import json
+import pathlib
 import shutil
 import sys
 from pathlib import Path
@@ -99,6 +100,66 @@ try:
     chk([f["relative_path"] for f in p["folders"][0]["files"]] == before_files,
         "旧索引原样保留（插错盘不会清空清单）")
     chk(p["folders"][0].get("index_status") == "missing", "来源上记了 index_status")
+
+    print("\n=== 2b) 并发扫描：同一来源第二次直接 busy ===")
+    write_project()
+    p = pm.load_project(NAME)
+    sid = p["folders"][0]["id"]
+    lock = pm._scan_lock_for(sid)
+    lock.acquire()
+    try:
+        busy = pm.reindex_source(p, sid)
+    finally:
+        lock.release()
+    chk(busy["status"] == "busy", "并发时返回 busy（不排队、不重复扫）", busy["status"])
+    chk(busy["warnings"] and "already running" in busy["warnings"][0]["error"],
+        "busy 的 warning 说清原因", str(busy["warnings"]))
+    # 锁释放后能正常扫
+    again = pm.reindex_source(p, sid)
+    chk(again["status"] == "ok", "锁释放后恢复可扫", again["status"])
+
+    print("\n=== 2c) partial 扫描：不可读子目录的旧条目保留并标 uncertain ===")
+    write_project()
+    (old_dir / "locked").mkdir(exist_ok=True)
+    (old_dir / "locked" / "inside.mp4").write_text("x", encoding="utf-8")
+    (old_dir / "stale.mp4").write_text("x", encoding="utf-8")
+    # 先正常扫一次，把 locked/inside.mp4 与 stale.mp4 收进索引
+    p = pm.load_project(NAME)
+    pm.reindex_source(p, "src_A")
+    rels = {str(f["relative_path"]).replace("\\", "/") for f in p["folders"][0]["files"]}
+    chk("locked/inside.mp4" in rels, "先收录 locked/inside.mp4", str(sorted(rels)))
+
+    # 模拟：locked 子目录读取失败，且 stale.mp4 真的没了
+    (old_dir / "stale.mp4").unlink()
+
+    def fake_walk(root, onerror=None, followlinks=False):
+        import os as _os
+        err = _os.error(13, "Permission denied")
+        err.filename = str(pathlib.Path(root) / "locked")
+        if onerror:
+            onerror(err)
+        yield root, ["locked"], ["a.mp4", "b.mp4", "c.jpg", "a.srt"]
+
+    scanned = pm.scan_folder_lenient(str(old_dir), walker=fake_walk)
+    chk(scanned["uncertain"] == ["locked"], "扫描结果标出 uncertain=locked", str(scanned["uncertain"]))
+    chk(scanned["errors"] and "Permission" in scanned["errors"][0]["error"],
+        "errors 里记了错误类型（PermissionError）", str(scanned["errors"]))
+
+    # 用同一个 walker 走 reindex（patch 模块级 os.walk）
+    real_walk = pm.os.walk
+    pm.os.walk = fake_walk
+    try:
+        r = pm.reindex_source(p, "src_A")
+    finally:
+        pm.os.walk = real_walk
+
+    chk(r["status"] == "partial", "整体状态 partial", r["status"])
+    chk(r["kept_uncertain"] == 1, "不可读子目录下的旧条目被保留", str(r["kept_uncertain"]))
+    chk(r["dropped"] >= 1, "完整扫描区域里确实消失的条目被删", str(r["dropped"]))
+    kept = {str(f["relative_path"]).replace("\\", "/"): f for f in p["folders"][0]["files"]}
+    chk("locked/inside.mp4" in kept and kept["locked/inside.mp4"].get("uncertain") is True,
+        "被保留的条目标了 uncertain")
+    chk("stale.mp4" not in kept, "确认消失的条目已从索引移除", str(sorted(kept)))
 
     print("\n=== 3) 全部刷新：一个坏一个正常，互不影响 ===")
     write_project()

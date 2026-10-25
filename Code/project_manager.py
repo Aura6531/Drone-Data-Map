@@ -805,73 +805,221 @@ def _index_stamp():
     return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
+
+_SOURCE_SCAN_LOCKS = {}
+_SOURCE_SCAN_LOCKS_GUARD = threading.Lock()
+
+
+def _scan_lock_for(source_id):
+    """按 source_id 取一把锁（同一来源不允许并发扫描）。"""
+    key = str(source_id or "")
+    with _SOURCE_SCAN_LOCKS_GUARD:
+        lock = _SOURCE_SCAN_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _SOURCE_SCAN_LOCKS[key] = lock
+        return lock
+
+
+def scan_folder_lenient(folder_path, walker=None):
+    """像 scan_folder 一样扫，但**不因为个别子目录读不了就整体失败**。
+
+    返回 {name,path,files,errors,uncertain,...}：
+    · errors：读不了的目录（含 `PermissionError` 等）；
+    · uncertain：这些目录对应的**相对前缀**（其下的旧条目要保留、标不确定）。
+
+    `walker` 只为测试注入；默认用 `os.walk`。
+    """
+    root = Path(folder_path).expanduser().resolve()
+
+    if not root.exists():
+        raise FileNotFoundError("指定文件夹不存在。")
+    if not root.is_dir():
+        raise NotADirectoryError("指定路径不是文件夹。")
+
+    walk = walker or os.walk
+    files = []
+    errors = []
+    uncertain = set()
+
+    def _onerror(err):
+        bad = getattr(err, "filename", None) or str(root)
+        errors.append({"path": str(bad), "error": type(err).__name__})
+        try:
+            rel = os.path.relpath(os.path.abspath(str(bad)), str(root))
+        except (OSError, ValueError):
+            rel = ""
+        rel = rel.replace("\\", "/").strip("/")
+        uncertain.add("" if rel == "." else rel)
+
+    for dirpath, _dirnames, filenames in walk(str(root), onerror=_onerror, followlinks=False):
+        for name in filenames:
+            file_path = Path(dirpath) / name
+            try:
+                size = file_path.stat().st_size
+            except OSError:
+                size = 0
+            try:
+                relative_path = str(file_path.relative_to(root))
+            except ValueError:
+                continue
+            files.append({
+                "name": file_path.name,
+                "extension": file_path.suffix.lower(),
+                "size": size,
+                "relative_path": relative_path,
+            })
+
+    files.sort(key=lambda item: item["relative_path"].casefold())
+
+    mp4_count = sum(1 for f in files if f["extension"] in (".mp4", ".mov"))
+    srt_count = sum(1 for f in files if f["extension"] == ".srt")
+    jpg_count = sum(1 for f in files if f["extension"] in (".jpg", ".jpeg", ".png"))
+    total_size = sum(int(f.get("size") or 0) for f in files)
+
+    return {
+        "name": root.name,
+        "path": str(root),
+        "files": files,
+        "errors": errors,
+        "uncertain": sorted(u for u in uncertain),
+        "file_count": len(files),
+        "mp4_count": mp4_count,
+        "srt_count": srt_count,
+        "jpg_count": jpg_count,
+        "other_count": len(files) - mp4_count - srt_count - jpg_count,
+        "total_size": total_size,
+    }
+
+
 def reindex_source(project, source_id, timeout_s=30):
     """重新扫描一个来源，把清单与计数写回 project（内存）。
 
-    失败（找不到 / 无权限 / 超时）时**保留旧索引**，只记状态 —— 插错盘不会清空清单。
-    返回 {id,name,path,status,indexed_at,counts,warnings,duration_ms}。
+    · 失败（找不到 / 无权限 / 超时）时**保留旧索引**，只记状态 —— 插错盘不会清空清单；
+    · partial：读不了的子目录其下旧条目**保留并标 uncertain**，
+      只删除「完整扫描区域里确认已不存在」的条目；
+    · 同一 source_id 并发扫描直接返回 busy（不排队、不重复扫）。
     """
     _idx, folder = find_source(project, source_id)
     if folder is None:
         raise ValueError("Source not found.")
 
+    lock = _scan_lock_for(source_id)
+    if not lock.acquire(blocking=False):
+        return {
+            "id": folder.get("id"), "name": folder.get("name"), "path": folder.get("path"),
+            "status": "busy", "indexed_at": folder.get("indexed_at"),
+            "counts": {k: int(folder.get(k) or 0) for k in
+                       ("file_count", "mp4_count", "srt_count", "jpg_count", "other_count", "total_size")},
+            "warnings": [{"path": str(folder.get("path") or ""), "error": "already running"}],
+            "duration_ms": 0,
+        }
+
     path = str(folder.get("path") or "")
     started = time.time()
-
     box = {}
 
     def _work():
         try:
-            box["data"] = scan_folder(path)
+            box["data"] = scan_folder_lenient(path)
         except BaseException as exc:          # noqa: BLE001 - 交给下面分类
             box["error"] = exc
 
-    worker = threading.Thread(target=_work, daemon=True)
-    worker.start()
-    worker.join(timeout_s)
+    try:
+        worker = threading.Thread(target=_work, daemon=True)
+        worker.start()
+        worker.join(timeout_s)
 
-    status = "ok"
-    warnings = []
+        status = "ok"
+        warnings = []
+        kept_uncertain = 0
+        dropped = 0
 
-    if worker.is_alive():
-        status = "timeout"
-        warnings.append({"path": path, "error": "scan timed out"})
-    elif "error" in box:
-        exc = box["error"]
-        if isinstance(exc, FileNotFoundError):
-            status = "missing"
-        elif isinstance(exc, PermissionError):
-            status = "denied"
+        if worker.is_alive():
+            status = "timeout"
+            warnings.append({"path": path, "error": "scan timed out"})
+        elif "error" in box:
+            exc = box["error"]
+            if isinstance(exc, FileNotFoundError):
+                status = "missing"
+            elif isinstance(exc, PermissionError):
+                status = "denied"
+            else:
+                status = "partial"
+            warnings.append({"path": path, "error": str(exc) or type(exc).__name__})
         else:
-            status = "partial"
-        warnings.append({"path": path, "error": str(exc) or type(exc).__name__})
-    else:
-        scanned = box["data"]
-        folder["name"] = scanned.get("name") or folder.get("name")
-        folder["path"] = scanned.get("path") or path
-        for key in ("file_count", "mp4_count", "srt_count", "jpg_count",
-                    "other_count", "total_size"):
-            folder[key] = scanned.get(key, 0)
-        folder["files"] = scanned.get("files") or []
-        folder["indexed_at"] = _index_stamp()
-        ensure_item_ids(project)
+            scanned = box["data"]
+            uncertain = [u for u in (scanned.get("uncertain") or [])]
+            warnings.extend(scanned.get("errors") or [])
 
-    folder["index_status"] = status
-    folder["index_warnings"] = warnings
+            new_files = scanned.get("files") or []
+            new_rels = {_norm_rel_key(f.get("relative_path") or f.get("name")) for f in new_files}
 
-    counts = {k: int(folder.get(k) or 0) for k in
-              ("file_count", "mp4_count", "srt_count", "jpg_count", "other_count", "total_size")}
+            merged = list(new_files)
+            old_files = [f for f in (folder.get("files") or []) if isinstance(f, dict)]
 
-    return {
-        "id": folder.get("id"),
-        "name": folder.get("name"),
-        "path": folder.get("path"),
-        "status": status,
-        "indexed_at": folder.get("indexed_at"),
-        "counts": counts,
-        "warnings": warnings,
-        "duration_ms": int((time.time() - started) * 1000),
-    }
+            def _under_uncertain(rel_key):
+                for u in uncertain:
+                    if u == "":
+                        return True       # 根目录都读不了：全部保留
+                    if rel_key == u or rel_key.startswith(u + "/"):
+                        return True
+                return False
+
+            for entry in old_files:
+                rel_key = _norm_rel_key(entry.get("relative_path") or entry.get("name"))
+                if not rel_key or rel_key in new_rels:
+                    continue
+                if _under_uncertain(rel_key):
+                    kept = dict(entry)
+                    kept["uncertain"] = True
+                    merged.append(kept)
+                    kept_uncertain += 1
+                else:
+                    dropped += 1
+
+            merged.sort(key=lambda f: _norm_rel_key(f.get("relative_path") or f.get("name")))
+
+            folder["name"] = scanned.get("name") or folder.get("name")
+            folder["path"] = scanned.get("path") or path
+            folder["files"] = merged
+            folder["file_count"] = len(merged)
+            folder["mp4_count"] = sum(1 for f in merged if str(f.get("extension") or "").lower() in (".mp4", ".mov"))
+            folder["srt_count"] = sum(1 for f in merged if str(f.get("extension") or "").lower() == ".srt")
+            folder["jpg_count"] = sum(1 for f in merged if str(f.get("extension") or "").lower() in (".jpg", ".jpeg", ".png"))
+            folder["other_count"] = folder["file_count"] - folder["mp4_count"] - folder["srt_count"] - folder["jpg_count"]
+            folder["total_size"] = sum(int(f.get("size") or 0) for f in merged)
+            folder["indexed_at"] = _index_stamp()
+            ensure_item_ids(project)
+
+            if warnings:
+                status = "partial"
+
+        folder["index_status"] = status
+        folder["index_warnings"] = warnings
+        if status == "ok":
+            folder["index_uncertain"] = []
+
+        counts = {k: int(folder.get(k) or 0) for k in
+                  ("file_count", "mp4_count", "srt_count", "jpg_count", "other_count", "total_size")}
+
+        return {
+            "id": folder.get("id"),
+            "name": folder.get("name"),
+            "path": folder.get("path"),
+            "status": status,
+            "indexed_at": folder.get("indexed_at"),
+            "counts": counts,
+            "warnings": warnings,
+            "kept_uncertain": kept_uncertain if status != "ok" else 0,
+            "dropped": dropped if status != "ok" else 0,
+            "duration_ms": int((time.time() - started) * 1000),
+        }
+    finally:
+        try:
+            lock.release()
+        except RuntimeError:
+            pass
 
 
 def reindex_sources(project, source_ids=None):
