@@ -499,6 +499,54 @@ def _resolve_project_media(project_name, relative_path, want_suffix=None):
     raise ValueError("Not found inside this project's folders: %s" % relative_path)
 
 
+def source_id_for_path(path):
+    """由路径推导的**稳定**来源 id（旧项目补 id 用）。
+
+    为什么不用 uuid4：旧项目只在内存里补 id，如果每次都随机，
+    同一来源在两次读取之间就会换 id —— 显隐状态（ui）、生成物归属全都会错位。
+    用「规范化后的绝对路径」做 sha1，同一路径永远得到同一个 id。
+    """
+    try:
+        norm = os.path.normcase(str(Path(str(path)).expanduser().resolve()))
+    except (OSError, ValueError, RuntimeError):
+        norm = os.path.normcase(str(path or ""))
+    return "src_" + hashlib.sha1(norm.encode("utf-8")).hexdigest()[:12]
+
+
+def ensure_source_ids(project):
+    """给 project["folders"] 补上稳定 id（只在内存里，不写盘）。
+
+    返回本次补了几个。已有的合法 id 原样保留；重复的 id 会重新推导。
+    """
+    folders = project.get("folders")
+    if not isinstance(folders, list):
+        return 0
+
+    seen = set()
+    added = 0
+
+    for item in folders:
+        if not isinstance(item, dict):
+            continue
+
+        sid = str(item.get("id") or "").strip()
+
+        if (not sid) or (sid in seen):
+            sid = source_id_for_path(item.get("path"))
+            bump = 1
+            while sid in seen:
+                sid = source_id_for_path("%s#%d" % (item.get("path"), bump))
+                bump += 1
+                if bump > 1000:
+                    break
+            item["id"] = sid
+            added += 1
+
+        seen.add(sid)
+
+    return added
+
+
 def load_project(project_name):
 
     error = validate_project_name(project_name)
@@ -546,6 +594,10 @@ def load_project(project_name):
     project.setdefault("photos", [])
     project.setdefault("tracks", [])
 
+    # 旧项目没有来源 id：只在内存里补，不在这里写盘
+    # （第一次明确保存时自然带上；save_project 是原子写）
+    ensure_source_ids(project)
+
     return project
 
 
@@ -564,8 +616,13 @@ def save_project(project_name, project):
 
     config_path = project_path / "project.json"
 
+    # 原子写：先写同目录临时文件、flush+fsync，再 os.replace 覆盖。
+    # 直接覆盖原文件时一旦中途崩溃/断电，project.json 会变成半截 JSON，
+    # 整个项目就打不开了（这个坑在打包脚本里已经踩过一次）。
+    tmp_path = config_path.with_name(config_path.name + ".tmp")
+
     with open(
-        config_path,
+        tmp_path,
         "w",
         encoding="utf-8"
     ) as f:
@@ -576,6 +633,15 @@ def save_project(project_name, project):
             ensure_ascii=False,
             indent=4
         )
+
+        f.flush()
+
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
+
+    os.replace(tmp_path, config_path)
 
 
 # ============================================================
@@ -8384,6 +8450,54 @@ class ProjectManagerHandler(
                     400
                 )
 
+            return
+
+        if path == "/api/project/sources":
+            # 左栏「数据来源」用：列出项目登记的本机目录及其健康状态。
+            # 只读 project.json + 判断目录是否存在，**不扫描内容**。
+            try:
+                q = parse_qs(parsed.query)
+                project_name = (q.get("name") or [""])[0]
+
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+
+                sources = []
+
+                for item in project.get("folders") or []:
+                    if not isinstance(item, dict):
+                        continue
+
+                    raw_path = str(item.get("path") or "")
+
+                    exists = False
+                    if raw_path:
+                        try:
+                            exists = Path(raw_path).expanduser().is_dir()
+                        except (OSError, ValueError):
+                            exists = False
+
+                    sources.append({
+                        "id": item.get("id") or source_id_for_path(raw_path),
+                        "name": item.get("name") or Path(raw_path).name,
+                        "path": raw_path,
+                        "exists": exists,
+                        "indexed_at": item.get("indexed_at"),
+                        "file_count": item.get("file_count", 0),
+                        "mp4_count": item.get("mp4_count", 0),
+                        "jpg_count": item.get("jpg_count", 0),
+                        "srt_count": item.get("srt_count", 0),
+                        "total_size": item.get("total_size", 0),
+                    })
+
+                json_response(self, {
+                    "success": True,
+                    "sources": sources,
+                    "count": len(sources),
+                })
+            except Exception as exc:
+                json_response(self, {"success": False, "error": str(exc)}, 400)
             return
 
         if path == "/api/project/tree":
