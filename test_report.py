@@ -488,8 +488,14 @@ else:
                     "project_name": "测试", "folder_index": 0,
                     "path": _cand.name, "time": 60, "mode": "a4",
                 })
-            except Exception:
-                continue          # 这支抽不出来，换下一支
+            except ValueError as e:
+                # 只吞「这支样本抽不出帧」这一类（短样本/坏样本），换下一支；
+                # 其它 ValueError（参数、Pillow 转换…）与所有非 ValueError 异常
+                # 都必须抛出来，否则真 bug 会被静默变成 [SKIP]。
+                if "Frame extraction failed" not in str(e):
+                    raise
+                print(f"  （跳过 {_cand.name}：抽帧失败，换下一个候选）")
+                continue
             finally:
                 pm.resolve_project_video = _sample_resolve
 
