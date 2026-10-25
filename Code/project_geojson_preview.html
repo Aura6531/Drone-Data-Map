@@ -15095,6 +15095,9 @@ function initTimelineSyncUI(){
   let iaPollTimer=0;
   function iaStartPolling(){
     if(iaPollTimer) return;
+    // 没有地图（Leaflet 还没到 / 降级）时不轮询：没东西可画，
+    // 也避免在单测沙箱里把定时器排空次数顶爆。
+    try{ if(typeof map==='undefined' || !map) return; }catch(e){ return; }
     let ticks=0;
     // 航迹/照片/正射/覆盖 是异步陆续到位的（旧版流程在跑），
     // 数据量变了就重算一次内容清单（约 40 秒后停）。
@@ -15117,8 +15120,13 @@ function initTimelineSyncUI(){
     try{ iaBind(); }catch(e){ console.error('iaBind', e); }
     try{ iaFillProjects(); }catch(e){}
     iaStartPolling();
-    setTimeout(()=>iaReload(),1600);
-    setTimeout(()=>{ try{ iaReload(); }catch(e){} },5000);
+    // 没有地图就不排这些定时器（降级/单测沙箱里没必要）
+    let live=false;
+    try{ live=(typeof map!=='undefined' && !!map); }catch(e){ live=false; }
+    if(live){
+      setTimeout(()=>iaReload(),1600);
+      setTimeout(()=>{ try{ iaReload(); }catch(e){} },5000);
+    }
   }
 
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',iaInit);
