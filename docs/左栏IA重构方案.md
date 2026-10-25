@@ -832,3 +832,76 @@ P2 上线前跑一次"旧项目体检"：打开项目 → 记录 `ui` 全部键 
 - 不改中间地图、右侧视频/照片区布局；
 - 不提供"删除生成物/原始媒体"的选项；
 - 不新增项目复制/导出等未定义功能。
+
+---
+
+## 12. P2 落地记录（2026-10-25）
+
+### 12.1 提交清单
+
+| 阶段 | 内容 |
+|---|---|
+| P2a | §11 字段/API 对应表（先定接口，再写代码） |
+| P2b | 三段式左栏上线；`ui-state` 改合并写；`ui-items` 增加 `files[]` |
+| P2c | `ui.markers` 按 `marker.id` 迁移；Hidden / photos 字段原样保留 |
+| P2d | 按需迁移、SRT 判断修正、窄屏适配、回退互斥 |
+| P2e | 测试（新增 `test_ia_panel.js`）与本文档 |
+
+### 12.2 新界面实际调用的接口
+
+| 区块 | 调用 |
+|---|---|
+| ① 项目 | `GET /api/project/list`、`GET /api/project/get`、`GET /api/project/sources`（取数量/最近索引）；新建/导入/移除直接复用旧按钮的点击处理 |
+| ② 数据来源 | `GET /api/project/sources`；添加：`/api/project/select-folder` → `/api/project/scan-folder` → `/api/project/add-folder`；刷新：`/source/reindex`、`/sources/reindex`；重定位：`/source/relocate`（confirm:false → 确认 → confirm:true）；移除：`/source/detach` |
+| ③ 内容 | 数据来自内存集合（`loadedTracks`/`photoGroups`/`orthoList`/`coverageItems`/`projectVectors`/`projectMarkers`/`projectLabels`）+ `GET /api/project/ui-items` 的 `files[]` 映射 itemId；显隐写 `POST /api/project/ui-state`（后端合并） |
+| 迁移 | `POST /api/project/ui-migrate`（**按需**：只有没 `itemsVersion` 或旧键还有条目时才调） |
+
+### 12.3 显隐与身份规则（实现版）
+
+- 读：`ui.items[itemId]` → 找不到再读旧键（`videos/ortho/coverage/markers`，只读）。
+- 写：只写 `ui.items`；`ui-state` 由后端**合并**，不会覆盖 `legacy` / `*Hidden`。
+- itemId：文件类来自 `ui-items.files[]`（P1b 的 `it_`/`ip_`），
+  位置点 `marker:<id>`、文字标注 `label:<id>`、KML `vector:<id>`。
+- 迁移：
+  - `videos/ortho/coverage` → `items`（P1b）；
+  - `markers` → `items["marker:<id>"]`（P2c，按 id 不按名字）；
+  - 名字对不上的旧键**保留**并计 `pending`；
+  - 歧义原值进 `ui.legacy`（第 0 步）；
+  - `photosHidden / orthoHidden / coverageHidden` **长期保留**，不展开；
+  - `photos` 历史为空 → 逐张照片默认显示（新功能，不迁移）。
+
+### 12.4 测试
+
+新增 `test_ia_panel.js`（已登记）：43 条静态断言，覆盖
+三段顺序与必备 id、无重复 id（新区块范围）、旧左栏 hidden、添加来源的多选/扫描/登记接线、
+单/全量刷新、relocate 两步（预检 → 确认 → 生效，且告知不动文件）、detach 说明与「本轮不提供删除生成物」、
+七种来源状态、内容分组/搜索/筛选/三态/动作语义（⤢/✎/× 不叫「加载」）、
+`ui.items` 读/写与旧键只读兜底、迁移调用与提示、回退互斥、中栏/右栏未改动。
+
+后端侧（既有）：`test_ui_items.py` 覆盖 markers 迁移、Hidden 保留、`ui-state` 合并写、
+歧义留档；`test_source_ops.py` 覆盖 reindex/relocate/detach。
+
+```
+node run_tests.js  → 41/41 全部通过
+check_page.js      → 全部通过
+```
+
+### 12.5 已知限制（本轮不修）
+
+1. 内容清单仍基于**内存集合**（`loadedTracks` 等），所以进入新界面前，旧版的加载流程仍需在后台跑
+   （已用轮询兜住）；真正的"全项目索引化"是 P3。
+2. 照片的**逐张**显隐只在内存（`photoHidden`）与 `photosHidden` 黑名单层面持久化；
+   逐张持久化需要新键，留到 P3 统一做。
+3. 文字标注 / KML 的显隐目前是"会话内"（`hidden` 标记 / `vectorHidden`），未写入 `ui.items`
+   —— 因为它们的渲染路径还没有统一的可见性入口，P3 一并处理。
+4. 新界面文案是中文硬编码（未接 i18n），英文界面下这部分仍是中文。
+5. 来源重定位的"差异大"只给 verdict 与数量，没有逐个文件 diff 视图。
+6. 左栏仍是固定宽度三卡，窄屏只做"隐藏次要信息"，不做抽屉/浮层改版。
+
+### 12.6 状态
+
+- **P2 完成**（P2a–P2e 各一次提交）。
+- **P3（全项目索引化）尚未开始**；没有重打安装包。
+- 开发验证**没有**对真实项目调用写接口：迁移改为按需后，重载前后
+  `Project/东莞地铁/project.json` 的 mtime 不变（先前 `ui-migrate` 首次运行只新增
+  `ui.items/legacy/itemsVersion/itemsMigratedAt` 四个键，未改动任何旧状态）。

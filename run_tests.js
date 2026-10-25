@@ -25,6 +25,7 @@ const PYTHON = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 
 
 const NODE_SUITES = [
   'check_page.js',      // 页面静态断言（最全的一套）
+  'test_ia_panel.js',    // P2 新左栏：三段结构 / 来源动作 / 内容分组 / ui.items 读写
   'test_boot.js',       // 页面顶层脚本真跑一遍
   'test_sync.js',       // 地图 / 视频同步路径
   'test_telemetry.js',  // 遥测换算
