@@ -1120,3 +1120,78 @@ check_page.js      → 全部通过
 1:1 入目录、未知扩展名、生成物状态、mtime 有无、重叠去重、同名不合并、离线、
 partial/uncertain、覆盖导出区分、只读（project.json 字节与 mtime 不变）、
 缺 itemId 的稳定身份、pending 透传、字段齐全。
+
+### 14.3 P3b 落地：前端内容区切到 catalog（2026-10-26）
+
+**成员来源**：`iaBuild()` 只读 `GET /api/project/content-index` 的 `items`。
+`loadedTracks` / `photoGroups` / `orthoList` / `coverageItems` 降级为**运行时解析**
+（判断"这一行现在能不能画"），不再决定"有哪些行"。
+
+| 目录类型 | 分组 | 运行时解析（只读） | 显隐 |
+|---|---|---|---|
+| `video` | 视频 | 合并航迹 `loadedTracks`（按 relative_path / 文件名匹配） | 有合并航迹时由那条控制；否则**禁用**并说明 |
+| `subtitle` | SRT / 字幕 | — | 禁用（"字幕文件不能单独上图"） |
+| `photo` | 照片 / 图像 | `photoGroups` 成员文件名 → 组下标 | 可用（`photoHidden` + 重绘） |
+| `ortho` | 正射影像 | `orthoList`（kind=ortho） | 可用（单图层互斥，复用 `iaShowOrthoItem`） |
+| `track` | 轨迹 GeoJSON | `loadedTracks` 同名航迹 | 可用（图层组 add/remove） |
+| `coverage` | 覆盖数据 | `coverageItems` srt 匹配 | 可用（单图层，复用 `iaShowCoverageItem`） |
+| `coverage_export` | 覆盖导出（GeoJSON） | — | 禁用（产物文件，不是航迹） |
+| `vector` | KML / 矢量文件 | — | 禁用（需走导入流程） |
+| `meta` | 元数据 | — | 禁用 |
+| `unknown` | 未识别文件 | — | 禁用 |
+| 位置点 / 文字标注 | 单独两组 | `projectMarkers` / `projectLabels` | 可用（P2 语义不变） |
+
+- 照片：目录项决定成员（每张一条）；`photoGroups` 只用来补"拍摄点/张数"的展示信息，
+  组内映射按**文件名**，不用数组下标当长期身份。
+- 分页：照片组仍 60 条 + 「显示更多」。
+- 计数口径写在界面上：头部「唯一文件 M 个（K 组）」+「项目对象：位置点 X · 标注 Y」，
+  内容标题「(文件 M · 项目对象 P)」—— 与来源的 `file_count` 区分。
+
+### 14.4 P3c 落地：动作与地图运行时衔接
+
+1. **勾选 = 显隐**，不触发生成、导入或删除。
+2. `iaApply()` 按 `runtime` 分派：`track-group` / `photo-index` / `ortho` / `coverage` /
+   `marker` / `label` / `vector`。**正射/覆盖复用 P2 的按条函数**（含单图层互斥与幂等守卫）。
+3. **不可上图的行禁用勾选**（`cb.disabled`），`title` 给原因：
+   - 字幕：字幕文件不能单独上图
+   - 覆盖导出：产物文件，不是航迹
+   - KML / 元数据 / 未识别：需走导入流程 / 不能上图
+   - 视频：有合并航迹时说"由「轨迹 GeoJSON」控制显隐"；没有则提示用 ⚙
+   `iaSetShown()` 有守卫，禁用行点不动。
+4. **生成入口**：仅当视频缺航迹时出现 ⚙，点击 → `askConfirm`（明确"整个项目一起跑"）
+   → 复用现有 `runAutoPipeline()`（Build tracks）。**没有自造第二条生成链**。
+5. 保存的显隐：仍是 `ui.items[itemId]`；页面重开 / 来源离线后由 `iaApplyAll()` 恢复，
+   不可用的行只是保持"禁用 + 原勾选状态"，不丢记录。
+
+### 14.5 P3d 安全边界（落实项）
+
+- `content-index` 只读：测试断言 `project.json` 字节与 mtime 不变。
+- 页面打开只发 GET；刷新索引仍只能由用户点「刷新 / 全部刷新」触发。
+- catalog 不读文件内容：类型靠扩展名 + 文件名启发式，`classification` 字段如实标注
+  `extension` / `heuristic`；`status.stale` 恒为 `unknown`。
+- API 只接受已登记项目的名字 → 读 `project.json`；不接任意路径参数。
+- 验证只用真实项目的**只读**接口，未调用任何写接口（下面 14.6 有核对）。
+
+### 14.6 P3 测试与验证结果
+
+```
+node run_tests.js   -> 44/44 全部通过（新增 test_content_index.py、test_ia_catalog.js）
+check_page.js       -> 全部通过
+```
+
+新增/变更用例：
+
+| 套件 | 覆盖 |
+|---|---|
+| `Code/test_content_index.py` | 1:1 入目录、未知扩展名、生成物状态、mtime 有无、重叠去重、同名不合并、离线、partial/uncertain、覆盖导出区分、只读、缺 itemId 稳定身份、pending、字段齐全 |
+| `test_ia_catalog.js` | 成员来自 catalog、运行时只回答"能不能画"、不可上图禁用与解释、生成入口复用 Build tracks、计数口径、地图/右栏/回退入口未破坏 |
+| `check_page.js` | `runAutoPipeline` 调用点 2 处自动 + 1 处显式（⚙ 生成，需确认），并校验第三处在 `iaGenerateTracks` 内 |
+
+**已知限制（P3 之后仍未做）**
+
+1. 指纹/过期判定（§10.4）**未实现**：`status.stale` 恒为 `unknown`，不做 `params_digest`。
+2. 视频没有"单条图层"：只有合并航迹一级；因此视频行的勾选被禁用（文案说明由航迹行控制）。
+3. 正射"能不能作为底图"仍由 `/api/ortho/list` 判断（会打开 tif 头部），
+   catalog 只按扩展名标 `ortho`；因此目录里可能有"不可显示"的正射行（已禁用并解释）。
+4. KML 文件在目录里是**文件**，而项目里的矢量是**项目对象**：两者目前不建立自动关联。
+5. 大项目的虚拟滚动仍是"分组 + 分页"，未做真正的窗口化。
