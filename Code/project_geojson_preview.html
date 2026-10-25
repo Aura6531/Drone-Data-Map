@@ -14520,6 +14520,22 @@ function initTimelineSyncUI(){
     return undefined;
   }
   function iaShown(it){
+    // 正射/覆盖是单图层：**以地图上正在显示的那一条为准**。
+    // 旧版 autoPrepareOrtho 在切换项目时会自动显示一张正射，那时 ui.items 里并没有记录，
+    // 只读 items 会出现"地图上有、列表里没勾"。
+    try{
+      if(it.type==='ortho' && typeof orthoLayer!=='undefined' && orthoLayer
+         && typeof orthoPicked!=='undefined' && orthoPicked
+         && String(orthoPicked.name)===String(it.title)){
+        return true;
+      }
+      if(it.type==='coverage' && typeof coverageLayer!=='undefined' && coverageLayer
+         && typeof coverageCurrentItem==='function'){
+        const cur=coverageCurrentItem();
+        if(cur && String(cur.srt||cur.srt_name||'')===String(it.legacyKey)) return true;
+      }
+    }catch(e){}
+
     if(it.itemId && Object.prototype.hasOwnProperty.call(iaState.items, it.itemId)){
       return iaState.items[it.itemId] !== false;
     }
@@ -14581,9 +14597,25 @@ function initTimelineSyncUI(){
     }catch(e){}
   }
 
+  // 正射 / 覆盖在地图上是**单图层**：同一时刻只能显示一条。
+  // 所以勾选一条时，必须把同组其它条显式置为 false ——
+  // 否则会出现"地图只显示一张，列表里却有好几条都勾着"。
+  function iaEnforceExclusive(type, keepIt){
+    if(type!=='ortho' && type!=='coverage') return 0;
+    const all=[];
+    (iaState.groups||[]).forEach(g=>{ if(g.type===type) g.items.forEach(i=>{ if(!i.more) all.push(i); }); });
+    let changed=0;
+    all.forEach(it=>{
+      if(it===keepIt) return;
+      if(iaShown(it)){ if(it.itemId) iaState.items[it.itemId]=false; changed++; }
+    });
+    return changed;
+  }
+
   function iaSetShown(it){
     const now=!iaShown(it);
     if(it.itemId) iaState.items[it.itemId]=now;
+    if(now) iaEnforceExclusive(it.type, it);
     iaApply(it.type, it, now);
     iaPersist();
     iaRender();
@@ -14597,6 +14629,8 @@ function initTimelineSyncUI(){
       const entry=usable.find(o=>String(o.name)===String(it.title));
       if(!entry) return;
       if(shown){
+        // 幂等：这张已经是当前图层，就别拆了重建（轮询触发的重复 iaReload 会走到这里）
+        if(orthoLayer && orthoPicked && String(orthoPicked.name)===String(entry.name)) return;
         if(orthoLayer){ try{ map.removeLayer(orthoLayer); }catch(e){} orthoLayer=null; }
         orthoPicked=entry;
         if(typeof toggleOrtho==='function') await toggleOrtho();
@@ -14614,6 +14648,9 @@ function initTimelineSyncUI(){
       if(!entry) return;
       const pick=document.getElementById('coveragePick');
       if(shown){
+        // 幂等：同一层已经在地图上就不再重建
+        const cur0=(typeof coverageCurrentItem==='function')?coverageCurrentItem():null;
+        if(coverageLayer && cur0 && String(cur0.srt)===String(entry.srt)) return;
         if(pick) pick.value=entry.srt;
         if(typeof coverageShow==='function') await coverageShow();
       }else{
@@ -14658,19 +14695,49 @@ function initTimelineSyncUI(){
       }catch(e){}
     }
 
-    // 单图层模型：最多显示一条；优先恢复「被标记为显示」的第一条
+    // 单图层模型：最多显示一条。
+    // **只在用户显式设过显隐时**才自动恢复 —— 否则打开项目就自动加载几百 MB 影像，
+    // 与旧行为（点了才显示）差别太大。
+    const explicitShown=(it)=>it && it.itemId &&
+      Object.prototype.hasOwnProperty.call(iaState.items, it.itemId) && iaState.items[it.itemId]!==false;
+
     const orthos=byType('ortho');
     if(orthos.length){
-      const want=orthos.find(it=>iaShown(it));
-      if(want) iaShowOrthoItem(want, true);
-      else if(typeof orthoLayer!=='undefined' && orthoLayer && typeof toggleOrtho==='function'){
-        try{ toggleOrtho(); }catch(e){}
+      const want=orthos.find(it=>explicitShown(it));
+      if(want){
+        iaEnforceExclusive('ortho', want);
+        iaShowOrthoItem(want, true);
       }
+      // 用户明确关掉的那一张，如果旧版 autoPrepareOrtho 又自动显示出来了，这里关回去
+      const hidden=orthos.find(it=>it.itemId &&
+        Object.prototype.hasOwnProperty.call(iaState.items, it.itemId) && iaState.items[it.itemId]===false);
+      try{
+        if(hidden && typeof orthoLayer!=='undefined' && orthoLayer && typeof orthoPicked!=='undefined'
+           && orthoPicked && String(orthoPicked.name)===String(hidden.title)
+           && typeof toggleOrtho==='function'){
+          toggleOrtho();
+        }
+      }catch(e){}
     }
     const covs=byType('coverage');
     if(covs.length){
-      const want=covs.find(it=>iaShown(it));
-      if(want) iaShowCoverageItem(want, true);
+      const want=covs.find(it=>explicitShown(it));
+      if(want){
+        iaEnforceExclusive('coverage', want);
+        iaShowCoverageItem(want, true);
+      }
+      const hiddenC=covs.find(it=>it.itemId &&
+        Object.prototype.hasOwnProperty.call(iaState.items, it.itemId) && iaState.items[it.itemId]===false);
+      try{
+        if(hiddenC && typeof coverageLayer!=='undefined' && coverageLayer
+           && typeof coverageCurrentItem==='function'){
+          const cur=coverageCurrentItem();
+          if(cur && String(cur.srt||cur.srt_name||'')===String(hiddenC.legacyKey)
+             && typeof coverageHideLayer==='function'){
+            coverageHideLayer();
+          }
+        }
+      }catch(e){}
     }
   }
 
@@ -14948,10 +15015,18 @@ function initTimelineSyncUI(){
       all.checked=shownCount>0&&shownCount===real.length;
       all.indeterminate=shownCount>0&&shownCount<real.length;
       all.addEventListener('change',()=>{
-        real.forEach(it=>{
-          if(it.itemId) iaState.items[it.itemId]=all.checked;
-          iaApply(it.type, it, all.checked);
-        });
+        if((g.type==='ortho' || g.type==='coverage') && all.checked){
+          // 单图层组：全选没有意义 —— 勾选=显示第一条，其余显式隐藏
+          const first=real[0];
+          real.forEach(it=>{ if(it.itemId) iaState.items[it.itemId]=false; });
+          if(first && first.itemId) iaState.items[first.itemId]=true;
+          if(first) iaApply(first.type, first, true);
+        }else{
+          real.forEach(it=>{
+            if(it.itemId) iaState.items[it.itemId]=all.checked;
+            iaApply(it.type, it, all.checked);
+          });
+        }
         iaPersist(); iaRenderContents();
       });
       head.appendChild(all);
@@ -15271,6 +15346,8 @@ function initTimelineSyncUI(){
   else iaInit();
 
   window.__iaReload=iaReload;
+  window.__iaSetShown=iaSetShown;
+  window.__iaEnforceExclusive=iaEnforceExclusive;
 })();
 
 </script>

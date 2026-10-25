@@ -106,7 +106,11 @@ console.log('\n=== 4) 内容区：分组、搜索、筛选、三态、动作语�
   chk(/ed\.textContent='✎'/.test(con), '编辑是独立动作 ✎');
   chk(/del\.textContent='×'/.test(con), '移除是独立动作 ×');
   chk(/从项目里移除（磁盘文件不动）/.test(con), '× 的提示写明「磁盘文件不动」');
-  chk(/显隐交给勾选框/.test(con) || /勾选框/.test(con) || true, '显隐由勾选框负责（× 不再兼职隐藏）');
+  // 显隐只由行首勾选框驱动：勾选框的 change 事件必须直接调用 iaSetShown(it)
+  chk(/cb\.addEventListener\('change',\(\)=>iaSetShown\(it\)\);/.test(con),
+    '显隐由勾选框负责（change -> iaSetShown）');
+  chk(!/del\.addEventListener\('click',\(\)=>iaSetShown/.test(con),
+    '× 不会去改显隐（不再兼职隐藏）');
   chk(!/textContent='加载'/.test(con), '不再出现笼统的「加载」按钮');
   chk(/显示更多/.test(html), '照片分组支持分页/懒加载（显示更多）');
 }
@@ -165,6 +169,25 @@ console.log('\n=== 7c) 载入后把保存的显隐应用回地图 ===');
   chk(/vectorHidden\.(add|delete)/.test(apply), '矢量按 id 加入/移出隐藏集合');
   chk(/iaShowOrthoItem|iaShowCoverageItem/.test(apply), '正射/覆盖按条恢复');
   chk(/if\(item && item\.hidden\)continue;/.test(html), 'renderLabels 会跳过被隐藏的标注');
+}
+
+console.log('\n=== 7e) 正射/覆盖是单图层：勾选保持单选 ===');
+{
+  chk(/function iaEnforceExclusive\(type, keepIt\)/.test(html), '有 iaEnforceExclusive()（同组互斥）');
+  const shown = html.slice(html.indexOf('function iaShown'), html.indexOf('function iaSetShown'));
+  chk(/以地图上正在显示的那一条为准/.test(shown), '勾选状态以地图实际图层为准（旧版自动显示也不会错位）');
+  const set = html.slice(html.indexOf('function iaSetShown'), html.indexOf('async function iaShowOrthoItem'));
+  chk(/if\(now\) iaEnforceExclusive\(it\.type, it\);/.test(set), '勾选一条时把同组其它条置为隐藏');
+  const apply2 = html.slice(html.indexOf('function iaApplyAll'), html.indexOf('function iaSourcesByIndex'));
+  chk(/iaEnforceExclusive\('ortho', want\)/.test(apply2) && /iaEnforceExclusive\('coverage', want\)/.test(apply2),
+    '载入恢复时也先收敛成单选');
+  chk(/这里关回去/.test(apply2), '用户明确关掉的图层会被关回去（旧版自动显示不再覆盖用户设置）');
+  const orthoFn = html.slice(html.indexOf('async function iaShowOrthoItem'), html.indexOf('async function iaShowCoverageItem'));
+  chk(/已经是当前图层，就别拆了重建/.test(orthoFn), '正射重复调用不重建图层（幂等）');
+  const covFn = html.slice(html.indexOf('async function iaShowCoverageItem'), html.indexOf('function iaApplyAll'));
+  chk(/同一层已经在地图上就不再重建/.test(covFn), '覆盖重复调用不重建图层（幂等）');
+  const groupFn = html.slice(html.indexOf('function iaRenderContents'), html.indexOf('function iaRenderNotice'));
+  chk(/单图层组：全选没有意义/.test(groupFn), '单图层组的分组勾选按「显示第一条」处理');
 }
 
 console.log('\n=== 7d) 正射/覆盖的逐条勾选不操作全局 ===');
