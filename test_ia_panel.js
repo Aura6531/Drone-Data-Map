@@ -187,7 +187,11 @@ console.log('\n=== 7e) 正射/覆盖是单图层：勾选保持单选 ===');
   const covFn = html.slice(html.indexOf('async function iaShowCoverageItem'), html.indexOf('function iaApplyAll'));
   chk(/同一层已经在地图上就不再重建/.test(covFn), '覆盖重复调用不重建图层（幂等）');
   const groupFn = html.slice(html.indexOf('function iaRenderContents'), html.indexOf('function iaRenderNotice'));
-  chk(/单图层组：全选没有意义/.test(groupFn), '单图层组的分组勾选按「显示第一条」处理');
+  // 行为本身由 test_ia_group.js 真跑函数验证；这里只确认接线：
+  // 渲染用 iaGroupCheckState 取状态，点击用 iaGroupClickPlan 决定动作。
+  chk(/const gate=iaGroupCheckState\(g\.type, real, iaShown\)/.test(groupFn),
+    '分组勾选框状态由 iaGroupCheckState 计算');
+  chk(/const plan=iaGroupClickPlan\(/.test(groupFn), '分组点击动作由 iaGroupClickPlan 决定（行为见 test_ia_group.js）');
 }
 
 console.log('\n=== 7d) 正射/覆盖的逐条勾选不操作全局 ===');

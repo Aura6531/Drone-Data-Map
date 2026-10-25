@@ -14704,8 +14704,9 @@ function initTimelineSyncUI(){
     const orthos=byType('ortho');
     if(orthos.length){
       const want=orthos.find(it=>explicitShown(it));
+      let converged=0;
       if(want){
-        iaEnforceExclusive('ortho', want);
+        converged+=iaEnforceExclusive('ortho', want);
         iaShowOrthoItem(want, true);
       }
       // 用户明确关掉的那一张，如果旧版 autoPrepareOrtho 又自动显示出来了，这里关回去
@@ -14718,12 +14719,15 @@ function initTimelineSyncUI(){
           toggleOrtho();
         }
       }catch(e){}
+      // 收敛结果要写回，否则旧项目里"多条 true"要到用户下次点击才修正
+      if(converged>0) iaPersist();
     }
     const covs=byType('coverage');
     if(covs.length){
       const want=covs.find(it=>explicitShown(it));
+      let convergedC=0;
       if(want){
-        iaEnforceExclusive('coverage', want);
+        convergedC+=iaEnforceExclusive('coverage', want);
         iaShowCoverageItem(want, true);
       }
       const hiddenC=covs.find(it=>it.itemId &&
@@ -14738,6 +14742,7 @@ function initTimelineSyncUI(){
           }
         }
       }catch(e){}
+      if(convergedC>0) iaPersist();
     }
   }
 
@@ -14965,6 +14970,36 @@ function initTimelineSyncUI(){
     });
   }
 
+  /* iaGroupCheckState:start
+     分组勾选框的状态（纯函数，便于测试）：
+       · 单图层组（ortho / coverage）：有任意一条显示就算"已勾选"，**不出现半选**；
+       · 普通组：全显示=勾选，部分=半选，全隐藏=未勾选。 */
+  function iaGroupCheckState(type, items, isShown){
+    const real=(items||[]).filter(i=>i && !i.more);
+    const shown=real.filter(i=>isShown(i)).length;
+    const total=real.length;
+    if(type==='ortho' || type==='coverage'){
+      return {checked:shown>0, indeterminate:false, shown, total};
+    }
+    return {
+      checked:shown>0 && shown===total,
+      indeterminate:shown>0 && shown<total,
+      shown, total,
+    };
+  }
+  /* iaGroupCheckState:end */
+
+  /* iaGroupClickPlan:start
+     分组勾选框被点击后的动作（纯函数，便于测试）：
+       · 单图层组 + 当前显示为"已勾选" -> hideAll（关掉整组）
+       · 单图层组 + 未勾选             -> showFirst（显示第一条）
+       · 普通组                        -> setAll（按点击后的状态整组设置） */
+  function iaGroupClickPlan(isSingleLayer, checked){
+    if(isSingleLayer) return checked ? {mode:'hideAll'} : {mode:'showFirst'};
+    return {mode:'setAll', value:!!checked};
+  }
+  /* iaGroupClickPlan:end */
+
   function iaRenderContents(){
     const box=$('iaContents'); if(!box) return;
     box.innerHTML='';
@@ -15012,15 +15047,28 @@ function initTimelineSyncUI(){
       all.type='checkbox'; all.className='tree-check';
       const real=g.items.filter(i=>!i.more);
       const shownCount=real.filter(i=>iaShown(i)).length;
-      all.checked=shownCount>0&&shownCount===real.length;
-      all.indeterminate=shownCount>0&&shownCount<real.length;
+      const gate=iaGroupCheckState(g.type, real, iaShown);
+      all.checked=gate.checked;
+      all.indeterminate=gate.indeterminate;
       all.addEventListener('change',()=>{
-        if((g.type==='ortho' || g.type==='coverage') && all.checked){
-          // 单图层组：全选没有意义 —— 勾选=显示第一条，其余显式隐藏
+        // 单图层组（正射/覆盖）：勾选框只有两种状态
+        //   · 有任意一条显示 -> 显示为"已勾选"；点它 = 关掉整组
+        //   · 一条都没显示   -> 点它 = 显示第一条
+        // 之前按普通多选组算（1/N -> 半选），点了没有明确的勾选反馈，
+        // 也没法用这个框取消整组。
+        const plan=iaGroupClickPlan(g.type==='ortho'||g.type==='coverage', gate.checked);
+        if(plan.mode==='hideAll'){
+          real.forEach(it=>{
+            if(it.itemId) iaState.items[it.itemId]=false;
+            iaApply(it.type, it, false);
+          });
+        }else if(plan.mode==='showFirst'){
           const first=real[0];
           real.forEach(it=>{ if(it.itemId) iaState.items[it.itemId]=false; });
-          if(first && first.itemId) iaState.items[first.itemId]=true;
-          if(first) iaApply(first.type, first, true);
+          if(first){
+            if(first.itemId) iaState.items[first.itemId]=true;
+            iaApply(first.type, first, true);
+          }
         }else{
           real.forEach(it=>{
             if(it.itemId) iaState.items[it.itemId]=all.checked;
@@ -15347,6 +15395,8 @@ function initTimelineSyncUI(){
 
   window.__iaReload=iaReload;
   window.__iaSetShown=iaSetShown;
+  window.__iaGroupCheckState=iaGroupCheckState;
+  window.__iaGroupClickPlan=iaGroupClickPlan;
   window.__iaEnforceExclusive=iaEnforceExclusive;
 })();
 

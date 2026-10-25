@@ -984,3 +984,55 @@ check_page.js      → 全部通过
 - 关闭/重开页面、来源离线，清单结构与显隐状态不丢；
 - 视频行仍能触发现有生成流程（不另造一套）；
 - `node run_tests.js` 全绿，新增"索引驱动清单"的用例（夹具项目 + 临时目录）。
+
+### 13.8 收尾：单图层组的分组勾选框（2026-10-25 晚三）
+
+用户指出：单图层组只显示一条时，勾选框仍按普通多选组算 —— `shownCount=1 / total>1`
+→ **半选**；点一次虽然会显示第一条，但重绘后又回到半选，既没有明确的勾选反馈，
+也没法通过这个框取消整组。
+
+改法（把状态与动作都抽成纯函数，便于真跑测试）：
+
+| 函数 | 语义 |
+|---|---|
+| `iaGroupCheckState(type, items, isShown)` | 单图层组（ortho/coverage）：**有任意一条显示就算已勾选，永不半选**；普通组仍是三态 |
+| `iaGroupClickPlan(isSingleLayer, checked)` | 单图层组：已勾选 → `hideAll`（关整组）；未勾选 → `showFirst`（显示第一条）；普通组 → `setAll` |
+
+`iaRenderContents()` 用前者算状态、后者决定点击动作。
+
+**浏览器实测**（两条假正射 A/B，`items` 里 A=true、B=false）：
+
+```
+初始      ：checked=true,  indeterminate=false     ← 不是半选
+点击一次  ：checked=false, indeterminate=false, a=false, b=false   ← 关掉整组
+再点一次  ：checked=true,  indeterminate=false, a=true,  b=false   ← 显示第一条
+```
+
+### 13.9 收敛结果现在会写回 `ui.items`
+
+用户指出：`iaApplyAll()` 在内存里把"多条 true"收敛成一条，但没有持久化，
+旧项目要等用户下次操作才修正。
+
+改法：`iaEnforceExclusive()` 返回本次改过几条；`iaApplyAll()` 里 `converged>0`
+（正射/覆盖各自计数）时调用 `iaPersist()` 写回。没有改动就不写，避免每次打开都写盘。
+
+> 限制说明：当前「东莞地铁」项目只有 1 张正射、0 条覆盖，
+> 所以"多条 true 收敛后写回"这条**没有在真实项目上现场触发过**，
+> 只有代码路径 + 单元断言（`converged` 计数与 `iaPersist` 相邻）覆盖；
+> 有多个正射的项目可以直接看到效果。
+
+### 13.10 新增行为测试 `test_ia_group.js`
+
+不看字符串，而是**把页面里的纯函数取出来真跑**：
+按 `/* iaGroupCheckState:start */ … /* :end */` 标记切出函数体，
+在 Node 里用 `new Function` 执行，断言 17 条：
+
+- 单图层组 1/3、2/3 显示 → `checked=true` 且 `indeterminate=false`（不半选）
+- 单图层组 0/3 → 未勾选
+- 点击语义：已勾选 → `hideAll`；未勾选 → `showFirst`；往返一轮状态正确
+- 普通组仍是三态（3/3 勾选、1/3 半选、0/3 未选），点击 → `setAll`
+- `more` 占位不计入总数
+
+`test_ia_panel.js` 里对应那条只检查接线的断言也改成
+「状态由 `iaGroupCheckState` 算、动作由 `iaGroupClickPlan` 决定」，
+行为交给 `test_ia_group.js`。
