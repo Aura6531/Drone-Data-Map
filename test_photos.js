@@ -708,16 +708,10 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
     '旧的日期/类型筛选控件已移除（不再有「筛选后文案」这回事）');
   chk(/function loadAll\(\)/.test(html) && /runAutoPipeline[\s\S]{0,3000}await loadAll\(\)/.test(html),
     'loadAll() 仍在，并由自动流程 runAutoPipeline 调用（替代原来的按钮）');
-  // 这一行的三段（用户 2026-10-07 定的顺序）：
-  //   ① 加载全部照片（贴左，就在「轨迹地图」标题正下方，不留空）
-  //   ② 计数（它是按钮的说明，紧跟按钮右边）
-  //   ③ 底图 + 天地图key（推到这一行最右边）
-  // 2026-10-22：这一行从卡片标题行搬进了地图上的悬浮条（`.ab-row.ab-tools`），
-  // 取法是「工具行起点 + 固定窗口」。
+  // 2026-10-25：照片的开关与计数都并入「已加载 → 照片」分组，
+  // 这里只验证工具行现在的四段（照片按钮已不在这一行）。
   const toolsAt = html.indexOf('ab-row ab-tools');
   const toolsRow = toolsAt >= 0 ? html.slice(toolsAt, toolsAt + 3000) : '';
-  // 2026-10-25：照片按钮与它的计数都删了，这一行现在是
-  // 视场覆盖 / 文字标注 / 底图 / 天地图 key（正射状态与「收起」也在里面）
   chk(/id="coverageToggleBtn"/.test(toolsRow) && /id="labelBtn"/.test(toolsRow)
       && /id="baseMap"/.test(toolsRow) && /id="keyBtn"/.test(toolsRow),
     '工具行里是：视场覆盖 / 文字标注 / 底图 / 天地图 key');
@@ -725,38 +719,38 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
       && toolsRow.indexOf('id="labelBtn"') < toolsRow.indexOf('id="baseMap"')
       && toolsRow.indexOf('id="baseMap"') < toolsRow.indexOf('id="keyBtn"'),
     '顺序：覆盖 -> 标注 -> 底图 -> 天地图 key（照片按钮已不在这一行）');
-  chk(/\.card-tools\.map-tools\{[^}]*margin-left:0/.test(html),
-    '这一行 margin-left:0 —— 否则被 .card-tools 的 auto 推到中间（实测偏 61px），'
-    +'就不是「贴着左边、在标题正下方」了');
-  chk(/\.map-tools-right\{[^}]*margin-left:auto/.test(html),
-    '底图 / 天地图key 那组用 margin-left:auto 靠这一行最右边');
-  chk(/\.photo-tools\{[^}]*margin-left:0/.test(html), '计数不抢 auto 边距，紧跟在按钮右边');
-  // 大小与外观要和左栏「加载全部轨迹」一致
-  {
-    const fileBtn = (html.match(/\.card-tools\.file-actions button\{[^}]*\}/) || [''])[0];
-    const photoBtn = (html.match(/\.photo-layer-btn\{[^}]*\}/) || [''])[0];
-    const dim = (s) => String(s).match(/height:[^;]*/)[0] + '/'
-      + (String(s).match(/font-size:[^;]*/) || [''])[0] + '/'
-      + (String(s).match(/font-weight:[^;]*/) || [''])[0];
-    chk(dim(photoBtn) === dim(fileBtn),
-      '「加载全部照片」与「加载全部轨迹」同尺寸同字重（都走 --ctrl-h / 12px / 600）',
-      `photo=${dim(photoBtn)} load=${dim(fileBtn)}`);
-    chk(/border-radius:9px/.test(photoBtn), '圆角与全局 button 一致（9px）');
-    chk(/color:#2563eb/.test(photoBtn), '关着时是浅底 + 主色字（看着可点，不是禁用灰）');
-    const onRule = (html.match(/\.photo-layer-btn\.photo-on[^{]*\{[^}]*\}/) || [''])[0];
-    chk(/#2563eb/.test(onRule) && /#fff/.test(onRule), '开启态是主色实心 + 白字（同「加载全部轨迹」）');
-    chk(/\.photo-layer-btn\.photo-on/.test(html), '开启态用 .photo-on 表示（替代原来那套灰白 off）');
-    chk(!/photoLayerBtn[^>]*class="toggle-btn/.test(html), '不再用 toggle-btn 那套（灰白看着像禁用）');
-  }
-  chk(!/id="photoLayerCount"/.test(html),
-    '旧的独立计数元素已移除；条数改由「已加载」分组头的 (n/n) 显示');
-  chk(/max-width:1780px\)\{[\s\S]{0,200}#photoLayerCountExtra\{display:none\}/.test(html),
-    '窄窗口时「· N 处合并」整段让位（阈值按实测：这一行满了就先舍补充信息）');
-  chk(/max-width:1650px\)\{[\s\S]{0,200}#photoLayerCount\{display:none\}/.test(html),
-    '更窄时连张数也让位，只留按钮（按钮是「要点的」，优先保住）');
-  chk(!/photoLayerCount\.textContent=total\s*\?[^;]*(->)/.test(html), '计数用「→」而不是 "->"');
+  chk(!/id="photoLayerCount"/.test(html) && !/id="photoLayerCountExtra"/.test(html),
+    '旧的独立计数元素已移除（条数改由分组头 (n/n) 显示）');
+  chk(!/\.photo-layer-btn/.test(html.slice(html.indexOf('ab-row ab-tools'),
+                                            html.indexOf('ab-row ab-tools') + 3000)),
+    '工具行里不再引用 .photo-layer-btn（旧按钮样式已不参与布局）');
 
-  // 点「加载全部照片」要自动缩放到所有照片都看得见（用户 2026-10-07 的要求）
+  // 计数：ldGroup 统一渲染成 (shown/total)
+  chk(/count\.textContent=`\(\$\{shown\}\/\$\{items\.length\}\)`/.test(html)
+      || /ld-count/.test(html) && /\(\$\{shown\}\//.test(html),
+    '分组计数由 ldGroup 渲染成 (shown/total)（照片分组也走它）');
+  chk(/ldGroup\(t\('Photos'\)/.test(html), '照片分组就是用 ldGroup 渲染的');
+
+  // 每条照片行：勾选框 + 名称，各自的动作要对
+  {
+    const pi = html.indexOf("t('Photos')");
+    const seg = pi >= 0 ? html.slice(pi, pi + 6000) : '';
+    chk(/className='ld-subrow'/.test(seg), '每条照片是 .ld-subrow 一行');
+    chk(/cb\.type='checkbox'/.test(seg) && /cb\.className='tree-check'/.test(seg),
+      '每行有一个 checkbox（tree-check）');
+    // 勾上：图层关着 -> 清空 photoHidden 只显示这一张（等于单选）
+    chk(/if\(!\)?photoLayerOn\)\{[\s\S]{0,200}photoHidden=new Set\(\)/.test(seg)
+        || /photoHidden=new Set\(\);/.test(seg),
+      '勾选某一张且图层关着时：清空隐藏集，只显示这一张（单选语义）');
+    // 取消勾选：加进隐藏集
+    chk(/photoHidden\.add\(i\)/.test(seg), '取消勾选把该点加进 photoHidden（地图上隐藏）');
+    // 点名称：飞到该点 + 打开这一组照片
+    chk(/map\.setView\(\[Number\(g\.lat\),Number\(g\.lon\)\],Math\.max\(map\.getZoom\(\),PHOTO_ZOOM\)\)/.test(seg),
+      '点名称把它飞到地图中心（且至少放大到 PHOTO_ZOOM）');
+    chk(/selectPhotoGroup\(i\)/.test(seg), '点名称同时打开右侧这一组照片');
+  }
+
+  // 点「照片」那一行的名称要缩放到全部照片（原按钮的行为，现在挂在这里）
   chk(/function zoomToAllPhotos\(/.test(html), '有 zoomToAllPhotos()');
   const zoomFn = extractFn('zoomToAllPhotos');
   chk(/L\.latLngBounds\(\[\]\)/.test(zoomFn), '按所有照片点求外接矩形');
@@ -764,12 +758,8 @@ console.log('\n=== 8) 页面接线：接口 / 元素 / 一次性监听 ===');
   chk(/bounds\.extend\(\[lat,lon\]\)/.test(zoomFn), '每个点都 extend 进去');
   chk(/map\.fitBounds\(bounds,\{padding:\[30,30\],maxZoom:TRACK_FIT_MAX_ZOOM,animate:false\}\)/.test(zoomFn),
     'fitBounds 带 padding / maxZoom 上限 / animate:false');
-  // animate:false 不是可有可无：开着动画时（无头环境或浏览器偏好减少动画）
-  // fitBounds 调了、返回 true，但 zoom 与中心完全没变 —— 实测踩过。
   chk(/animate:false/.test(zoomFn),
     'animate:false（否则这一下可能停在动画中间态，视图看着完全没动）');
-  chk(/setPhotoLayer\(true\);[\s\S]{0,80}zoomToAllPhotos\(\);/.test(html),
-    '点按钮先点亮图层、再缩放到全部照片');
 
   // 展示区挪到右栏（视频与标记点之间，占标记点上方那半截）
   const rightCol = html.slice(html.indexOf('<section class="col col-right"'),
