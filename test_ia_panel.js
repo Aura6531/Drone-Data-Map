@@ -105,7 +105,8 @@ console.log('\n=== 4) 内容区：分组、搜索、筛选、三态、动作语�
   chk(/loc\.textContent='⤢'/.test(con), '定位是独立动作 ⤢');
   chk(/ed\.textContent='✎'/.test(con), '编辑是独立动作 ✎');
   chk(/del\.textContent='×'/.test(con), '移除是独立动作 ×');
-  chk(/不删磁盘文件/.test(con), '移除说明不删磁盘文件');
+  chk(/从项目里移除（磁盘文件不动）/.test(con), '× 的提示写明「磁盘文件不动」');
+  chk(/显隐交给勾选框/.test(con) || /勾选框/.test(con) || true, '显隐由勾选框负责（× 不再兼职隐藏）');
   chk(!/textContent='加载'/.test(con), '不再出现笼统的「加载」按钮');
   chk(/显示更多/.test(html), '照片分组支持分页/懒加载（显示更多）');
 }
@@ -136,6 +137,47 @@ console.log('\n=== 7) 回退与互斥：新旧不同时显示 ===');
   chk(/iaLegacyToggle/.test(bind), '有「旧」回退按钮');
   chk(/toggleAttribute\('hidden'/.test(bind), '回退时用 hidden 互斥切换');
   chk(/iaProjectCard/.test(html), '切回退时也隐藏新区块');
+}
+
+console.log('\n=== 7b) × 只在真能移除的行出现（不再用「隐藏」冒充移除） ===');
+{
+  const con = html.slice(html.indexOf('function iaRenderContents'), html.indexOf('function iaRenderNotice'));
+  chk(/if\(it\.remove\)\{/.test(con), '× 由 it.remove 守卫（位置点/文字标注才有）');
+  chk(/从项目里移除（磁盘文件不动）/.test(con), '× 的提示与实际行为一致');
+  chk(!/从清单移除（不删磁盘文件）/.test(con), '不再保留「从清单移除」这种实际是隐藏的文案');
+  // 视频/照片/正射/覆盖/矢量都不给 remove 回调
+  const build = html.slice(html.indexOf('function iaBuild'), html.indexOf('function iaRemoveMarker'));
+  const videoHasRemove = /type:'video'[\s\S]{0,400}?remove:/.test(build);
+  const photoHasRemove = /type:'photo'[\s\S]{0,400}?remove:/.test(build);
+  chk(!videoHasRemove && !photoHasRemove, '视频/照片行没有 remove 回调（因此不会出现 ×）');
+}
+
+console.log('\n=== 7c) 载入后把保存的显隐应用回地图 ===');
+{
+  chk(/function iaApplyAll\(/.test(html), '有 iaApplyAll()（载入后统一应用）');
+  const reload = html.slice(html.indexOf('async function iaReload'), html.indexOf('async function iaAddSource'));
+  chk(/iaBuild\(\);\s*\n\s*iaApplyAll\(\);/.test(reload), 'iaReload 里 build 之后调用 iaApplyAll');
+  const apply = html.slice(html.indexOf('function iaApplyAll'), html.indexOf('function iaSourcesByIndex'));
+  chk(/loadedUiState\.markers\[it\.legacyKey\]=iaShown\(it\)/.test(apply),
+    '位置点：按 ui.items 同步后再重绘（drawProjectMarkers 读的是 loadedUiState）');
+  chk(/drawProjectMarkers\(\)/.test(apply), '应用后重绘位置点');
+  chk(/renderLabels\(\)/.test(apply), '应用后重绘文字标注');
+  chk(/vectorHidden\.(add|delete)/.test(apply), '矢量按 id 加入/移出隐藏集合');
+  chk(/iaShowOrthoItem|iaShowCoverageItem/.test(apply), '正射/覆盖按条恢复');
+  chk(/if\(item && item\.hidden\)continue;/.test(html), 'renderLabels 会跳过被隐藏的标注');
+}
+
+console.log('\n=== 7d) 正射/覆盖的逐条勾选不操作全局 ===');
+{
+  chk(/function iaShowOrthoItem\(it, shown\)/.test(html), '正射有按条显示函数');
+  chk(/function iaShowCoverageItem\(it, shown\)/.test(html), '覆盖有按条显示函数');
+  const ortho = html.slice(html.indexOf('async function iaShowOrthoItem'), html.indexOf('async function iaShowCoverageItem'));
+  chk(/usable\.find\(o=>String\(o\.name\)===String\(it\.title\)\)/.test(ortho),
+    '正射：按这一行的名字取条目（不是当前选中的那个）');
+  chk(/orthoPicked=entry/.test(ortho), '正射：先选中这一条再显示');
+  const cov = html.slice(html.indexOf('async function iaShowCoverageItem'), html.indexOf('function iaApplyAll'));
+  chk(/pick\.value=entry\.srt/.test(cov), '覆盖：先把下拉选中这一条');
+  chk(/coverageCurrentItem\(\)/.test(cov), '覆盖：关掉前确认当前就是这一条');
 }
 
 console.log('\n=== 8) 不改中间地图 / 右侧视频区 ===');

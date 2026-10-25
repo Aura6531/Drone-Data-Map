@@ -9271,6 +9271,9 @@ function renderLabels(){
   if(!labelLayer)labelLayer=L.layerGroup().addTo(map);
   labelLayer.clearLayers();
   for(const item of projectLabels){
+    // 新左栏（P2）把标注显隐存在 ui.items["label:<id>"]，应用时置 item.hidden；
+    // 旧界面没有 hidden 字段，所以这一句对旧行为无影响。
+    if(item && item.hidden)continue;
     const mk=L.marker([item.lat,item.lng],{icon:labelIcon(item),draggable:true,keyboard:false});
     mk.on('drag',(e)=>{ const p=e.target.getLatLng(); item.lat=p.lat; item.lng=p.lng; });
     mk.on('dragend',()=>{ saveLabels(); });
@@ -14556,14 +14559,14 @@ function initTimelineSyncUI(){
         try{
           if(shown) orthoHidden.delete(it.legacyKey); else orthoHidden.add(it.legacyKey);
           loadedUiState.orthoHidden=[...orthoHidden];
-          if(typeof toggleOrtho==='function' && shown) toggleOrtho();
         }catch(e){}
+        try{ iaShowOrthoItem(it, shown); }catch(e){}
       }else if(kind==='coverage'){
         try{
-          if(shown){ coverageHidden.delete(it.legacyKey); if(typeof coverageShow==='function') coverageShow(); }
-          else { coverageHidden.add(it.legacyKey); if(typeof coverageHideLayer==='function') coverageHideLayer(); }
+          if(shown) coverageHidden.delete(it.legacyKey); else coverageHidden.add(it.legacyKey);
           loadedUiState.coverageHidden=[...coverageHidden];
         }catch(e){}
+        try{ iaShowCoverageItem(it, shown); }catch(e){}
       }else if(kind==='vector'){
         try{
           if(shown) vectorHidden.delete(it.id); else vectorHidden.add(it.id);
@@ -14584,6 +14587,91 @@ function initTimelineSyncUI(){
     iaApply(it.type, it, now);
     iaPersist();
     iaRender();
+  }
+
+  // 正射是「一次显示一张」的图层（orthoLayer + orthoPicked）。
+  // 所以逐条勾选的语义是「把这一张显示到地图上」，勾掉则关掉（仅当它正是当前那张）。
+  async function iaShowOrthoItem(it, shown){
+    try{
+      const usable=(typeof orthoList!=='undefined'?orthoList:[]).filter(o=>o&&o.kind==='ortho'&&o.source);
+      const entry=usable.find(o=>String(o.name)===String(it.title));
+      if(!entry) return;
+      if(shown){
+        if(orthoLayer){ try{ map.removeLayer(orthoLayer); }catch(e){} orthoLayer=null; }
+        orthoPicked=entry;
+        if(typeof toggleOrtho==='function') await toggleOrtho();
+      }else if(orthoPicked && String(orthoPicked.name)===String(it.title)){
+        if(orthoLayer && typeof toggleOrtho==='function') await toggleOrtho();
+      }
+    }catch(e){}
+  }
+
+  // 覆盖同理：coverageShow() 用的是下拉框里选中的那条，所以先选中再显示。
+  async function iaShowCoverageItem(it, shown){
+    try{
+      const list=(typeof coverageItems!=='undefined'?coverageItems:[]);
+      const entry=list.find(x=>x && String(x.srt||x.srt_name||'')===String(it.legacyKey));
+      if(!entry) return;
+      const pick=document.getElementById('coveragePick');
+      if(shown){
+        if(pick) pick.value=entry.srt;
+        if(typeof coverageShow==='function') await coverageShow();
+      }else{
+        const cur=(typeof coverageCurrentItem==='function')?coverageCurrentItem():null;
+        if(cur && String(cur.srt)===String(entry.srt) && typeof coverageHideLayer==='function'){
+          coverageHideLayer();
+        }
+      }
+    }catch(e){}
+  }
+
+  // 把已保存的 ui.items 显隐真正应用回地图（载入项目后调用一次）
+  function iaApplyAll(){
+    const byType=(t)=>{ const g=(iaState.groups||[]).find(x=>x.type===t); return g?g.items.filter(i=>!i.more):[]; };
+
+    byType('video').forEach(it=>{ try{ iaApply('video', it, iaShown(it)); }catch(e){} });
+
+    const mks=byType('marker');
+    if(mks.length){
+      try{
+        mks.forEach(it=>{ loadedUiState.markers[it.legacyKey]=iaShown(it); });
+        if(typeof drawProjectMarkers==='function') drawProjectMarkers();
+      }catch(e){}
+    }
+
+    const labs=byType('label');
+    if(labs.length){
+      try{
+        labs.forEach(it=>{
+          const l=(projectLabels||[]).find(x=>x.id===it.id);
+          if(l) l.hidden=!iaShown(it);
+        });
+        if(typeof renderLabels==='function') renderLabels();
+      }catch(e){}
+    }
+
+    const vecs=byType('vector');
+    if(vecs.length){
+      try{
+        vecs.forEach(it=>{ if(iaShown(it)) vectorHidden.delete(it.id); else vectorHidden.add(it.id); });
+        if(typeof renderVectors==='function') renderVectors();
+      }catch(e){}
+    }
+
+    // 单图层模型：最多显示一条；优先恢复「被标记为显示」的第一条
+    const orthos=byType('ortho');
+    if(orthos.length){
+      const want=orthos.find(it=>iaShown(it));
+      if(want) iaShowOrthoItem(want, true);
+      else if(typeof orthoLayer!=='undefined' && orthoLayer && typeof toggleOrtho==='function'){
+        try{ toggleOrtho(); }catch(e){}
+      }
+    }
+    const covs=byType('coverage');
+    if(covs.length){
+      const want=covs.find(it=>iaShown(it));
+      if(want) iaShowCoverageItem(want, true);
+    }
   }
 
   function iaSourcesByIndex(){ return iaState.sources||[]; }
@@ -14922,16 +15010,16 @@ function initTimelineSyncUI(){
             ed.addEventListener('click',()=>{ try{ it.edit(); }catch(e){} });
             row.appendChild(ed);
           }
-          const del=document.createElement('button');
-          del.type='button'; del.className='ia-act'; del.textContent='×';
-          del.title=it.remove?'从项目里移除（磁盘文件不动）':'从清单移除（不删磁盘文件）';
-          del.addEventListener('click',()=>{
-            if(it.remove){ it.remove(); return; }
-            if(it.itemId) iaState.items[it.itemId]=false;
-            iaApply(it.type, it, false);
-            iaPersist(); iaRenderContents();
-          });
-          row.appendChild(del);
+          // 只有**真的能从项目里移除**的条目（位置点 / 文字标注）才给 ×。
+          // 视频/照片/正射/覆盖/矢量没有移除语义：以前这里给的是「隐藏」，
+          // 提示却写「从项目里移除」，会让人以为内容被清掉（2026-10-25 修正）。
+          if(it.remove){
+            const del=document.createElement('button');
+            del.type='button'; del.className='ia-act'; del.textContent='×';
+            del.title='从项目里移除（磁盘文件不动）';
+            del.addEventListener('click',()=>{ try{ it.remove(); }catch(e){} });
+            row.appendChild(del);
+          }
           wrap.appendChild(row);
         });
       }
@@ -15011,6 +15099,7 @@ function initTimelineSyncUI(){
     try{ if(typeof orthoList!=='undefined' && !(orthoList||[]).length && typeof loadOrthoList==='function') await loadOrthoList(); }catch(e){}
     try{ if(typeof coverageItems!=='undefined' && !(coverageItems||[]).length && typeof coverageLoadList==='function') await coverageLoadList(); }catch(e){}
     iaBuild();
+    iaApplyAll();
     iaRender();
     try{ iaStartPolling(); }catch(e){}
     return iaState;
