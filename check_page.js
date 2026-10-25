@@ -615,10 +615,18 @@ console.log('\n=== 左栏项目流程（创建 / 导入 / 删除 / 建轨迹）=
   chk(idx['删除'] < idx['新建'], '× 在顶部（贴在项目下拉框右侧）');
   chk(idx['新建'] < idx['追加'], '「新建项目」在「导入数据」左边');
   {
-    const rowStart = html.indexOf('class="row proj-actions"');
-    const row = html.slice(rowStart, html.indexOf('</div>', rowStart));
+    // 2026-10-25（P2b）：左栏出现两套 proj-actions（新界面 iaNewProject / 旧界面
+    // createProjectBtn）。这里定位「包含 createProjectBtn 的那一处」。
+    const idxCreate = html.indexOf('id="createProjectBtn"');
+    const rowStart = html.lastIndexOf('class="row proj-actions"', idxCreate);
+    const row = rowStart >= 0 ? html.slice(rowStart, html.indexOf('</div>', rowStart)) : '';
     chk(/id="createProjectBtn"/.test(row) && /id="addFolderBtn"/.test(row),
-      '两个动作在同一排');
+      '两个动作在同一排（旧界面那组）');
+    // 新左栏的同一组动作也要在
+    const iaStart = html.indexOf('class="row proj-actions"');
+    const iaRow = iaStart >= 0 ? html.slice(iaStart, html.indexOf('</div>', iaStart)) : '';
+    chk(/id="iaNewProject"/.test(iaRow) && /id="iaImportData"/.test(iaRow),
+      '新左栏也有「新建项目 / 导入数据」两个动作');
     chk(/<button id="createProjectBtn"[^>]*>New project<\/button>/.test(html), '按钮叫「新建项目」');
     chk(/<button id="addFolderBtn"[^>]*>Import data<\/button>/.test(html),
       '按钮叫「导入数据」（原来叫「添加数据文件夹」）');

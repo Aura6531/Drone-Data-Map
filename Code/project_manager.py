@@ -781,8 +781,22 @@ def load_items_view(project):
         if entry.get("itemIdPending"):
             pending.append({"itemId": sid, "relative_path": rel, "source_path": source_path})
 
+    # 前端要按「某个文件」找 itemId，所以再给一份 files 映射
+    files = []
+    for folder, entry, source_path, rel in _iter_index_files(project):
+        files.append({
+            "source_id": folder.get("id"),
+            "source_name": folder.get("name"),
+            "source_path": source_path,
+            "relative_path": rel,
+            "name": entry.get("name") or os.path.basename(rel.replace("\\", "/")),
+            "itemId": entry.get("itemId"),
+            "pending": bool(entry.get("itemIdPending")),
+        })
+
     return {
         "items": items,
+        "files": files,
         "pending": pending,
         "itemsVersion": ui.get("itemsVersion", 0),
         "migrated_at": ui.get("itemsMigratedAt"),
@@ -9840,7 +9854,14 @@ class ProjectManagerHandler(
                 if not project:
                     raise ValueError("Project not found.")
 
-                project["ui"] = state
+                # 2026-10-25（P2b）：改成**合并写**。
+                # 旧行为是整体替换 ui —— 新左栏一旦写入 ui.items，任何旧代码调用
+                # 这个接口（只带 videos/ortho…）都会把 items/legacy/*Hidden 覆盖掉。
+                current = project.get("ui")
+                if not isinstance(current, dict):
+                    current = {}
+                current.update(state if isinstance(state, dict) else {})
+                project["ui"] = current
                 save_project(project_name, project)
                 json_response(self, {"success": True})
             except Exception as e:

@@ -1457,6 +1457,51 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
 
 .card-head .hdr-caret:hover{background:#f1f5f9}
 .card.collapsed .card-head .hdr-caret{transform:rotate(-90deg)}
+
+/* ================= P2 新左栏（项目 / 数据来源 / 内容） ================= */
+#legacyLeft[hidden]{display:none!important}
+.ia-meta{margin-top:10px;font-size:12px;color:#64748b;line-height:1.7}
+.ia-sources{display:flex;flex-direction:column;gap:6px;overflow:auto;max-height:280px}
+.ia-source{border:1px solid #e2e8f0;border-radius:8px;padding:6px 8px;background:#fff}
+.ia-source-top{display:flex;align-items:center;gap:6px}
+.ia-source-name{flex:1 1 auto;font-size:12px;font-weight:600;color:#334155;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ia-chip{font-size:10.5px;padding:1px 6px;border-radius:999px;white-space:nowrap}
+.ia-chip.ok{background:#dcfce7;color:#15803d}
+.ia-chip.warn{background:#fef3c7;color:#b45309}
+.ia-chip.err{background:#fee2e2;color:#b91c1c}
+.ia-chip.busy{background:#dbeafe;color:#1d4ed8}
+.ia-source-path{font-size:11px;color:#94a3b8;margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ia-source-act{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.ia-source-act button{height:22px;padding:0 8px;font-size:11px}
+.ia-filters{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;align-items:center}
+.ia-filters input[type=search]{flex:1 1 100%;height:28px;padding:0 8px;
+    border:1px solid #cbd5e1;border-radius:6px;font-size:12px}
+.ia-filters select{height:28px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;background:#fff}
+.ia-only-issues{display:flex;align-items:center;gap:4px;font-size:12px;color:#475569}
+.ia-contents{overflow:auto;min-height:0;flex:1 1 auto}
+.ia-group{border:1px solid #e2e8f0;border-radius:9px;margin-bottom:6px;overflow:hidden;background:#fff}
+.ia-ghead{display:flex;align-items:center;gap:6px;padding:4px 8px;background:#f8fafc;
+    font-size:12px;font-weight:700;color:#334155}
+.ia-ghead .ld-count{margin-left:auto;font-weight:500;color:#64748b;font-size:11px}
+.ia-row{display:flex;align-items:center;gap:6px;padding:3px 8px;font-size:12px}
+.ia-row:hover{background:#f1f5f9}
+.ia-row.off .ia-name{color:#94a3b8;text-decoration:line-through}
+.ia-name{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    cursor:pointer;color:#1d4ed8}
+.ia-name:hover{text-decoration:underline}
+.ia-src{flex:0 0 auto;font-size:10.5px;color:#64748b;background:#f1f5f9;border-radius:4px;padding:0 4px}
+.ia-status{flex:0 0 auto;font-size:10.5px}
+.ia-status.ok{color:#15803d}.ia-status.warn{color:#b45309}.ia-status.err{color:#b91c1c}
+.ia-act{width:20px;height:20px;padding:0;border:0;background:none;color:#94a3b8;
+    cursor:pointer;border-radius:4px;font-size:12px}
+.ia-act:hover{background:#eff6ff;color:#1d4ed8}
+.ia-empty{color:#94a3b8;font-size:12px;padding:10px;text-align:center}
+.ia-notice{margin:4px 0 6px;padding:6px 8px;border-radius:6px;font-size:11.5px;
+    background:#fef3c7;color:#92400e}
+.ia-more{display:block;width:100%;height:24px;font-size:11px;border:0;background:#f8fafc;color:#2563eb}
+
 </style>
 </head>
 <body>
@@ -1491,6 +1536,63 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
          标记点页左上写「项目数据 ›」（往右扫回来）。 -->
     <div class="col-body">
       <div class="left-view" id="viewProject">
+      <!-- ================= P2 新左栏：项目 → 数据来源 → 内容 ================= -->
+      <section class="card" id="iaProjectCard">
+        <div class="card-head">
+          <h2>项目</h2>
+          <span class="card-head-tools">
+            <button id="iaLegacyToggle" class="hdr-caret" type="button"
+                    title="临时回退到旧界面（仅供排查）">旧</button>
+          </span>
+        </div>
+        <label class="ctrl-label" for="iaProjectSelect">选择项目</label>
+        <div class="proj-row">
+          <select id="iaProjectSelect"></select>
+          <button id="iaProjectDelete" class="proj-del" type="button" title="从项目列表移除（不删数据）">×</button>
+        </div>
+        <div class="row proj-actions">
+          <button id="iaNewProject" type="button">新建项目</button>
+          <button id="iaImportData" class="secondary" type="button">导入数据</button>
+        </div>
+        <div id="iaProjectMeta" class="ia-meta"></div>
+      </section>
+
+      <section class="card" id="iaSourcesCard">
+        <div class="card-head">
+          <h2>数据来源</h2>
+          <span class="card-head-tools">
+            <button id="iaAddSource" class="tree-load-btn" type="button"
+                    title="登记本机任意位置的原始数据文件夹（可多选，只登记你选中的目录）">添加来源</button>
+            <button id="iaRefreshAll" class="hdr-caret" type="button" title="刷新全部来源的索引">⟳</button>
+          </span>
+        </div>
+        <div id="iaSourcesList" class="ia-sources"></div>
+      </section>
+
+      <section class="card card-fill" id="iaContentsCard">
+        <div class="card-head">
+          <h2>内容</h2>
+          <span id="iaContentCount" class="ld-count"></span>
+        </div>
+        <div class="ia-filters">
+          <input id="iaSearch" type="search" placeholder="搜索名称…">
+          <select id="iaTypeFilter">
+            <option value="">全部类型</option>
+            <option value="video">视频</option>
+            <option value="photo">照片</option>
+            <option value="ortho">正射影像</option>
+            <option value="vector">KML / 矢量</option>
+            <option value="coverage">覆盖图层</option>
+            <option value="marker">位置点</option>
+            <option value="label">文字标注</option>
+          </select>
+          <label class="ia-only-issues"><input id="iaOnlyIssues" type="checkbox">只看有问题</label>
+        </div>
+        <div id="iaNotice" class="ia-notice" style="display:none"></div>
+        <div id="iaContents" class="ia-contents"></div>
+      </section>
+      <!-- ================= 旧左栏（隐藏保留，作短期回退） ================= -->
+      <div id="legacyLeft" hidden>
       <section class="card" id="projCard">
         <!-- 第一段「项目」：选项目 / 新建 / 导入文件夹 / 删除项目 + 固定、收起 -->
         <!-- 标签开关与标题同一行：文字在左、按钮在右，不再单独占一行 -->
@@ -1604,6 +1706,7 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <div id="taskLog" class="task-log"></div>
         </div>
               </section>
+      </div><!-- /#legacyLeft -->
       </div><!-- /#viewProject -->
       
     </div>
@@ -14348,6 +14451,682 @@ function initTimelineSyncUI(){
   leafletWaited++;
   setTimeout(waitLeaflet,100);
 })();
+/* ============================================================
+   P2 新左栏：项目 → 数据来源 → 内容
+   · 显隐只写 ui.items[itemId]（legacy 键仅作只读兜底）
+   · 旧左栏 (#legacyLeft) 隐藏保留，可点「旧」临时回退
+   ============================================================ */
+(function(){
+  const iaState={
+    projectName:'', project:{}, sources:[], files:[], items:{}, ui:{},
+    pending:[], migrate:null, migrated:{}, groups:[], open:{},
+    search:'', type:'', onlyIssues:false, limit:{photos:60}, filesByRel:null, filesByName:null,
+  };
+  window.__IA=iaState;
+
+  function $(id){ return document.getElementById(id); }
+  function normRel(s){ return String(s||'').replace(/\\/g,'/').replace(/^\/+/,'').toLowerCase(); }
+  function baseName(s){ const a=String(s||'').replace(/\\/g,'/').split('/'); return a[a.length-1]||''; }
+  function currentName(){
+    try{ return (projectSelect&&projectSelect.value)||currentProjectName()||''; }catch(e){ return ''; }
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function iaBuildFileMaps(){
+    const byRel={}, byName={};
+    (iaState.files||[]).forEach(f=>{
+      const rel=normRel(f.relative_path); if(rel) byRel[rel]=f;
+      const nm=normRel(f.name||baseName(f.relative_path)); if(nm&&!byName[nm]) byName[nm]=f;
+    });
+    iaState.filesByRel=byRel; iaState.filesByName=byName;
+  }
+  function findFile(relOrName){
+    if(!iaState.filesByRel) iaBuildFileMaps();
+    const k=normRel(relOrName); if(!k) return null;
+    return iaState.filesByRel[k] || iaState.filesByName[normRel(baseName(k))] || null;
+  }
+
+  function legacyShown(kind, key){
+    const ui=iaState.ui||{};
+    const b=ui[kind];
+    if(b && Object.prototype.hasOwnProperty.call(b,key)) return b[key]!==false;
+    return undefined;
+  }
+  function iaShown(it){
+    if(it.itemId && Object.prototype.hasOwnProperty.call(iaState.items, it.itemId)){
+      return iaState.items[it.itemId] !== false;
+    }
+    const legacy = it.legacyKey ? legacyShown(it.legacyKind, it.legacyKey) : undefined;
+    if(legacy!==undefined) return legacy;
+    return true;
+  }
+
+  let saveTimer=0;
+  function iaPersist(){
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(async()=>{
+      try{
+        const ui=Object.assign({}, iaState.ui||{});
+        ui.items=iaState.items;
+        await jsonPost('/api/project/ui-state',{project_name:iaState.projectName, ui});
+      }catch(e){ try{ taskLog('保存显隐失败：'+e.message,'err'); }catch(_){} }
+    }, 250);
+  }
+
+  function iaApply(kind, it, shown){
+    try{
+      if(kind==='video'){
+        const tr=(loadedTracks||[]).find(x=>x && (x.name===it.title || (x.fileInfo&&x.fileInfo.relative_path===it.rel)));
+        if(tr&&tr.group){
+          if(shown){ if(!map.hasLayer(tr.group)) tr.group.addTo(layerGroup); }
+          else layerGroup.removeLayer(tr.group);
+        }
+        try{ loadedUiState.videos[it.legacyKey]=shown; }catch(e){}
+      }else if(kind==='marker'){
+        try{ loadedUiState.markers[it.legacyKey]=shown; }catch(e){}
+        try{ drawProjectMarkers(); }catch(e){}
+      }else if(kind==='label'){
+        try{ const l=projectLabels.find(x=>x.id===it.id); if(l) l.hidden=!shown; }catch(e){}
+        try{ renderLabels(); }catch(e){}
+      }else if(kind==='ortho'){
+        try{
+          if(shown) orthoHidden.delete(it.legacyKey); else orthoHidden.add(it.legacyKey);
+          loadedUiState.orthoHidden=[...orthoHidden];
+          if(typeof toggleOrtho==='function' && shown) toggleOrtho();
+        }catch(e){}
+      }else if(kind==='coverage'){
+        try{
+          if(shown){ coverageHidden.delete(it.legacyKey); if(typeof coverageShow==='function') coverageShow(); }
+          else { coverageHidden.add(it.legacyKey); if(typeof coverageHideLayer==='function') coverageHideLayer(); }
+          loadedUiState.coverageHidden=[...coverageHidden];
+        }catch(e){}
+      }else if(kind==='vector'){
+        try{
+          if(shown) vectorHidden.delete(it.id); else vectorHidden.add(it.id);
+          renderVectors();
+        }catch(e){}
+      }else if(kind==='photo'){
+        try{
+          if(shown){ photoHidden.delete(it.photoIndex); } else { photoHidden.add(it.photoIndex); }
+          if(typeof renderPhotoLayer==='function') renderPhotoLayer();
+        }catch(e){}
+      }
+    }catch(e){}
+  }
+
+  function iaSetShown(it){
+    const now=!iaShown(it);
+    if(it.itemId) iaState.items[it.itemId]=now;
+    iaApply(it.type, it, now);
+    iaPersist();
+    iaRender();
+  }
+
+  function iaSourcesByIndex(){ return iaState.sources||[]; }
+  function iaSourceName(folderIndex){
+    const s=iaSourcesByIndex()[Number(folderIndex)];
+    return s?s.name:'';
+  }
+  function iaSourceOfFile(f){ return f ? (f.source_name||'') : ''; }
+
+  function iaSrtMissing(folderIndex, geoRel){
+    try{
+      const f=iaState.project.folders && iaState.project.folders[Number(folderIndex)];
+      if(!f) return false;
+      const want=normRel(String(geoRel||'').replace(/\.3d\.geojson$/i,'.srt').replace(/\.geojson$/i,'.srt'));
+      return !(f.files||[]).some(x=>normRel(x.relative_path)===want);
+    }catch(e){ return false; }
+  }
+
+  function iaBuild(){
+    iaBuildFileMaps();
+    const groups=[];
+    const push=(key,label,type,items)=>{ if(items.length) groups.push({key,label,type,items}); };
+
+    const vids=[];
+    (typeof loadedTracks!=='undefined'?loadedTracks:[]).forEach(tr=>{
+      if(!tr) return;
+      const info=tr.fileInfo||{};
+      const rel=info.relative_path||tr.name||'';
+      const f=findFile(rel);
+      const idx=Number(info.folder_index);
+      const src=iaSourceName(idx)||iaSourceOfFile(f);
+      const missing=iaSrtMissing(idx, rel);
+      vids.push({
+        type:'video', title:tr.name||baseName(rel), rel, idx,
+        source:src, legacyKind:'videos', legacyKey:rel,
+        itemId:(f&&f.itemId)||('video:'+normRel(rel)),
+        status:missing?{text:'缺 SRT',level:'warn'}:{text:'已生成',level:'ok'},
+        go:()=>{ try{ const b=tr.group&&tr.group.getBounds&&tr.group.getBounds();
+          if(b&&b.isValid()) map.fitBounds(b,{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
+      });
+    });
+    push('video','视频','video',vids);
+
+    const pg=(typeof photoGroups!=='undefined'?photoGroups:[])||[];
+    const kinds={wide:[],zoom:[],pano:[]};
+    pg.forEach((g,i)=>{
+      let k='wide';
+      try{ k=photoKindOf(g); }catch(e){}
+      (kinds[k]||kinds.wide).push({g,i});
+    });
+    const KIND_LABEL={wide:'广角',zoom:'变焦',pano:'360 全景'};
+    ['wide','zoom','pano'].forEach(k=>{
+      const rows=[];
+      const list=kinds[k]||[];
+      const limit=iaState.limit.photos||60;
+      list.slice(0,limit).forEach(({g,i})=>{
+        const mems=(g.members||[]).map(m=>String((m&&m.name)||''));
+        const nice=mems.map(n=>n.replace(/\.[^.]+$/,'')).find(n=>n&&!/^DJI_/i.test(n));
+        const stamp=g.stamp?String(g.stamp).replace(/^(.{8})_(.{2})(.{2})(.{2})$/,'$1 $2:$3:$4'):'';
+        const title=(nice||stamp||'照片')+(g.count>1?(' x'+g.count):'');
+        const f=findFile(mems[0]||'');
+        rows.push({
+          type:'photo', title, source:iaSourceOfFile(f), photoIndex:i,
+          legacyKind:null, legacyKey:null,
+          itemId:(f&&f.itemId)||('photo:'+i),
+          status:{text:(g.count>1?('x'+g.count):''), level:'ok'},
+          go:()=>{ try{ map.setView([Number(g.lat),Number(g.lon)],Math.max(map.getZoom(),PHOTO_ZOOM)); selectPhotoGroup(i); }catch(e){} },
+        });
+      });
+      if(rows.length){
+        if(list.length>limit){
+          rows.push({type:'photo', more:true, title:`显示更多（还有 ${list.length-limit} 条）`, source:'', status:{text:'',level:'ok'}});
+        }
+        push('photo/'+k, '照片 · '+KIND_LABEL[k], 'photo', rows);
+      }
+    });
+
+    const orthos=[];
+    (typeof orthoList!=='undefined'?orthoList:[]).forEach(it=>{
+      if(!it||it.kind!=='ortho') return;
+      const key=it.name||it.file||'ortho';
+      const f=findFile(key);
+      orthos.push({type:'ortho', title:key, source:iaSourceOfFile(f),
+        legacyKind:'ortho', legacyKey:key, itemId:(f&&f.itemId)||('ortho:'+normRel(key)),
+        status:it.ready?{text:'就绪',level:'ok'}:{text:'未就绪',level:'warn'},
+        go:()=>{ try{ if(typeof toggleOrtho==='function') toggleOrtho(); }catch(e){} }});
+    });
+    push('ortho','正射影像','ortho',orthos);
+
+    const covs=[];
+    (typeof coverageItems!=='undefined'?coverageItems:[]).forEach(it=>{
+      if(!it||!it.built) return;
+      const key=it.srt||it.srt_name||'coverage';
+      const f=findFile(key);
+      covs.push({type:'coverage', title:it.video_name||it.srt_name||key, source:iaSourceOfFile(f),
+        legacyKind:'coverage', legacyKey:key, itemId:(f&&f.itemId)||('coverage:'+normRel(key)),
+        status:{text:'已构建',level:'ok'},
+        go:()=>{ try{ if(coverageLayer&&coverageLayer.getBounds) map.fitBounds(coverageLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} }});
+    });
+    push('coverage','覆盖图层','coverage',covs);
+
+    const vecs=[];
+    (typeof projectVectors!=='undefined'?projectVectors:[]).forEach(v=>{
+      if(!v) return;
+      vecs.push({type:'vector', title:v.name||v.id, source:'项目', id:v.id,
+        legacyKind:null, legacyKey:null, itemId:'vector:'+v.id,
+        status:{text:v.kind==='polygon'?'多边形':'多段线', level:'ok'},
+        go:()=>{ try{ const l=L.geoJSON(v.feature); map.fitBounds(l.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} }});
+    });
+    push('vector','KML / 矢量','vector',vecs);
+
+    const mks=[];
+    (typeof projectMarkers!=='undefined'?projectMarkers:[]).forEach(m=>{
+      if(!m) return;
+      mks.push({type:'marker', title:m.name||('marker-'+m.id), source:'项目', id:m.id,
+        legacyKind:'markers', legacyKey:m.name, itemId:'marker:'+m.id,
+        status:{text:m.category||'未分类', level:'ok'},
+        go:()=>{ try{ map.setView([Number(m.lat),Number(m.lng)],Math.max(map.getZoom(),17)); }catch(e){} },
+        edit:()=>{ try{ openMarkerEdit(m.id); }catch(e){} },
+        remove:()=>iaRemoveMarker(m) });
+    });
+    push('marker','位置点','marker',mks);
+
+    const labs=[];
+    (typeof projectLabels!=='undefined'?projectLabels:[]).forEach(l=>{
+      if(!l) return;
+      labs.push({type:'label', title:l.text||'(空)', source:'项目', id:l.id,
+        legacyKind:null, legacyKey:null, itemId:'label:'+l.id,
+        status:{text:l.bold?'加粗':'文字', level:'ok'},
+        go:()=>{ try{ map.setView([l.lat,l.lng],Math.max(map.getZoom(),17)); }catch(e){} },
+        edit:()=>iaEditLabel(l), remove:()=>iaRemoveLabel(l) });
+    });
+    push('label','文字标注','label',labs);
+
+    iaState.groups=groups;
+  }
+
+  async function iaRemoveMarker(m){
+    try{
+      const pick=await askRemoveOptions(m.name||'',{mode:'delete'});
+      if(!pick.ok) return;
+      projectMarkers=projectMarkers.filter(x=>x!==m);
+      try{ drawProjectMarkers(); }catch(e){}
+      await saveProjectMarkers();
+      iaReload();
+    }catch(e){}
+  }
+  function iaEditLabel(l){
+    if(typeof askText!=='function') return;
+    askText({title:'标注文字', value:l.text||''}).then(v=>{
+      if(v===null) return;
+      l.text=String(v).slice(0,200);
+      try{ saveLabels(); renderLabels(); }catch(e){}
+      iaReload();
+    });
+  }
+  function iaRemoveLabel(l){
+    try{
+      projectLabels=projectLabels.filter(x=>x!==l);
+      saveLabels(); renderLabels(); iaReload();
+      taskLog('已移除标注（磁盘文件不动）。','ok');
+    }catch(e){}
+  }
+
+  function iaRenderMeta(){
+    const el=$('iaProjectMeta'); if(!el) return;
+    const srcs=iaState.sources.length;
+    const total=iaState.groups.reduce((n,g)=>n+g.items.filter(i=>!i.more).length,0);
+    let latest='';
+    iaState.sources.forEach(s=>{ if(s.indexed_at && s.indexed_at>latest) latest=s.indexed_at; });
+    el.innerHTML=`来源 ${srcs} 个 · 内容 ${total} 项`+(latest?`<br>最近索引：${esc(latest.replace('T',' '))}`:'<br>尚未建立索引');
+  }
+
+  function iaStatusChip(s){
+    const st=s.index_status||'';
+    if(st==='busy') return {cls:'busy', text:'⟳ 扫描中'};
+    if(st==='missing') return {cls:'err', text:'⚠ 找不到目录'};
+    if(st==='denied') return {cls:'err', text:'⚠ 无权限'};
+    if(st==='timeout') return {cls:'warn', text:'⚠ 扫描超时'};
+    if(st==='partial') return {cls:'warn', text:'⚠ 部分不可读'};
+    if(!s.indexed_at) return {cls:'warn', text:'○ 未扫描'};
+    return s.exists?{cls:'ok', text:'✓ 在线'}:{cls:'err', text:'⚠ 找不到目录'};
+  }
+
+  function iaRenderSources(){
+    const box=$('iaSourcesList'); if(!box) return;
+    box.innerHTML='';
+    if(!iaState.sources.length){
+      box.innerHTML='<div class="ia-empty">还没有数据来源。点右上「添加来源」，选择本机任意位置的原始数据文件夹（可多选）。</div>';
+      return;
+    }
+    iaState.sources.forEach(s=>{
+      const chip=iaStatusChip(s);
+      const div=document.createElement('div');
+      div.className='ia-source';
+      const when=(s.indexed_at||'').replace('T',' ');
+      div.innerHTML=`<div class="ia-source-top">
+          <span class="ia-source-name" title="${esc(s.path)}">${esc(s.name||baseName(s.path))}</span>
+          <span class="ia-chip ${chip.cls}">${chip.text}</span>
+        </div>
+        <div class="ia-source-path" title="${esc(s.path)}">${esc(s.path)}</div>
+        <div class="ia-source-path">${Number(s.file_count||0)} 个文件${when?' · 索引于 '+esc(when):''}</div>`;
+      const acts=document.createElement('div');
+      acts.className='ia-source-act';
+      const mk=(text,title,fn)=>{
+        const b=document.createElement('button');
+        b.type='button'; b.textContent=text; b.title=title||text;
+        if(s.index_status==='busy') b.disabled=true;
+        b.addEventListener('click',fn);
+        acts.appendChild(b);
+      };
+      mk('刷新','重新扫描这个来源的索引',()=>iaReindex(s.id));
+      if(!s.exists || s.index_status==='missing' || s.index_status==='denied'){
+        mk('重新定位…','把它指向新的磁盘位置（先给匹配报告，确认后才改）',()=>iaRelocate(s));
+      }
+      mk('移除','只解除项目关联，磁盘文件不动',()=>iaDetach(s));
+      div.appendChild(acts);
+      box.appendChild(div);
+    });
+  }
+
+  function iaRenderContents(){
+    const box=$('iaContents'); if(!box) return;
+    box.innerHTML='';
+    const q=iaState.search.trim().toLowerCase();
+    const type=iaState.type;
+    let groups=iaState.groups
+      .map(g=>({key:g.key,label:g.label,type:g.type,
+        items:g.items.filter(it=>{
+          if(it.more) return !q && !iaState.onlyIssues && (!type || type==='photo');
+          if(type && it.type!==type) return false;
+          if(q && !(String(it.title).toLowerCase().includes(q)||String(it.source||'').toLowerCase().includes(q))) return false;
+          if(iaState.onlyIssues && it.status.level==='ok') return false;
+          return true;
+        })}))
+      .filter(g=>g.items.length);
+
+    const total=groups.reduce((n,g)=>n+g.items.filter(i=>!i.more).length,0);
+    const cnt=$('iaContentCount');
+    if(cnt) cnt.textContent=total?`(${total})`:'(0)';
+
+    if(!iaState.projectName){
+      box.innerHTML='<div class="ia-empty">还没有选择项目。</div>'; return;
+    }
+    if(!groups.length){
+      box.innerHTML='<div class="ia-empty">'+(iaState.search||iaState.type||iaState.onlyIssues
+        ?'没有符合条件的内容。':'这个项目还没有内容。先在上方「数据来源」里添加文件夹，再刷新索引。')+'</div>';
+      return;
+    }
+
+    groups.forEach(g=>{
+      const open=iaState.open[g.key]!==false;
+      const wrap=document.createElement('div');
+      wrap.className='ia-group';
+      const head=document.createElement('div');
+      head.className='ia-ghead';
+
+      const tog=document.createElement('button');
+      tog.type='button'; tog.className='ld-exp'+(open?' open':'');
+      tog.textContent=open?'−':'+';
+      tog.title=open?'收起':'展开';
+      tog.addEventListener('click',()=>{ iaState.open[g.key]=!open; iaRenderContents(); });
+      head.appendChild(tog);
+
+      const all=document.createElement('input');
+      all.type='checkbox'; all.className='tree-check';
+      const real=g.items.filter(i=>!i.more);
+      const shownCount=real.filter(i=>iaShown(i)).length;
+      all.checked=shownCount>0&&shownCount===real.length;
+      all.indeterminate=shownCount>0&&shownCount<real.length;
+      all.addEventListener('change',()=>{
+        real.forEach(it=>{
+          if(it.itemId) iaState.items[it.itemId]=all.checked;
+          iaApply(it.type, it, all.checked);
+        });
+        iaPersist(); iaRenderContents();
+      });
+      head.appendChild(all);
+
+      const label=document.createElement('span');
+      label.textContent=g.label;
+      head.appendChild(label);
+
+      const c=document.createElement('span');
+      c.className='ld-count';
+      c.textContent=`(${shownCount}/${real.length})`;
+      head.appendChild(c);
+      wrap.appendChild(head);
+
+      if(open){
+        g.items.forEach(it=>{
+          if(it.more){
+            const b=document.createElement('button');
+            b.type='button'; b.className='ia-more'; b.textContent=it.title;
+            b.addEventListener('click',()=>{ iaState.limit.photos=(iaState.limit.photos||60)+60; iaBuild(); iaRenderContents(); });
+            wrap.appendChild(b); return;
+          }
+          const row=document.createElement('div');
+          row.className='ia-row'+(iaShown(it)?'':' off');
+          const cb=document.createElement('input');
+          cb.type='checkbox'; cb.className='tree-check'; cb.checked=iaShown(it);
+          cb.addEventListener('change',()=>iaSetShown(it));
+          row.appendChild(cb);
+
+          const name=document.createElement('span');
+          name.className='ia-name'; name.textContent=it.title;
+          name.title='定位到这里';
+          name.addEventListener('click',()=>{ try{ it.go&&it.go(); }catch(e){} });
+          row.appendChild(name);
+
+          if(it.source){
+            const s=document.createElement('span');
+            s.className='ia-src'; s.textContent=it.source; s.title='来源：'+it.source;
+            row.appendChild(s);
+          }
+          if(it.status && it.status.text){
+            const st=document.createElement('span');
+            st.className='ia-status '+it.status.level;
+            st.textContent=it.status.text;
+            row.appendChild(st);
+          }
+
+          const loc=document.createElement('button');
+          loc.type='button'; loc.className='ia-act'; loc.textContent='⤢'; loc.title='定位';
+          loc.addEventListener('click',()=>{ try{ it.go&&it.go(); }catch(e){} });
+          row.appendChild(loc);
+
+          if(it.edit){
+            const ed=document.createElement('button');
+            ed.type='button'; ed.className='ia-act'; ed.textContent='✎'; ed.title='编辑';
+            ed.addEventListener('click',()=>{ try{ it.edit(); }catch(e){} });
+            row.appendChild(ed);
+          }
+          const del=document.createElement('button');
+          del.type='button'; del.className='ia-act'; del.textContent='×';
+          del.title=it.remove?'从项目里移除（磁盘文件不动）':'从清单移除（不删磁盘文件）';
+          del.addEventListener('click',()=>{
+            if(it.remove){ it.remove(); return; }
+            if(it.itemId) iaState.items[it.itemId]=false;
+            iaApply(it.type, it, false);
+            iaPersist(); iaRenderContents();
+          });
+          row.appendChild(del);
+          wrap.appendChild(row);
+        });
+      }
+      box.appendChild(wrap);
+    });
+  }
+
+  function iaRenderNotice(){
+    const el=$('iaNotice'); if(!el) return;
+    const m=iaState.migrate;
+    const pend=(iaState.pending||[]).length;
+    const msgs=[];
+    if(m && m.success && m.stats){
+      const st=m.stats;
+      if(st.migrated||st.legacy_saved){
+        msgs.push(`已迁移旧显隐：${st.migrated} 条`+(st.legacy_saved?`，歧义留档 ${st.legacy_saved} 条（可在 ui.legacy 找回）`:''));
+      }
+      if(st.pending) msgs.push(`${st.pending} 条旧状态待补迁（来源离线时保持原样）`);
+    }else if(m && m.error){
+      msgs.push('旧显隐迁移失败：'+m.error+'（仍按旧键只读兼容）');
+    }
+    if(pend) msgs.push(`${pend} 个文件身份待补（来源离线，插回盘后自动迁移）`);
+    el.style.display=msgs.length?'block':'none';
+    el.textContent=msgs.join(' · ');
+  }
+
+  function iaRender(){
+    iaRenderMeta(); iaRenderSources(); iaRenderNotice(); iaRenderContents();
+  }
+
+  async function iaReload(){
+    const name=currentName();
+    iaState.projectName=name;
+    if(!name){ iaState.project={}; iaState.sources=[]; iaState.items={}; iaState.groups=[]; iaRender(); return; }
+    if(!iaState.migrated[name]){
+      iaState.migrated[name]=true;
+      try{ iaState.migrate=await jsonPost('/api/project/ui-migrate',{project_name:name}); }
+      catch(e){ iaState.migrate={success:false,error:String(e&&e.message||e)}; }
+    }
+    try{
+      const [pj, src, ui]=await Promise.all([
+        api('/api/project/get?name='+encodeURIComponent(name)),
+        api('/api/project/sources?name='+encodeURIComponent(name)),
+        api('/api/project/ui-items?name='+encodeURIComponent(name)),
+      ]);
+      iaState.project=(pj&&pj.project)||{};
+      iaState.sources=(src&&src.sources)||[];
+      iaState.files=(ui&&ui.files)||[];
+      iaState.items=Object.assign({},(ui&&ui.items)||{});
+      iaState.pending=(ui&&ui.pending)||[];
+      iaState.ui=Object.assign({},iaState.project.ui||{});
+      iaState.filesByRel=null; iaState.filesByName=null;
+    }catch(e){
+      try{ taskLog('读取项目失败：'+e.message,'err'); }catch(_){}
+    }
+    try{ if(typeof photoGroups!=='undefined' && !photoGroups.length && typeof loadProjectPhotos==='function') await loadProjectPhotos(); }catch(e){}
+    try{ if(typeof orthoList!=='undefined' && !(orthoList||[]).length && typeof loadOrthoList==='function') await loadOrthoList(); }catch(e){}
+    try{ if(typeof coverageItems!=='undefined' && !(coverageItems||[]).length && typeof coverageLoadList==='function') await coverageLoadList(); }catch(e){}
+    iaBuild();
+    iaRender();
+    try{ iaStartPolling(); }catch(e){}
+    return iaState;
+  }
+
+  async function iaAddSource(){
+    try{
+      const picked=await api('/api/project/select-folder');
+      if(!picked || picked.cancelled) return;
+      const paths=picked.paths||[picked.path].filter(Boolean);
+      const name=currentName();
+      if(!name){ taskLog('请先选择或新建一个项目。','err'); return; }
+      for(const p of paths){
+        try{
+          const folder=await api('/api/project/scan-folder?path='+encodeURIComponent(p));
+          await jsonPost('/api/project/add-folder',{project_name:name,folder});
+          taskLog('已登记来源：'+((folder&&folder.name)||p),'ok');
+        }catch(e){ taskLog('登记失败：'+e.message,'err'); }
+      }
+      await iaReload();
+    }catch(e){ taskLog('添加来源失败：'+e.message,'err'); }
+  }
+
+  async function iaReindex(sourceId){
+    try{
+      const name=currentName();
+      taskLog('正在刷新索引…','info');
+      const r=await jsonPost('/api/project/source/reindex',{project_name:name, source_id:sourceId});
+      const s=r&&r.source;
+      if(s) taskLog(`索引完成：${s.status} · ${(s.counts&&s.counts.file_count)||0} 个文件 · ${s.duration_ms||0} ms`, s.status==='ok'?'ok':'err');
+      await iaReload();
+    }catch(e){ taskLog('刷新失败：'+e.message,'err'); }
+  }
+
+  async function iaReindexAll(){
+    try{
+      const name=currentName();
+      taskLog('正在刷新全部来源…','info');
+      const r=await jsonPost('/api/project/sources/reindex',{project_name:name});
+      taskLog(`刷新完成：${r.ok}/${r.count} 个来源正常`,'ok');
+      await iaReload();
+    }catch(e){ taskLog('刷新失败：'+e.message,'err'); }
+  }
+
+  async function iaRelocate(s){
+    try{
+      const picked=await api('/api/project/select-folder');
+      if(!picked || picked.cancelled) return;
+      const newPath=picked.path||(picked.paths||[])[0];
+      if(!newPath) return;
+      const name=currentName();
+      const pre=await jsonPost('/api/project/source/relocate',
+        {project_name:name, source_id:s.id, new_path:newPath, confirm:false});
+      const rep=(pre&&pre.report)||{};
+      const pct=Math.round((rep.match_ratio||0)*100);
+      const verdictTxt=rep.verdict==='same'?'内容一致':(rep.verdict==='likely'?'大致相同':'差异较大');
+      const detail=`匹配 ${rep.matched||0}/${rep.old_count||0}（${pct}%）· ${verdictTxt}`
+        +`\n缺失 ${(rep.missing||[]).length} 个 · 新增 ${(rep.added||[]).length} 个`;
+      const sure=await askConfirm({
+        title:`把来源「${s.name}」指向新位置？`,
+        hint:detail+'\n\n只改登记路径，不会移动/复制/删除任何文件。',
+        okText:'确认重定位',
+        danger:rep.verdict==='different',
+      });
+      if(!sure) return;
+      const done=await jsonPost('/api/project/source/relocate',
+        {project_name:name, source_id:s.id, new_path:newPath, confirm:true});
+      const d=(done&&done.report)||{};
+      taskLog(`已重定位：迁移显隐 ${d.ui_keys_migrated||0} 条，共用 ${d.ui_keys_shared||0} 条，未匹配 ${d.ui_keys_unmatched||0} 条`,'ok');
+      await iaReload();
+    }catch(e){ taskLog('重定位失败：'+e.message,'err'); }
+  }
+
+  async function iaDetach(s){
+    try{
+      const ok=await askConfirm({
+        title:`从项目里移除来源「${s.name}」？`,
+        hint:'只解除项目与这个文件夹的关联；磁盘上的原始文件一个都不会动。',
+        okText:'移除来源',
+      });
+      if(!ok) return;
+      const r=await jsonPost('/api/project/source/detach',{project_name:currentName(), source_id:s.id});
+      const res=(r&&r.result)||{};
+      taskLog(`已移除来源；保留 ${res.ui_items_kept||0} 条显隐状态（其中 ${res.ui_items_orphan||0} 条等待来源恢复）`,'ok');
+      await iaReload();
+    }catch(e){ taskLog('移除失败：'+e.message,'err'); }
+  }
+
+  async function iaFillProjects(){
+    try{
+      const d=await api('/api/project/list');
+      const names=((d&&d.projects)||[]).map(x=>x.name||x);
+      const sel=$('iaProjectSelect'); if(!sel) return;
+      const cur=(projectSelect&&projectSelect.value)||names[0]||'';
+      sel.innerHTML=names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+      if(cur) sel.value=cur;
+    }catch(e){}
+  }
+
+  function iaBind(){
+    const sel=$('iaProjectSelect');
+    if(sel) sel.addEventListener('change',()=>{
+      try{ projectSelect.value=sel.value; projectSelect.dispatchEvent(new Event('change')); }catch(e){}
+      setTimeout(iaReload,300);
+    });
+    const on=(id,ev,fn)=>{ const el=$(id); if(el&&!el.dataset.iaBound){ el.dataset.iaBound='1'; el.addEventListener(ev,fn); } };
+    on('iaAddSource','click',iaAddSource);
+    on('iaRefreshAll','click',iaReindexAll);
+    on('iaNewProject','click',()=>{ const b=document.getElementById('createProjectBtn'); if(b) b.click(); });
+    on('iaImportData','click',()=>{ const b=document.getElementById('addFolderBtn'); if(b) b.click(); });
+    on('iaProjectDelete','click',()=>{ const b=document.getElementById('deleteProjectBtn'); if(b) b.click(); });
+    on('iaSearch','input',()=>{ iaState.search=($('iaSearch').value||''); iaRenderContents(); });
+    on('iaTypeFilter','change',()=>{ iaState.type=($('iaTypeFilter').value||''); iaRenderContents(); });
+    on('iaOnlyIssues','change',()=>{ iaState.onlyIssues=!!$('iaOnlyIssues').checked; iaRenderContents(); });
+    on('iaLegacyToggle','click',()=>{
+      const legacy=$('legacyLeft');
+      const show=legacy&&legacy.hasAttribute('hidden');
+      if(legacy) legacy.toggleAttribute('hidden', !show);
+      ['iaProjectCard','iaSourcesCard','iaContentsCard'].forEach(id=>{
+        const el=$(id); if(el) el.toggleAttribute('hidden', show);
+      });
+      try{ taskLog(show?'已切到旧界面（临时回退）':'已回到新界面','info'); }catch(e){}
+      if(map) setTimeout(()=>map.invalidateSize(),120);
+    });
+    if(projectSelect && !projectSelect.dataset.iaWatch){
+      projectSelect.dataset.iaWatch='1';
+      projectSelect.addEventListener('change',()=>setTimeout(()=>{ iaFillProjects().then(()=>iaReload()); },400));
+    }
+  }
+
+  let iaPollTimer=0;
+  function iaStartPolling(){
+    if(iaPollTimer) return;
+    let ticks=0;
+    // 航迹/照片/正射/覆盖 是异步陆续到位的（旧版流程在跑），
+    // 数据量变了就重算一次内容清单（约 40 秒后停）。
+    iaPollTimer=setInterval(()=>{
+      ticks++;
+      try{
+        const n=((typeof loadedTracks!=='undefined'&&loadedTracks)?loadedTracks.length:0)
+          +((typeof photoGroups!=='undefined'&&photoGroups)?photoGroups.length:0)
+          +((typeof orthoList!=='undefined'&&orthoList)?orthoList.length:0)
+          +((typeof coverageItems!=='undefined'&&coverageItems)?coverageItems.length:0)
+          +((typeof projectMarkers!=='undefined'&&projectMarkers)?projectMarkers.length:0)
+          +((typeof projectLabels!=='undefined'&&projectLabels)?projectLabels.length:0);
+        if(n!==iaState._count){ iaState._count=n; iaReload(); }
+      }catch(e){}
+      if(ticks>=26){ clearInterval(iaPollTimer); iaPollTimer=0; }
+    },1500);
+  }
+
+  function iaInit(){
+    try{ iaBind(); }catch(e){ console.error('iaBind', e); }
+    try{ iaFillProjects(); }catch(e){}
+    iaStartPolling();
+    setTimeout(()=>iaReload(),1600);
+    setTimeout(()=>{ try{ iaReload(); }catch(e){} },5000);
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',iaInit);
+  else iaInit();
+
+  window.__iaReload=iaReload;
+})();
+
 </script>
 
 <!-- 时间轴不同步的弹框。
