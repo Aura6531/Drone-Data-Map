@@ -618,7 +618,7 @@ itemId = "it_" + sha1(normcase(realpath(绝对路径)))[:12]
 
 > 现状：数据层已就绪，**界面仍读旧键**（行为不变）；P2 切到 `ui.items` 时才需要前端改动。
 
-### 10.7 P1c 落地记录（2026-10-25）
+### 10.7 P1c 落地记录（2026-10-25，分 4 步提交）
 
 | 接口 | 行为 |
 |---|---|
@@ -639,6 +639,66 @@ itemId = "it_" + sha1(normcase(realpath(绝对路径)))[:12]
 全部刷新   ok 3/3，耗时 0.1 s
 重定位预检（指回原路径） verdict=same，matched 150/150，dry_run=true
 ```
+
+#### 10.7.1 接口返回语义（定稿）
+
+| 接口 | 返回 | 关键字段 |
+|---|---|---|
+| `POST /api/project/source/reindex` | `{success, source}` | `status` ∈ `ok / partial / missing / denied / timeout / busy`；`indexed_at`；`counts{file_count,mp4_count,srt_count,jpg_count,other_count,total_size}`；`warnings[{path,error}]`；`kept_uncertain` / `dropped` / `duration_ms` |
+| `POST /api/project/sources/reindex` | `{success, sources[], count, ok}` | 单个失败不影响其它；`ok` = 状态为 `ok` 的个数 |
+| `POST /api/project/source/relocate` | `{success, report}` | 预检：`dry_run:true`、`verdict` ∈ `same/likely/different`、`matched/missing/added/match_ratio`；确认：`dry_run:false` + `ui_keys_migrated / ui_keys_shared / ui_keys_unmatched / ui_orphans` |
+| `POST /api/project/source/detach` | `{success, result}` | `removed{id,name,path,file_count}`、`sources_left`、`ui_items_kept`、`ui_items_shared`、`ui_items_orphan`、`orphan_ids[]` |
+
+失败语义：
+
+- `missing`：根目录不存在 —— **保留旧索引**，只写 `index_status/index_warnings`；
+- `denied`：根目录 `PermissionError` —— 同上；
+- `timeout`：线程 `join(30s)` 超时 —— 同上，不写索引；
+- `partial`：部分子目录读不了 —— 那些前缀下的**旧条目保留**并标 `uncertain:true`，
+  完整扫描区域内确认消失的条目才删除（`dropped`）；有任何 warning 即 `partial`；
+- `busy`：同一 `source_id` 正在扫描 —— 直接返回，不排队、不重复扫。
+
+#### 10.7.2 实现要点（踩过的坑）
+
+1. **扫描根只来自 `project.folders[].path`**，接口不接受外部路径（安全边界）。
+2. **partial 合并**：`uncertain` 是相对前缀；前缀下的旧条目保留并标 `uncertain`，
+   避免"读不到就当成删了"。
+3. **relocate 要认两个旧身份**：`itemIdPrev`（load 时被换下来的原值）与 `itemId`（当前），
+   且**先处理 `itemId`**（新键已存在不覆盖，先处理者胜出）。只取一个会丢用户状态。
+4. **relocate 的删除阈值**：`_item_ref_count` 是在本来源旧条目已被替换之后算的，
+   所以计数就是「其它来源的引用数」→ 必须 `== 0` 才删，`>=1` 计入 `shared` 并保留旧键。
+5. **生成物关联**：`project.json` 的 `videos/tracks` 目前是空数组（前端动态构建），
+   生成物（`.srt / .geojson`）本身就是索引里的文件条目，因此"按相对路径迁移生成物关联"
+   等价于「迁移这些条目的 itemId + 其 ui 状态」，测试 5c 覆盖。
+6. **detach 不清理 ui.items**：全部来源移除后内容变 orphan（`orphan_ids`），状态保留。
+
+#### 10.7.3 测试记录
+
+`Code/test_source_ops.py`（已登记 `run_tests.js`）：
+
+```
+1) 正常扫描：status ok / 4 文件 / 写 indexed_at / 全部 it_ 身份
+2) 目录不存在：status missing，旧索引逐条保留
+2b) 并发：手工占锁后 reindex 返回 busy，锁释放后恢复 ok
+2c) partial：fake walker 让 locked/ 报 PermissionError，
+    locked/inside.mp4 保留且标 uncertain，stale.mp4 被移除，status=partial
+3) 批量：一个 ok 一个 missing，互不影响
+4) 预检：dry_run、matched/missing/added、路径未改、零写入（JSON 前后一致）
+5b) same / different 两种 verdict
+5c) 生成物 srt 与其显隐按相对路径迁到新 itemId
+5d) 重叠来源：旧 itemId 仍被引用 -> shared>=1 且旧键保留
+6) detach：只解除关联、磁盘文件不动、delete_generated 被拒
+7) 共享内容：移除一个来源后另一来源仍引用 -> 状态保留、不计 orphan
+8) 全部移除：ui.items 原样、shared_id 进 orphan_ids
+```
+
+全套：`node run_tests.js` → **40/40 全部通过**；`check_page.js` 全绿。
+
+#### 10.7.4 阶段状态
+
+- **P1c 完成**（4 个提交：step0 歧义留档 / step1 reindex / step2 relocate / step3 detach）。
+- **P2（左栏三段式改版）尚未开始**：本轮没有任何前端改动，也没有重打安装包。
+- 测试基线：**40/40**（此前文档里的 39/39 已过时：本轮新增 test_source_ops 等套件）。
 
 ### 10.8 P2 验收条件（新左栏接管前必须满足）
 
