@@ -1109,13 +1109,26 @@ def relocate_source(project, source_id, new_path, confirm=False, timeout_s=30):
         return report
 
     # ---- 生效：改路径 + 重扫 + 迁移 ui 状态 ----
-    old_id_by_rel = {}
+    # 每个文件可能有**两个**旧身份：itemIdPrev（load 时被换下来的原值）与 itemId。
+    # 用户显隐可能挂在任意一个上，所以两个都要迁，不能只取一个。
+    old_ids_by_rel = {}
     for entry in old_files:
         rel = _norm_rel_key(entry.get("relative_path") or entry.get("name"))
-        # 旧状态可能记在 itemIdPrev 上（load 时在线重算 itemId 会把原值挪过去）
-        sid = str(entry.get("itemIdPrev") or entry.get("itemId") or "")
-        if rel and sid:
-            old_id_by_rel[rel] = sid
+        if not rel:
+            continue
+        cands = []
+        # 顺序要紧：先当前 itemId（磁盘上的真实身份），再 itemIdPrev（被换下来的旧值）。
+        # 迁移时「新键已存在就不覆盖」，所以先处理的优先 —— 当前身份的值必须胜出。
+        for key in ("itemId", "itemIdPrev"):
+            sid = str(entry.get(key) or "")
+            if sid and sid not in cands:
+                cands.append(sid)
+        if cands:
+            old_ids_by_rel[rel] = cands
+
+    old_id_by_rel = {}
+    for rel, cands in old_ids_by_rel.items():
+        old_id_by_rel[rel] = cands
 
     folder["path"] = scanned.get("path") or new_abs
     folder["name"] = scanned.get("name") or folder.get("name")
@@ -1143,29 +1156,40 @@ def relocate_source(project, source_id, new_path, confirm=False, timeout_s=30):
     migrated = 0
     shared = 0
     unmatched = 0
-    for rel, old_id in old_id_by_rel.items():
+    for rel, old_ids in old_id_by_rel.items():
         new_id = new_id_by_rel.get(rel)
         if not new_id:
             unmatched += 1
             continue
-        if old_id == new_id:
-            continue
-        if old_id not in items:
-            continue
-        if new_id not in items:
-            items[new_id] = items[old_id]
-        if refs.get(old_id, 0) <= 1:
-            items.pop(old_id, None)
-            migrated += 1
-        else:
-            shared += 1
+        for old_id in old_ids:
+            if old_id == new_id or old_id not in items:
+                continue
+            if new_id not in items:
+                items[new_id] = items[old_id]
+            # 注意：此时本来源的旧条目已被新条目替换，refs 里的计数就是**其它来源**的引用数
+            if refs.get(old_id, 0) == 0:
+                items.pop(old_id, None)
+                migrated += 1
+            else:
+                shared += 1
 
     stats = migrate_ui_items(project)
+
+    # 找不到对应新文件的旧 UI 状态：**保留**并在 ui.orphanIds 里登记，供以后核对/清理。
+    ui.setdefault("orphanIds", [])
+    orphans = set(ui.get("orphanIds") or [])
+    refs2 = _item_ref_count(project)
+    for _rel, old_ids in old_id_by_rel.items():
+        for old_id in old_ids:
+            if old_id in items and refs2.get(old_id, 0) == 0:
+                orphans.add(old_id)
+    ui["orphanIds"] = sorted(orphans)
 
     report.update({
         "ui_keys_migrated": migrated,
         "ui_keys_shared": shared,
         "ui_keys_unmatched": unmatched,
+        "ui_orphans": len(ui["orphanIds"]),
         "legacy": stats,
         "indexed_at": folder.get("indexed_at"),
     })

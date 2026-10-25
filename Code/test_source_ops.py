@@ -196,6 +196,66 @@ try:
     chk("it_old_a" not in p["ui"]["items"], "旧 id 无人引用 -> 已删除")
     chk(rep2["ui_keys_migrated"] >= 2, "迁移计数 >= 2", str(rep2["ui_keys_migrated"]))
 
+    print("\n=== 5b) relocate 三种 verdict + 预检零写入 ===")
+    write_project()
+    p = pm.load_project(NAME)
+    snap = json.dumps(p, sort_keys=True, ensure_ascii=False)
+
+    # same：内容完全一致
+    same_dir = TMP / "同内容"
+    same_dir.mkdir(exist_ok=True)
+    for name in ("a.mp4", "b.mp4", "a.srt", "c.jpg"):
+        (same_dir / name).write_text("x", encoding="utf-8")
+    r_same = pm.relocate_source(p, "src_A", str(same_dir), confirm=False)
+    chk(r_same["verdict"] == "same", "内容一致 -> same", r_same["verdict"])
+
+    # different：几乎全不同
+    diff_dir = TMP / "另一套"
+    diff_dir.mkdir(exist_ok=True)
+    for name in ("x.mp4", "y.mp4", "z.mp4"):
+        (diff_dir / name).write_text("x", encoding="utf-8")
+    r_diff = pm.relocate_source(p, "src_A", str(diff_dir), confirm=False)
+    chk(r_diff["verdict"] == "different", "内容差异大 -> different", r_diff["verdict"])
+    chk(r_diff["match_ratio"] == 0, "匹配率 0", str(r_diff["match_ratio"]))
+
+    chk(json.dumps(p, sort_keys=True, ensure_ascii=False) == snap,
+        "两次预检都没有改动项目数据（零写入）")
+
+    print("\n=== 5c) 生成物（srt）与 ui 状态按相对路径一起迁移 ===")
+    write_project()
+    p = pm.load_project(NAME)
+    p["ui"].setdefault("items", {})
+    # 给 srt 一个显隐状态（它就是"生成物"之一）
+    srt_id = next(str(f.get("itemId")) for f in p["folders"][0]["files"]
+                  if str(f.get("relative_path")) == "a.srt")
+    p["ui"]["items"][srt_id] = False
+    rep = pm.relocate_source(p, "src_A", str(same_dir), confirm=True)
+    new_ids = {str(f["relative_path"]).replace("\\", "/"): f.get("itemId")
+               for f in p["folders"][0]["files"]}
+    srt_new = new_ids.get("a.srt")
+    chk(bool(srt_new), "新位置里仍认出 a.srt（生成物清单跟着走）", str(new_ids))
+    chk(p["ui"]["items"].get(srt_new) is False, "srt 的显隐迁到了新 itemId",
+        f"{srt_new} -> {p['ui']['items'].get(srt_new)}")
+    chk(rep["ui_keys_migrated"] >= 1, "迁移计数 >= 1", str(rep["ui_keys_migrated"]))
+
+    print("\n=== 5d) 重叠来源：另一个来源仍引用旧 itemId -> 新旧都保留 ===")
+    write_project()
+    # B 与 A 指向同一个旧目录（模拟父子/重叠来源共享文件）
+    p = pm.load_project(NAME)
+    p["folders"][1]["path"] = str(old_dir)
+    p["folders"][1]["files"] = [
+        dict(f) for f in p["folders"][0]["files"] if str(f.get("relative_path")) == "a.mp4"
+    ]
+    p["ui"].setdefault("items", {})
+    a_id_old = str(p["folders"][0]["files"][0].get("itemId"))
+    p["ui"]["items"][a_id_old] = False
+    rep2 = pm.relocate_source(p, "src_A", str(same_dir), confirm=True)
+    # B 仍指向旧目录，所以旧 itemId 还被引用 -> shared 计数 + 旧键保留
+    chk(rep2["ui_keys_shared"] >= 1,
+        "旧 itemId 仍被另一来源引用 -> 计入 shared", str(rep2["ui_keys_shared"]))
+    chk(a_id_old in p["ui"]["items"],
+        "旧键**不删**（没被移动的那个来源仍要用）", str(a_id_old))
+
     print("\n=== 6) detach：只解除关联，文件不动；删除生成物暂不支持 ===")
     write_project()
     p = pm.load_project(NAME)
