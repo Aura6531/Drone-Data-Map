@@ -106,6 +106,22 @@ try:
     chk("missing.srt" in (p["ui"].get("coverage") or {}), "映射不上的旧键保留（等来源恢复补迁）")
     chk(st["pending"] == 1, "pending 计数 = 1", str(st))
 
+    print("\n=== 1b) 歧义：同一相对路径对应两个不同真实文件 ===")
+    # 两个来源各有 v1.geojson（不同真实文件）-> 迁移时命中 2 个 itemId
+    chk(p["ui"].get("videos") and "v1.geojson" in p["ui"]["videos"],
+        "歧义时旧键保留（不因选了一个 id 就删）", str(p["ui"].get("videos")))
+    legacy = p["ui"].get("legacy") or {}
+    chk("videos:v1.geojson" in legacy,
+        "旧键原值存进 ui.legacy（供人工核对）", str(legacy))
+    chk(legacy.get("videos:v1.geojson") is False,
+        "ui.legacy 里的值与旧键一致", str(legacy.get("videos:v1.geojson")))
+    chk(st.get("legacy_saved", 0) >= 1, "统计里有 legacy_saved", str(st))
+
+    # 幂等：再迁一次，legacy 不应重复累加
+    st_again = pm.migrate_ui_items(p)
+    chk(len(p["ui"].get("legacy") or {}) == len(legacy),
+        "重复迁移不会重复写 ui.legacy", str(len(p["ui"].get("legacy") or {})))
+
     print("\n=== 2) 重新接盘：建出真实文件 -> ip_ 迁到 it_，状态不变 ===")
     (src_a / "v1.geojson").write_text("{}", encoding="utf-8")
     (src_a / "sub" / "r1.tif").write_text("x", encoding="utf-8")

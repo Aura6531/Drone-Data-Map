@@ -668,7 +668,13 @@ def migrate_ui_items(project):
         items = {}
         ui["items"] = items
 
-    stats = {"migrated": 0, "pending": 0, "ambiguous": 0,
+    # ui.legacy：歧义时不丢原始键值（人工核对用）
+    legacy = ui.setdefault("legacy", {})
+    if not isinstance(legacy, dict):
+        legacy = {}
+        ui["legacy"] = legacy
+
+    stats = {"migrated": 0, "pending": 0, "ambiguous": 0, "legacy_saved": 0,
              "shared": 0, "dropped": 0, "by_kind": {}}
 
     refs = _item_ref_count(project)
@@ -734,8 +740,21 @@ def migrate_ui_items(project):
                 kind_stat["pending"] += 1
                 continue
             if hits > 1:
+                # 歧义：同一相对路径对应多个真实文件。
+                # 按约定迁到选中的 itemId，但**原键原值必须留档**，且旧键不删。
                 stats["ambiguous"] += 1
                 kind_stat["ambiguous"] += 1
+                legacy_key_name = "%s:%s" % (kind, raw_key)
+                if legacy_key_name not in legacy:
+                    legacy[legacy_key_name] = value
+                    stats["legacy_saved"] += 1
+                kind_stat["legacy_saved"] = kind_stat.get("legacy_saved", 0) + 1
+                if sid not in items:
+                    items[sid] = value
+                stats["migrated"] += 1
+                kind_stat["migrated"] += 1
+                continue
+
             if sid not in items:
                 items[sid] = value
             bucket.pop(raw_key, None)
