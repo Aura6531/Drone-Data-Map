@@ -35,10 +35,12 @@ function extract(name) {
 
 const checkState = extract('iaGroupCheckState');
 const clickPlan = extract('iaGroupClickPlan');
+const convergePlan = extract('iaConvergePlan');
 
-console.log('\n=== 0) 两个纯函数能被取出来 ===');
+console.log('\n=== 0) 三个纯函数能被取出来 ===');
 chk(typeof checkState === 'function', 'iaGroupCheckState 可取并执行');
 chk(typeof clickPlan === 'function', 'iaGroupClickPlan 可取并执行');
+chk(typeof convergePlan === 'function', 'iaConvergePlan 可取并执行');
 
 if (typeof checkState === 'function' && typeof clickPlan === 'function') {
   const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
@@ -105,6 +107,39 @@ if (typeof checkState === 'function' && typeof clickPlan === 'function') {
     const st = checkState('photo', withMore, shownOf(['a']));
     chk(st.total === 2, '「显示更多」占位不参与总数', JSON.stringify(st));
     chk(st.shown === 1, '只统计真实行', JSON.stringify(st));
+  }
+}
+
+if (typeof convergePlan === 'function') {
+  console.log('\n=== 5) 收敛计数：只比较 ui.items 写入前后的值 ===');
+  {
+    const rows = [
+      { itemId: 'ortho:A', title: 'A' },
+      { itemId: 'ortho:B', title: 'B' },   // 已经是 false
+      { itemId: 'ortho:C', title: 'C' },   // 从来没写过
+      { itemId: 'ortho:K', title: 'K' },   // 本次要保留的那条
+      { title: '没有 itemId 的行' },
+    ];
+    const map = { 'ortho:A': true, 'ortho:B': false };
+    const keep = rows[3];
+    const ids = convergePlan(rows, map, keep);
+
+    chk(ids.length === 2, '只把「true / 未设置」的两条算作变更', JSON.stringify(ids));
+    chk(ids.includes('ortho:A'), 'A（原为 true）-> 需要写成 false');
+    chk(ids.includes('ortho:C'), 'C（从未设置）-> 需要写成 false');
+    chk(!ids.includes('ortho:B'), 'B（已经是 false）-> 不写、不计数', JSON.stringify(ids));
+    chk(!ids.includes('ortho:K'), '保留的那条不被动');
+    chk(!ids.includes(undefined), '没有 itemId 的行被跳过');
+
+    // 「已经是 false 但地图上还画着」的典型场景：map 里就是 false，
+    // 无论图层状态如何，都不应再触发保存。
+    const again = convergePlan([{ itemId: 'ortho:B' }], map, null);
+    chk(again.length === 0, '重复收敛（已是 false）返回 0 变更 —— 不会触发多余保存',
+      JSON.stringify(again));
+
+    // 空 map：全部视为"未设置"，都要写
+    const empty = convergePlan([{ itemId: 'x' }, { itemId: 'y' }], {}, null);
+    chk(empty.length === 2, '空 items 时全部需要写 false', JSON.stringify(empty));
   }
 }
 

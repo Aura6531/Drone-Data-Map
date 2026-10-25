@@ -14600,16 +14600,33 @@ function initTimelineSyncUI(){
   // 正射 / 覆盖在地图上是**单图层**：同一时刻只能显示一条。
   // 所以勾选一条时，必须把同组其它条显式置为 false ——
   // 否则会出现"地图只显示一张，列表里却有好几条都勾着"。
+  //
+  // 计数规则（2026-10-25 收尾）：只比较 **ui.items 写入前后的值**，
+  // 不用 iaShown() —— 后者会优先看地图实际图层，如果某条 items 已经是 false、
+  // 但旧流程暂时还把它画在图上，会被误判成"有变更"而触发一次不必要的保存。
+  /* iaConvergePlan:start
+     返回「需要被写成 false 的 itemId 列表」（纯函数，便于测试）。 */
+  function iaConvergePlan(items, itemsMap, keepIt){
+    const out=[];
+    (items||[]).forEach(it=>{
+      if(!it || it===keepIt || !it.itemId) return;
+      if(itemsMap && Object.prototype.hasOwnProperty.call(itemsMap, it.itemId)
+         && itemsMap[it.itemId]===false){
+        return;                     // 已经是 false：不写、不计数
+      }
+      out.push(it.itemId);
+    });
+    return out;
+  }
+  /* iaConvergePlan:end */
+
   function iaEnforceExclusive(type, keepIt){
     if(type!=='ortho' && type!=='coverage') return 0;
     const all=[];
     (iaState.groups||[]).forEach(g=>{ if(g.type===type) g.items.forEach(i=>{ if(!i.more) all.push(i); }); });
-    let changed=0;
-    all.forEach(it=>{
-      if(it===keepIt) return;
-      if(iaShown(it)){ if(it.itemId) iaState.items[it.itemId]=false; changed++; }
-    });
-    return changed;
+    const ids=iaConvergePlan(all, iaState.items, keepIt);
+    ids.forEach(id=>{ iaState.items[id]=false; });
+    return ids.length;
   }
 
   function iaSetShown(it){
