@@ -764,6 +764,35 @@ def migrate_ui_items(project):
         if not bucket:
             ui.pop(legacy_key, None)
 
+    # ---------- ③ 位置点：ui.markers[名字] -> items["marker:<id>"] ----------
+    # 按 **marker.id** 存，而不是名字 —— 改名不丢显隐。
+    marker_bucket = ui.get("markers")
+    if isinstance(marker_bucket, dict) and marker_bucket:
+        kind_stat = stats["by_kind"].setdefault("markers", {"migrated": 0, "pending": 0})
+        by_name = {}
+        for m in (project.get("markers") or []):
+            if isinstance(m, dict) and m.get("name") and m.get("id"):
+                by_name[str(m.get("name"))] = m
+
+        for raw_name in list(marker_bucket.keys()):
+            value = marker_bucket[raw_name]
+            m = by_name.get(str(raw_name))
+            if not m:
+                # 名字对不上：保留旧键，等以后补迁（不能默默丢）
+                stats["pending"] += 1
+                kind_stat["pending"] += 1
+                continue
+            key = "marker:%s" % m.get("id")
+            if key not in items:
+                items[key] = value
+            marker_bucket.pop(raw_name, None)
+            stats["migrated"] += 1
+            stats["dropped"] += 1
+            kind_stat["migrated"] += 1
+
+        if not marker_bucket:
+            ui.pop("markers", None)
+
     ui["itemsVersion"] = max(1, int(ui.get("itemsVersion") or 0))
     ui["itemsMigratedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
 

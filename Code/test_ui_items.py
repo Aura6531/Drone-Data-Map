@@ -122,6 +122,35 @@ try:
     chk(len(p["ui"].get("legacy") or {}) == len(legacy),
         "重复迁移不会重复写 ui.legacy", str(len(p["ui"].get("legacy") or {})))
 
+    print("\n=== 1c) 位置点：ui.markers[名字] -> items[marker:<id>] ===")
+    p = pm.load_project(NAME)
+    p["markers"] = [
+        {"id": "mk1", "name": "东城南站", "lat": 23.0, "lng": 113.7},
+        {"id": "mk2", "name": "桥-1", "lat": 23.1, "lng": 113.8},
+    ]
+    p["ui"]["markers"] = {"东城南站": False, "已经改名的点": False}
+    st_m = pm.migrate_ui_items(p)
+    items_m = p["ui"]["items"]
+    chk(items_m.get("marker:mk1") is False,
+        "按 marker.id 迁到 items（改名不丢）", str({k: v for k, v in items_m.items() if k.startswith("marker:")}))
+    left = p["ui"].get("markers") or {}
+    chk("已经改名的点" in left,
+        "名字匹配不上的旧键保留（等以后补迁）", str(left))
+    chk(st_m.get("pending", 0) >= 1, "pending 计数 >= 1", str(st_m.get("pending")))
+
+    print("\n=== 1d) Hidden 黑名单与 photos 字段必须原样保留 ===")
+    p["ui"]["photosHidden"] = True
+    p["ui"]["orthoHidden"] = ["result.tif"]
+    p["ui"]["coverageHidden"] = ["a.srt"]
+    p["ui"]["photos"] = {}
+    before_hidden = (p["ui"]["photosHidden"], list(p["ui"]["orthoHidden"]),
+                     list(p["ui"]["coverageHidden"]))
+    pm.migrate_ui_items(p)
+    after_hidden = (p["ui"].get("photosHidden"), list(p["ui"].get("orthoHidden") or []),
+                    list(p["ui"].get("coverageHidden") or []))
+    chk(before_hidden == after_hidden, "迁移不会动 Hidden 黑名单", str(after_hidden))
+    chk("photos" in p["ui"], "历史 photos 字段保留（即便为空）")
+
     print("\n=== 2) 重新接盘：建出真实文件 -> ip_ 迁到 it_，状态不变 ===")
     (src_a / "v1.geojson").write_text("{}", encoding="utf-8")
     (src_a / "sub" / "r1.tif").write_text("x", encoding="utf-8")
@@ -194,6 +223,33 @@ try:
     after = {p.name: p.stat().st_size for p in [src_a / "v1.geojson", src_a / "sub" / "r1.tif"]}
     chk(before == after and all(p.exists() for p in [src_a / "v1.geojson", src_a / "sub" / "r1.tif"]),
         "迁移前后磁盘文件原样（大小、存在性都不变）", str(after))
+
+    print("\n=== 9) ui-state 合并写：只带 legacy 键也不会覆盖 items / legacy / Hidden ===")
+    pdir = pm.PROJECT_DIR / NAME
+    cfg = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
+    cfg["ui"] = {
+        "items": {"it_keep": False},
+        "legacy": {"videos:x.geojson": False},
+        "photosHidden": True,
+        "orthoHidden": ["r.tif"],
+        "videos": {},
+    }
+    (pdir / "project.json").write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+
+    loaded = pm.load_project(NAME)
+    # 模拟旧代码只提交 videos（没有 items）
+    current = loaded.get("ui") or {}
+    current.update({"videos": {"a.mp4": False}})
+    loaded["ui"] = current
+    pm.save_project(NAME, loaded)
+
+    saved = json.loads((pdir / "project.json").read_text(encoding="utf-8"))["ui"]
+    chk(saved.get("items", {}).get("it_keep") is False,
+        "items 未被旧接口覆盖", str(saved.get("items")))
+    chk("videos:x.geojson" in (saved.get("legacy") or {}), "ui.legacy 仍在")
+    chk(saved.get("photosHidden") is True and saved.get("orthoHidden") == ["r.tif"],
+        "Hidden 黑名单仍在", str({k: saved.get(k) for k in ("photosHidden", "orthoHidden")}))
+    chk(saved.get("videos") == {"a.mp4": False}, "新写入的 legacy 键也进来了")
 
 finally:
     pm.PROJECT_DIR = real_project_dir
