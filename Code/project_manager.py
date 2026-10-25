@@ -770,6 +770,276 @@ def load_items_view(project):
     }
 
 
+
+def find_source(project, source_id):
+    """按 sourceId 找来源，返回 (下标, 来源字典)；找不到返回 (None, None)。"""
+    want = str(source_id or "").strip()
+    if not want:
+        return None, None
+    for idx, folder in enumerate(project.get("folders") or []):
+        if isinstance(folder, dict) and str(folder.get("id") or "") == want:
+            return idx, folder
+    return None, None
+
+
+def _index_stamp():
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def reindex_source(project, source_id, timeout_s=30):
+    """重新扫描一个来源，把清单与计数写回 project（内存）。
+
+    失败（找不到 / 无权限 / 超时）时**保留旧索引**，只记状态 —— 插错盘不会清空清单。
+    返回 {id,name,path,status,indexed_at,counts,warnings,duration_ms}。
+    """
+    _idx, folder = find_source(project, source_id)
+    if folder is None:
+        raise ValueError("Source not found.")
+
+    path = str(folder.get("path") or "")
+    started = time.time()
+
+    box = {}
+
+    def _work():
+        try:
+            box["data"] = scan_folder(path)
+        except BaseException as exc:          # noqa: BLE001 - 交给下面分类
+            box["error"] = exc
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    worker.join(timeout_s)
+
+    status = "ok"
+    warnings = []
+
+    if worker.is_alive():
+        status = "timeout"
+        warnings.append({"path": path, "error": "scan timed out"})
+    elif "error" in box:
+        exc = box["error"]
+        if isinstance(exc, FileNotFoundError):
+            status = "missing"
+        elif isinstance(exc, PermissionError):
+            status = "denied"
+        else:
+            status = "partial"
+        warnings.append({"path": path, "error": str(exc) or type(exc).__name__})
+    else:
+        scanned = box["data"]
+        folder["name"] = scanned.get("name") or folder.get("name")
+        folder["path"] = scanned.get("path") or path
+        for key in ("file_count", "mp4_count", "srt_count", "jpg_count",
+                    "other_count", "total_size"):
+            folder[key] = scanned.get(key, 0)
+        folder["files"] = scanned.get("files") or []
+        folder["indexed_at"] = _index_stamp()
+        ensure_item_ids(project)
+
+    folder["index_status"] = status
+    folder["index_warnings"] = warnings
+
+    counts = {k: int(folder.get(k) or 0) for k in
+              ("file_count", "mp4_count", "srt_count", "jpg_count", "other_count", "total_size")}
+
+    return {
+        "id": folder.get("id"),
+        "name": folder.get("name"),
+        "path": folder.get("path"),
+        "status": status,
+        "indexed_at": folder.get("indexed_at"),
+        "counts": counts,
+        "warnings": warnings,
+        "duration_ms": int((time.time() - started) * 1000),
+    }
+
+
+def reindex_sources(project, source_ids=None):
+    """刷新多个来源；source_ids 省略 = 全部。逐个执行，单个失败不影响其它。"""
+    folders = project.get("folders") or []
+    if source_ids:
+        wanted = {str(x) for x in source_ids}
+        targets = [f for f in folders if isinstance(f, dict) and str(f.get("id")) in wanted]
+    else:
+        targets = [f for f in folders if isinstance(f, dict)]
+
+    results = []
+    for folder in targets:
+        try:
+            results.append(reindex_source(project, folder.get("id")))
+        except Exception as exc:
+            results.append({
+                "id": folder.get("id"), "name": folder.get("name"),
+                "path": folder.get("path"), "status": "error",
+                "error": str(exc), "counts": {}, "warnings": [],
+            })
+    return results
+
+
+def _norm_rel_key(text):
+    return str(text or "").replace("\\", "/").lstrip("/").casefold()
+
+
+def relocate_source(project, source_id, new_path, confirm=False, timeout_s=30):
+    """把来源指到新路径。
+
+    · confirm=False（默认）：只做**预检**，返回相对路径集合的匹配报告，不写任何东西；
+    · confirm=True：才真正改 path/name、重扫索引，并把 ui 状态按相对路径迁移。
+
+    全程不移动 / 不复制 / 不删除磁盘上的任何文件。
+    """
+    _idx, folder = find_source(project, source_id)
+    if folder is None:
+        raise ValueError("Source not found.")
+
+    raw_new = str(new_path or "").strip().strip('"')
+    if not raw_new:
+        raise ValueError("New path is empty.")
+    if not os.path.isdir(raw_new):
+        raise ValueError("The new path does not exist or is not a folder.")
+
+    new_abs = os.path.abspath(raw_new)
+    old_files = [f for f in (folder.get("files") or []) if isinstance(f, dict)]
+    old_rels = [_norm_rel_key(f.get("relative_path") or f.get("name")) for f in old_files]
+    old_rel_set = {r for r in old_rels if r}
+
+    scanned = scan_folder(new_abs)
+    new_files = [f for f in (scanned.get("files") or []) if isinstance(f, dict)]
+    new_rel_set = {_norm_rel_key(f.get("relative_path") or f.get("name"))
+                   for f in new_files}
+    new_rel_set.discard("")
+
+    matched = sorted(old_rel_set & new_rel_set)
+    missing = sorted(old_rel_set - new_rel_set)
+    added = sorted(new_rel_set - old_rel_set)
+
+    base = len(old_rel_set) or 1
+    ratio = len(matched) / base
+
+    if ratio >= 0.90 and len(added) <= max(1, int(0.10 * base)):
+        verdict = "same"
+    elif ratio >= 0.50:
+        verdict = "likely"
+    else:
+        verdict = "different"
+
+    report = {
+        "id": folder.get("id"),
+        "old_path": folder.get("path"),
+        "new_path": new_abs,
+        "old_count": len(old_rel_set),
+        "new_count": len(new_rel_set),
+        "matched": len(matched),
+        "missing": missing[:50],
+        "added": added[:50],
+        "match_ratio": round(ratio, 4),
+        "verdict": verdict,
+        "dry_run": not confirm,
+    }
+
+    if not confirm:
+        return report
+
+    # ---- 生效：改路径 + 重扫 + 迁移 ui 状态 ----
+    old_id_by_rel = {}
+    for entry in old_files:
+        rel = _norm_rel_key(entry.get("relative_path") or entry.get("name"))
+        # 旧状态可能记在 itemIdPrev 上（load 时在线重算 itemId 会把原值挪过去）
+        sid = str(entry.get("itemIdPrev") or entry.get("itemId") or "")
+        if rel and sid:
+            old_id_by_rel[rel] = sid
+
+    folder["path"] = scanned.get("path") or new_abs
+    folder["name"] = scanned.get("name") or folder.get("name")
+    for key in ("file_count", "mp4_count", "srt_count", "jpg_count",
+                "other_count", "total_size"):
+        folder[key] = scanned.get(key, 0)
+    folder["files"] = new_files
+    folder["indexed_at"] = _index_stamp()
+    folder["index_status"] = "ok"
+    folder["index_warnings"] = []
+
+    ensure_item_ids(project)
+
+    new_id_by_rel = {}
+    for entry in folder.get("files") or []:
+        rel = _norm_rel_key(entry.get("relative_path") or entry.get("name"))
+        sid = str(entry.get("itemId") or "")
+        if rel and sid:
+            new_id_by_rel[rel] = sid
+
+    ui = project.setdefault("ui", {})
+    items = ui.setdefault("items", {}) if isinstance(ui, dict) else {}
+    refs = _item_ref_count(project)
+
+    migrated = 0
+    shared = 0
+    unmatched = 0
+    for rel, old_id in old_id_by_rel.items():
+        new_id = new_id_by_rel.get(rel)
+        if not new_id:
+            unmatched += 1
+            continue
+        if old_id == new_id:
+            continue
+        if old_id not in items:
+            continue
+        if new_id not in items:
+            items[new_id] = items[old_id]
+        if refs.get(old_id, 0) <= 1:
+            items.pop(old_id, None)
+            migrated += 1
+        else:
+            shared += 1
+
+    stats = migrate_ui_items(project)
+
+    report.update({
+        "ui_keys_migrated": migrated,
+        "ui_keys_shared": shared,
+        "ui_keys_unmatched": unmatched,
+        "legacy": stats,
+        "indexed_at": folder.get("indexed_at"),
+    })
+    return report
+
+
+def detach_source(project, source_id, delete_generated=False):
+    """把来源从项目里移除（解除关联）。
+
+    · 默认**只解除关联**，磁盘文件一个都不动；
+    · delete_generated=True 暂不支持（等有"删除文件预览"再加，见方案 §9 决策 3）。
+    """
+    idx, folder = find_source(project, source_id)
+    if folder is None:
+        raise ValueError("Source not found.")
+    if delete_generated:
+        raise ValueError("Deleting generated files is not enabled yet "
+                         "(it will come with a preview list).")
+
+    removed = {
+        "id": folder.get("id"),
+        "name": folder.get("name"),
+        "path": folder.get("path"),
+        "file_count": int(folder.get("file_count") or 0),
+    }
+
+    (project.get("folders") or []).pop(idx)
+
+    refs = _item_ref_count(project)
+    ui = project.get("ui") or {}
+    items = ui.get("items") or {}
+    orphans = [k for k in items if k not in refs]
+
+    return {
+        "removed": removed,
+        "sources_left": len(project.get("folders") or []),
+        "ui_items_kept": len(items),
+        "ui_items_orphan": len(orphans),
+    }
+
+
 def load_project(project_name):
 
     error = validate_project_name(project_name)
@@ -9277,6 +9547,74 @@ class ProjectManagerHandler(
                 json_response(self, {"success": True, "deleted": deleted, "failed": failed})
             except Exception as e:
                 json_response(self, {"success": False, "error": str(e)}, status=400)
+            return
+
+        if path == "/api/project/source/reindex":
+            try:
+                body = self.read_json()
+                name = str(body.get("project_name") or "").strip()
+                sid = str(body.get("source_id") or "").strip()
+                project = load_project(name) if name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                if not sid:
+                    raise ValueError("source_id is required.")
+                result = reindex_source(project, sid)
+                save_project(name, project)
+                json_response(self, {"success": True, "source": result})
+            except Exception as exc:
+                json_response(self, {"success": False, "error": str(exc)}, 400)
+            return
+
+        if path == "/api/project/sources/reindex":
+            try:
+                body = self.read_json()
+                name = str(body.get("project_name") or "").strip()
+                ids = body.get("source_ids") or None
+                project = load_project(name) if name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                results = reindex_sources(project, ids)
+                save_project(name, project)
+                ok_count = sum(1 for r in results if r.get("status") == "ok")
+                json_response(self, {"success": True, "sources": results,
+                                     "count": len(results), "ok": ok_count})
+            except Exception as exc:
+                json_response(self, {"success": False, "error": str(exc)}, 400)
+            return
+
+        if path == "/api/project/source/relocate":
+            try:
+                body = self.read_json()
+                name = str(body.get("project_name") or "").strip()
+                sid = str(body.get("source_id") or "").strip()
+                new_path = body.get("new_path") or ""
+                confirm = bool(body.get("confirm"))
+                project = load_project(name) if name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                report = relocate_source(project, sid, new_path, confirm=confirm)
+                if confirm:
+                    save_project(name, project)
+                json_response(self, {"success": True, "report": report})
+            except Exception as exc:
+                json_response(self, {"success": False, "error": str(exc)}, 400)
+            return
+
+        if path == "/api/project/source/detach":
+            try:
+                body = self.read_json()
+                name = str(body.get("project_name") or "").strip()
+                sid = str(body.get("source_id") or "").strip()
+                delete_generated = bool(body.get("delete_generated"))
+                project = load_project(name) if name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                result = detach_source(project, sid, delete_generated=delete_generated)
+                save_project(name, project)
+                json_response(self, {"success": True, "result": result})
+            except Exception as exc:
+                json_response(self, {"success": False, "error": str(exc)}, 400)
             return
 
         if path == "/api/project/ui-migrate":

@@ -259,7 +259,7 @@
 | P3 | 索引化：`tree` / `geojson-list` 读索引，加"刷新索引"与过期判定 | 大目录不再每次扫盘 | 中 |
 | P4 | 清理：删除旧「数据文件/已加载」重复入口、迁移日志与测试 | 单一数据入口 | 低 |
 
-> 每阶段都必须满足：`node run_tests.js` **不退化为 38/38 以下**、`check_page.js` 全绿、
+> 每阶段都必须满足：`node run_tests.js` **不退化为 40/40 以下**、`check_page.js` 全绿、
 > `project.json` 双向兼容（旧项目能读，新项目旧版也能读）。
 
 ### 进度
@@ -269,7 +269,7 @@
 | **P0** | ✅ 完成 | `661d8e7` | 方案 + 五个实现边界（reindex / relocate / 重叠 / 过期模型 / 基线） |
 | **P1a** | ✅ 完成 | `a1e4672` | `source_id_for_path()` / `ensure_source_ids()`（内存补、稳定推导）、`save_project()` 原子写、`GET /api/project/sources`、`test_sources.py` |
 | **P1b** | ✅ 完成 | `edfd049` | 内容身份 `itemId`（`it_` 真实 / `ip_` 临时）+ `ui.items` 迁移；`GET /api/project/ui-items`、`POST /api/project/ui-migrate`；`test_ui_items.py` |
-| **P1c** | ⬜ 待做 | — | `POST /source/reindex`（单/全）、`POST /source/relocate`（预检 + 确认）、`POST /source/detach`（默认只解除关联） |
+| **P1c** | ✅ 完成 | 见下 | `POST /source/reindex`（单/全）、`POST /source/relocate`（预检 + 确认）、`POST /source/detach`（默认只解除关联）；`test_source_ops.py` |
 | **P2** | ⬜ 待做 | — | 左栏三段式上线；新界面接管流程，旧 DOM 隐藏保留（不同时展示） |
 | **P3** | ⬜ 待做 | — | 索引化：`indexed_at` + 读索引，去掉每次 `rglob`；接入过期模型 |
 | **P4** | ⬜ 待做 | — | 清理旧 DOM / 旧代码（等新界面通过实际流程验证后） |
@@ -454,8 +454,8 @@ un_tests.js |
 
 ```
 命令：node run_tests.js            （PYTHON=DSH 自带 python）
-套件：38 套
-结果：38 通过 / 0 失败
+套件：40 套
+结果：40 通过 / 0 失败
 ```
 
 复核前的状态是 **36/38**，两套失败都不是环境问题，已逐个查清并修复：
@@ -465,7 +465,7 @@ un_tests.js |
 | `test_photos.js` | 5 组断言仍在找**已删除**的 `#photoLayerBtn`、`#loadAllBtn`、`#filterDate/#filterType`、`#markerCard`、`photoLayerCount`；遥测实测写死 `folder_index: 0`（加了 360 照片目录后视频变成 index 2） | **断言过期** | 改写成验证现行界面：左栏「已加载 → 照片」勾选 = 唯一开关、点名称 = 打开并缩放到全部照片、`__photoToggle` 代码入口；遥测改为先查 `geojson-list` + `tree` 找到真实 MP4 再拼参数 |
 | `test_report.py` | 抽帧样本取 `videos[0]`（字母序第一支）——Data/ 现在多了 360 全景转码 `2048×1024`，于是「原分辨率 ≥1080p」「A4 会缩小」「标志 ≈1.55 倍」三条假设全部失效 | **测试选片假设过期**（产品行为正确：full 不缩放；A4 一律缩放到 2480 宽，含有意放大） | 样本优先 `*_V.MP4`（3840×2160）；压缩档高度改成**精确等比**；标志比例对着「full 宽 / 2480」理论值（±0.1）；另补一条明确断言「窄素材进 A4 也会被放大到 2480」 |
 
-> 结论：**基线 = 38/38**。后续任何改动都不允许低于这个数字；
+> 结论：**基线 = 40/40**。后续任何改动都不允许低于这个数字；
 > `check_page.js` 必须全绿。
 
 ---
@@ -617,3 +617,61 @@ itemId = "it_" + sha1(normcase(realpath(绝对路径)))[:12]
 | 实测 | 东莞地铁：251 个文件全部 `it_`；原有 ui 桶逐项一致；11 标记点 / 2 标注不受影响 |
 
 > 现状：数据层已就绪，**界面仍读旧键**（行为不变）；P2 切到 `ui.items` 时才需要前端改动。
+
+### 10.7 P1c 落地记录（2026-10-25）
+
+| 接口 | 行为 |
+|---|---|
+| `POST /api/project/source/reindex` | 扫一个来源；成功写清单 + `indexed_at` + `index_status`；`missing/denied/timeout` 时**保留旧索引**只改状态 |
+| `POST /api/project/sources/reindex` | 批量（`source_ids` 省略 = 全部），逐个跑、单个失败不影响其它，返回 `ok/total` |
+| `POST /api/project/source/relocate` | `confirm:false` 只出预检报告（`matched/missing/added/match_ratio/verdict`）；`confirm:true` 才改路径、重扫、按相对路径迁移 `ui.items`（旧键仅在无其它来源引用时删）；返回 `ui_keys_migrated / ui_keys_shared / ui_keys_unmatched` |
+| `POST /api/project/source/detach` | 只从 `folders[]` 移除；磁盘文件一个不动；`ui.items` 状态保留（返回 orphan 计数）；`delete_generated:true` 明确拒绝（等带预览的版本） |
+
+实现要点：
+- 扫描超时用线程 `join(timeout)` 控制（30 s），超时记 `timeout` 且不写索引；
+- relocate 的「旧 id」**优先取 `itemIdPrev`** —— load 时在线重算会把原值挪到那里，
+  只读 `itemId` 会漏掉用户状态（实测踩到，已修）；
+- 预检/确认两次都返回同一份报告结构，前端可以复用同一套 UI。
+
+实测（真实项目「东莞地铁」，3 个来源）：
+```
+单个刷新   status ok，files 150，36 ms
+全部刷新   ok 3/3，耗时 0.1 s
+重定位预检（指回原路径） verdict=same，matched 150/150，dry_run=true
+```
+
+### 10.8 P2 验收条件（新左栏接管前必须满足）
+
+> 背景：P1b 迁移器目前只处理 `videos / ortho / coverage`，且**歧义时会选一个 id 并删除旧键**，
+> 没有把原值留到 `ui.legacy`。文档承诺过"歧义保留供核对"，这一条必须在 P2 补齐。
+
+**A. 歧义状态不丢**
+
+- 迁移遇到歧义（同一相对路径命中多个来源）时：
+  1. 选中的 `itemId` 写入 `ui.items`（保留原值）；
+  2. **同时**把旧键原值写入 `ui.legacy[<kind>:<旧键>] = 值`；
+  3. 旧键**保留不删**（等用户核对后再清，或由"清理孤儿"统一处理）；
+  4. 迁移统计里 `ambiguous` 与 `legacy_saved` 两个数都要有。
+- 测试必须断言：歧义时 `ui.legacy` 里有对应条目、值与旧键一致、旧键仍存在。
+
+**B. 其余旧状态如何处理（必须逐项写明并实现）**
+
+| 旧状态 | 现在的含义 | P2 处理方式 |
+|---|---|---|
+| `ui.videos[...]` | 逐条航迹显隐 | ✅ 已迁移到 `items`（P1b） |
+| `ui.ortho[...]` | 逐张正射显隐 | ✅ 已迁移（P1b） |
+| `ui.coverage[...]` | 逐份覆盖层显隐 | ✅ 已迁移（P1b） |
+| `ui.photos[...]` | 历史上未使用（逐张状态只在内存 Set 里） | **没有可迁移的数据**；P2 新增逐张状态时默认"显示"，并在迁移报告里说明"照片逐张状态为新功能" |
+| `ui.markers[...]` | 按**名字**记的标记点显隐 | 迁移到 `items["marker:<marker.id>"]`（按 id，不按名字 —— 改名不丢状态）；名字反查不到 id 的保留旧键并计入 `pending` |
+| `photosHidden` | "整组照片被清空"的标志 | **长期保留**（黑名单语义）；不展开成 190 条逐项 false |
+| `orthoHidden[]` | 被清空的正射清单 | 同上，长期保留 |
+| `coverageHidden[]` | 被清空的覆盖清单 | 同上，长期保留 |
+
+> 之所以 `*Hidden` 不转成逐项：它们是"整组清空"的黑名单，展开会产生上百条无意义键，
+> 且清空/恢复的语义（重新登记后自动恢复）靠清单本身更直观。
+
+**C. 一次性验证**
+
+P2 上线前跑一次"旧项目体检"：打开项目 → 记录 `ui` 全部键 → 迁移 → 再比对：
+所有**原有显隐值**在 `ui.items` / `ui.legacy` / 保留的 `*Hidden` 里都能找到对应，
+数量一致；否则不允许切换界面。
