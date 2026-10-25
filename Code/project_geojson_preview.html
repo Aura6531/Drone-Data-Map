@@ -1603,10 +1603,15 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
           <select id="iaTypeFilter">
             <option value="">全部类型</option>
             <option value="video">视频</option>
-            <option value="photo">照片</option>
+            <option value="subtitle">SRT / 字幕</option>
+            <option value="photo">照片 / 图像</option>
             <option value="ortho">正射影像</option>
-            <option value="vector">KML / 矢量</option>
-            <option value="coverage">覆盖图层</option>
+            <option value="track">轨迹 GeoJSON</option>
+            <option value="coverage">覆盖数据</option>
+            <option value="coverage_export">覆盖导出</option>
+            <option value="vector">KML / 矢量文件</option>
+            <option value="meta">元数据</option>
+            <option value="unknown">未识别文件</option>
             <option value="marker">位置点</option>
             <option value="label">文字标注</option>
           </select>
@@ -14558,40 +14563,46 @@ function initTimelineSyncUI(){
 
   function iaApply(kind, it, shown){
     try{
-      if(kind==='video'){
-        const tr=(loadedTracks||[]).find(x=>x && (x.name===it.title || (x.fileInfo&&x.fileInfo.relative_path===it.rel)));
+      const rt=it.runtime||kind;
+      if(rt==='track-group'){
+        // 视频 + 航迹：运行时图层是 loadedTracks 里的那个 group
+        const tr=it._track||iaFindTrack(it.rel, it.title);
         if(tr&&tr.group){
           if(shown){ if(!map.hasLayer(tr.group)) tr.group.addTo(layerGroup); }
           else layerGroup.removeLayer(tr.group);
         }
-        try{ loadedUiState.videos[it.legacyKey]=shown; }catch(e){}
-      }else if(kind==='marker'){
+        try{ if(tr&&tr.fileInfo&&tr.fileInfo.relative_path) loadedUiState.videos[tr.fileInfo.relative_path]=shown; }catch(e){}
+      }else if(rt==='photo-index'){
+        try{
+          const idx=Number.isInteger(it._photoIndex)?it._photoIndex
+            : (iaFindPhotoIndex(it.title)||{}).groupIndex;
+          if(Number.isInteger(idx)){
+            if(shown) photoHidden.delete(idx); else photoHidden.add(idx);
+            if(typeof renderPhotoLayer==='function') renderPhotoLayer();
+          }
+        }catch(e){}
+      }else if(rt==='marker'){
         try{ loadedUiState.markers[it.legacyKey]=shown; }catch(e){}
         try{ drawProjectMarkers(); }catch(e){}
-      }else if(kind==='label'){
+      }else if(rt==='label'){
         try{ const l=projectLabels.find(x=>x.id===it.id); if(l) l.hidden=!shown; }catch(e){}
         try{ renderLabels(); }catch(e){}
-      }else if(kind==='ortho'){
+      }else if(rt==='ortho'){
         try{
           if(shown) orthoHidden.delete(it.legacyKey); else orthoHidden.add(it.legacyKey);
           loadedUiState.orthoHidden=[...orthoHidden];
         }catch(e){}
         try{ iaShowOrthoItem(it, shown); }catch(e){}
-      }else if(kind==='coverage'){
+      }else if(rt==='coverage'){
         try{
           if(shown) coverageHidden.delete(it.legacyKey); else coverageHidden.add(it.legacyKey);
           loadedUiState.coverageHidden=[...coverageHidden];
         }catch(e){}
         try{ iaShowCoverageItem(it, shown); }catch(e){}
-      }else if(kind==='vector'){
+      }else if(rt==='vector'){
         try{
           if(shown) vectorHidden.delete(it.id); else vectorHidden.add(it.id);
           renderVectors();
-        }catch(e){}
-      }else if(kind==='photo'){
-        try{
-          if(shown){ photoHidden.delete(it.photoIndex); } else { photoHidden.add(it.photoIndex); }
-          if(typeof renderPhotoLayer==='function') renderPhotoLayer();
         }catch(e){}
       }
     }catch(e){}
@@ -14630,6 +14641,10 @@ function initTimelineSyncUI(){
   }
 
   function iaSetShown(it){
+    if(it && it.canToggle===false){
+      try{ taskLog((it.disabledTitle||'这一项暂不可上图')+'：'+it.title,'warn'); }catch(e){}
+      return;
+    }
     const now=!iaShown(it);
     if(it.itemId) iaState.items[it.itemId]=now;
     if(now) iaEnforceExclusive(it.type, it);
@@ -14784,104 +14799,217 @@ function initTimelineSyncUI(){
     }catch(e){ return false; }
   }
 
+  // ---------- P3b：成员来自 catalog（来源索引），运行时集合只补充"能不能画" ----------
+  const IA_TYPE_GROUP = {
+    video:            {key:'video',            label:'视频'},
+    subtitle:         {key:'subtitle',         label:'SRT / 字幕'},
+    photo:            {key:'photo',            label:'照片 / 图像'},
+    ortho:            {key:'ortho',            label:'正射影像'},
+    track:            {key:'track',            label:'轨迹 GeoJSON'},
+    coverage_export:  {key:'coverage_export',  label:'覆盖导出（GeoJSON）'},
+    vector:           {key:'vector',           label:'KML / 矢量文件'},
+    coverage:         {key:'coverage',         label:'覆盖数据'},
+    meta:             {key:'meta',             label:'元数据'},
+    unknown:          {key:'unknown',          label:'未识别文件'},
+  };
+  const IA_TYPE_ORDER = ['video','subtitle','photo','ortho','track','coverage',
+                         'coverage_export','vector','meta','unknown'];
+
+  // 运行时集合（只读）：回答"能不能画"，不回答"有没有"
+  function iaFindTrack(rel, name){
+    const list=(typeof loadedTracks!=='undefined'?loadedTracks:[])||[];
+    const wantRel=normRel(rel), wantName=normRel(name);
+    return list.find(tr=>{
+      if(!tr) return false;
+      const info=tr.fileInfo||{};
+      const r=normRel(info.relative_path||'');
+      const n=normRel(tr.name||'');
+      return (wantRel && r && r===wantRel) || (wantName && n && n===wantName)
+        || (wantName && r && normRel(r.split('/').pop())===wantName);
+    })||null;
+  }
+  function iaFindPhotoIndex(name){
+    const groups=(typeof photoGroups!=='undefined'?photoGroups:[])||[];
+    const want=normRel(name);
+    for(let gi=0; gi<groups.length; gi++){
+      const mems=(groups[gi]&&groups[gi].members)||[];
+      for(let mi=0; mi<mems.length; mi++){
+        if(normRel(mems[mi]&&mems[mi].name)===want) return {groupIndex:gi, memberIndex:mi, group:groups[gi]};
+      }
+    }
+    return null;
+  }
+  function iaFindOrtho(name){
+    const list=(typeof orthoList!=='undefined'?orthoList:[])||[];
+    return list.find(o=>o&&o.kind==='ortho'&&String(o.name)===String(name))||null;
+  }
+  function iaFindCoverage(name){
+    const list=(typeof coverageItems!=='undefined'?coverageItems:[])||[];
+    const want=String(name||'').toLowerCase();
+    return list.find(it=>it&&String(it.srt||it.srt_name||'').toLowerCase().endsWith(want))||null;
+  }
+
+  function iaCatalogRow(it){
+    const grp=IA_TYPE_GROUP[it.type]||IA_TYPE_GROUP.unknown;
+    const src0=(it.sources&&it.sources[0])||{};
+    const srcLabel=src0.source_name||'';
+    const multi=(it.sources&&it.sources.length>1)?(' +'+(it.sources.length-1)):'';
+    const row={
+      type: it.type,
+      groupKey: grp.key,
+      title: it.name,
+      source: srcLabel+multi,
+      sourceTitle: (it.sources||[]).map(s=>s.source_name+' · '+s.relative_path).join('\n'),
+      rel: it.relative_path,
+      itemId: it.itemId,
+      legacyKind: null,
+      legacyKey: null,
+      catalog: it,
+      status: {text: it.status&&it.status.text||'', level: it.status&&it.status.level||'ok'},
+      canToggle: false,
+      disabledTitle: '',
+      offline: it.offline,
+      uncertain: it.uncertain,
+    };
+
+    const kind=it.type;
+    if(kind==='video'){
+      const tr=iaFindTrack(it.relative_path, it.name);
+      if(tr && tr.group){
+        row.canToggle=true;
+        row.runtime='track-group';
+        row._track=tr;
+        row.go=()=>{ try{ const b=tr.group.getBounds&&tr.group.getBounds();
+          if(b&&b.isValid()) map.fitBounds(b,{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} };
+      }else{
+        // 现有能力只有「合并航迹」这一级图层：视频本身没有单独图层。
+        // 文案要说清范围，别让人以为勾选能加载视频。
+        const merged=(iaState.catalog&&iaState.catalog.items||[]).find(o=>o.type==='track'
+          && normRel(o.name).replace(/\.geojson$/,'')===normRel(it.name).replace(/\.(mp4|mov)$/,'').replace(/_[vts]$/,''));
+        row.disabledTitle = merged
+          ? '这条视频由「轨迹 GeoJSON」里那条合并航迹代表；请在那里控制显隐（勾选不触发生成）'
+          : '这条视频还没有任何图层（勾选不触发生成；用 ⚙ 走 Build tracks）';
+        row.go=()=>{ try{
+          const src=iaState.sources.find(s=>String(s.name)===String(src0.source_name));
+          if(src){ /* 只做定位提示，不加载媒体 */ }
+          const f=findFile(it.relative_path);
+          if(f&&src0.source_path){ taskLog('视频文件：'+(src0.source_path+'\\'+it.relative_path),'info'); }
+        }catch(e){} };
+      }
+      // 缺航迹时给"生成"入口（复用项目现有 Build tracks，项目级）
+      if(!(it.artifacts&&it.artifacts.track)){
+        row.generate=()=>iaGenerateTracks(it);
+      }
+    }else if(kind==='track'){
+      const tr=iaFindTrack(it.relative_path, it.name);
+      if(tr && tr.group){
+        row.canToggle=true; row.runtime='track-group'; row._track=tr;
+        row.go=()=>{ try{ const b=tr.group.getBounds&&tr.group.getBounds();
+          if(b&&b.isValid()) map.fitBounds(b,{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} };
+      }else{
+        row.disabledTitle='这条航迹还没加载到地图（勾选不触发生成）';
+        row.go=()=>taskLog('航迹文件：'+it.name,'info');
+      }
+    }else if(kind==='photo'){
+      const hit=iaFindPhotoIndex(it.name);
+      const pg=hit&&hit.group;
+      if(hit){
+        row.canToggle=true; row.runtime='photo-index'; row._photoIndex=hit.groupIndex;
+        row.go=()=>{ try{
+          if(pg&&Number.isFinite(Number(pg.lat))) map.setView([Number(pg.lat),Number(pg.lon)],
+            Math.max(map.getZoom(),PHOTO_ZOOM));
+          selectPhotoGroup(hit.groupIndex);
+        }catch(e){} };
+        if(pg&&pg.stamp){
+          const st=String(pg.stamp).replace(/^(.{8})_(.{2})(.{2})(.{2})$/,'$1 $2:$3:$4');
+          row.status={text:(pg.count>1?('x'+pg.count+' · '):'')+st, level:'ok'};
+        }
+      }else{
+        row.disabledTitle='这张照片还没有加载缩略图（勾选不触发生成）';
+        row.go=()=>taskLog('照片文件：'+it.name,'info');
+      }
+    }else if(kind==='ortho'){
+      const o=iaFindOrtho(it.name);
+      if(o){
+        row.canToggle=true; row.runtime='ortho'; row._ortho=o;
+        row.go=()=>{ try{ if(typeof toggleOrtho==='function') toggleOrtho(); }catch(e){} };
+      }else{
+        row.disabledTitle='这张正射还没被识别为可显示影像（可能缺少投影或不是彩色 8 位）';
+      }
+    }else if(kind==='coverage'){
+      const c=iaFindCoverage(it.name);
+      if(c){
+        row.canToggle=true; row.runtime='coverage'; row._coverage=c;
+        row.go=()=>{ try{ if(coverageLayer&&coverageLayer.getBounds)
+          map.fitBounds(coverageLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} };
+      }else{
+        row.disabledTitle='这份覆盖网格还没在“覆盖”面板里登记（点刷新后再试）';
+      }
+    }else if(kind==='subtitle' || kind==='unknown' || kind==='meta' ||
+             kind==='coverage_export' || kind==='vector'){
+      row.canToggle=false;
+      row.disabledTitle = kind==='subtitle' ? '字幕文件不能单独上图（勾选不触发生成）'
+        : kind==='coverage_export' ? '覆盖导出是产物文件，不能上图'
+        : kind==='vector' ? 'KML 文件需要走导入流程加入项目后才能上图'
+        : kind==='meta' ? '元数据文件不能上图'
+        : '未识别的文件类型，暂不可上图';
+    }
+
+    if(row.canToggle===false && it.displayable===false) row.status.level='muted';
+    return row;
+  }
+
+  // 生成入口：复用项目现有 Build tracks 流程（**项目级**，不另造生成链）
+  async function iaGenerateTracks(it){
+    try{
+      const ok=await askConfirm({
+        title:'生成航迹（Build tracks）',
+        hint:'现有生成流程是**整个项目**一起跑，不能只跑这一条视频。\n会调用「Build tracks」，可能耗时几分钟；不会删除任何文件。',
+        okText:'开始生成',
+      });
+      if(!ok) return;
+      if(typeof runAutoPipeline!=='function'){ taskLog('找不到 Build tracks 流程','err'); return; }
+      taskLog('开始执行 Build tracks（项目级）…','info');
+      await runAutoPipeline();
+      await iaReload();
+    }catch(e){ taskLog('生成失败：'+e.message,'err'); }
+  }
+
   function iaBuild(){
     iaBuildFileMaps();
     const groups=[];
     const push=(key,label,type,items)=>{ if(items.length) groups.push({key,label,type,items}); };
 
-    const vids=[];
-    (typeof loadedTracks!=='undefined'?loadedTracks:[]).forEach(tr=>{
-      if(!tr) return;
-      const info=tr.fileInfo||{};
-      const rel=info.relative_path||tr.name||'';
-      const f=findFile(rel);
-      const idx=Number(info.folder_index);
-      const src=iaSourceName(idx)||iaSourceOfFile(f);
-      const missing=iaSrtMissing(idx, rel);
-      vids.push({
-        type:'video', title:tr.name||baseName(rel), rel, idx,
-        source:src, legacyKind:'videos', legacyKey:rel,
-        itemId:(f&&f.itemId)||('video:'+normRel(rel)),
-        status:missing?{text:'缺 SRT',level:'warn'}:{text:'已生成',level:'ok'},
-        go:()=>{ try{ const b=tr.group&&tr.group.getBounds&&tr.group.getBounds();
-          if(b&&b.isValid()) map.fitBounds(b,{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} },
-      });
+    // ---- 成员：catalog（唯一来源） ----
+    const items=(iaState.catalog&&iaState.catalog.items)||[];
+    const byType={};
+    items.forEach(it=>{ (byType[it.type]=byType[it.type]||[]).push(iaCatalogRow(it)); });
+    IA_TYPE_ORDER.forEach(t=>{
+      const g=IA_TYPE_GROUP[t];
+      if(g && byType[t] && byType[t].length) push(g.key, g.label, t, byType[t]);
     });
-    push('video','视频','video',vids);
 
-    const pg=(typeof photoGroups!=='undefined'?photoGroups:[])||[];
-    const kinds={wide:[],zoom:[],pano:[]};
-    pg.forEach((g,i)=>{
-      let k='wide';
-      try{ k=photoKindOf(g); }catch(e){}
-      (kinds[k]||kinds.wide).push({g,i});
-    });
-    const KIND_LABEL={wide:'广角',zoom:'变焦',pano:'360 全景'};
-    ['wide','zoom','pano'].forEach(k=>{
-      const rows=[];
-      const list=kinds[k]||[];
+    // ---- 照片分页（同一组内 60 条 + 显示更多） ----
+    const photoGroup=groups.find(g=>g.type==='photo');
+    if(photoGroup){
       const limit=iaState.limit.photos||60;
-      list.slice(0,limit).forEach(({g,i})=>{
-        const mems=(g.members||[]).map(m=>String((m&&m.name)||''));
-        const nice=mems.map(n=>n.replace(/\.[^.]+$/,'')).find(n=>n&&!/^DJI_/i.test(n));
-        const stamp=g.stamp?String(g.stamp).replace(/^(.{8})_(.{2})(.{2})(.{2})$/,'$1 $2:$3:$4'):'';
-        const title=(nice||stamp||'照片')+(g.count>1?(' x'+g.count):'');
-        const f=findFile(mems[0]||'');
-        rows.push({
-          type:'photo', title, source:iaSourceOfFile(f), photoIndex:i,
-          legacyKind:null, legacyKey:null,
-          itemId:(f&&f.itemId)||('photo:'+i),
-          status:{text:(g.count>1?('x'+g.count):''), level:'ok'},
-          go:()=>{ try{ map.setView([Number(g.lat),Number(g.lon)],Math.max(map.getZoom(),PHOTO_ZOOM)); selectPhotoGroup(i); }catch(e){} },
-        });
-      });
-      if(rows.length){
-        if(list.length>limit){
-          rows.push({type:'photo', more:true, title:`显示更多（还有 ${list.length-limit} 条）`, source:'', status:{text:'',level:'ok'}});
-        }
-        push('photo/'+k, '照片 · '+KIND_LABEL[k], 'photo', rows);
+      if(photoGroup.items.length>limit){
+        photoGroup.items=photoGroup.items.slice(0,limit).concat([{
+          type:'photo', more:true,
+          title:`显示更多（还有 ${photoGroup.items.length-limit} 条）`,
+          source:'', status:{text:'',level:'ok'},
+        }]);
       }
-    });
+    }
 
-    const orthos=[];
-    (typeof orthoList!=='undefined'?orthoList:[]).forEach(it=>{
-      if(!it||it.kind!=='ortho') return;
-      const key=it.name||it.file||'ortho';
-      const f=findFile(key);
-      orthos.push({type:'ortho', title:key, source:iaSourceOfFile(f),
-        legacyKind:'ortho', legacyKey:key, itemId:(f&&f.itemId)||('ortho:'+normRel(key)),
-        status:it.ready?{text:'就绪',level:'ok'}:{text:'未就绪',level:'warn'},
-        go:()=>{ try{ if(typeof toggleOrtho==='function') toggleOrtho(); }catch(e){} }});
-    });
-    push('ortho','正射影像','ortho',orthos);
-
-    const covs=[];
-    (typeof coverageItems!=='undefined'?coverageItems:[]).forEach(it=>{
-      if(!it||!it.built) return;
-      const key=it.srt||it.srt_name||'coverage';
-      const f=findFile(key);
-      covs.push({type:'coverage', title:it.video_name||it.srt_name||key, source:iaSourceOfFile(f),
-        legacyKind:'coverage', legacyKey:key, itemId:(f&&f.itemId)||('coverage:'+normRel(key)),
-        status:{text:'已构建',level:'ok'},
-        go:()=>{ try{ if(coverageLayer&&coverageLayer.getBounds) map.fitBounds(coverageLayer.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} }});
-    });
-    push('coverage','覆盖图层','coverage',covs);
-
-    const vecs=[];
-    (typeof projectVectors!=='undefined'?projectVectors:[]).forEach(v=>{
-      if(!v) return;
-      vecs.push({type:'vector', title:v.name||v.id, source:'项目', id:v.id,
-        legacyKind:null, legacyKey:null, itemId:'vector:'+v.id,
-        status:{text:v.kind==='polygon'?'多边形':'多段线', level:'ok'},
-        go:()=>{ try{ const l=L.geoJSON(v.feature); map.fitBounds(l.getBounds(),{maxZoom:TRACK_FIT_MAX_ZOOM}); }catch(e){} }});
-    });
-    push('vector','KML / 矢量','vector',vecs);
-
+    // ---- 项目对象（位置点 / 文字标注）：与磁盘文件分开统计 ----
     const mks=[];
     (typeof projectMarkers!=='undefined'?projectMarkers:[]).forEach(m=>{
       if(!m) return;
-      mks.push({type:'marker', title:m.name||('marker-'+m.id), source:'项目', id:m.id,
+      mks.push({type:'marker', groupKey:'marker', catalog:null,
+        title:m.name||('marker-'+m.id), source:'项目', id:m.id,
         legacyKind:'markers', legacyKey:m.name, itemId:'marker:'+m.id,
+        canToggle:true, runtime:'marker',
         status:{text:m.category||'未分类', level:'ok'},
         go:()=>{ try{ map.setView([Number(m.lat),Number(m.lng)],Math.max(map.getZoom(),17)); }catch(e){} },
         edit:()=>{ try{ openMarkerEdit(m.id); }catch(e){} },
@@ -14892,8 +15020,10 @@ function initTimelineSyncUI(){
     const labs=[];
     (typeof projectLabels!=='undefined'?projectLabels:[]).forEach(l=>{
       if(!l) return;
-      labs.push({type:'label', title:l.text||'(空)', source:'项目', id:l.id,
+      labs.push({type:'label', groupKey:'label', catalog:null,
+        title:l.text||'(空)', source:'项目', id:l.id,
         legacyKind:null, legacyKey:null, itemId:'label:'+l.id,
+        canToggle:true, runtime:'label',
         status:{text:l.bold?'加粗':'文字', level:'ok'},
         go:()=>{ try{ map.setView([l.lat,l.lng],Math.max(map.getZoom(),17)); }catch(e){} },
         edit:()=>iaEditLabel(l), remove:()=>iaRemoveLabel(l) });
@@ -14933,10 +15063,18 @@ function initTimelineSyncUI(){
   function iaRenderMeta(){
     const el=$('iaProjectMeta'); if(!el) return;
     const srcs=iaState.sources.length;
-    const total=iaState.groups.reduce((n,g)=>n+g.items.filter(i=>!i.more).length,0);
+    const cat=iaState.catalog||{};
+    const counts=cat.counts||{};
+    const files=counts.unique_files!=null?counts.unique_files
+      :(cat.items||[]).length;
+    const groups=iaState.groups.filter(g=>g.type!=='marker'&&g.type!=='label');
+    const pi=cat.project_items||{};
     let latest='';
     iaState.sources.forEach(s=>{ if(s.indexed_at && s.indexed_at>latest) latest=s.indexed_at; });
-    el.innerHTML=`来源 ${srcs} 个 · 内容 ${total} 项`+(latest?`<br>最近索引：${esc(latest.replace('T',' '))}`:'<br>尚未建立索引');
+    el.innerHTML=
+      `来源 ${srcs} 个 · 唯一文件 ${files} 个（${groups.length} 组）`
+      +`<br>项目对象：位置点 ${pi.markers||0} · 标注 ${pi.labels||0}`
+      +(latest?`<br>最近索引：${esc(latest.replace('T',' '))}`:'<br>尚未建立索引');
   }
 
   function iaStatusChip(s){
@@ -15035,7 +15173,13 @@ function initTimelineSyncUI(){
 
     const total=groups.reduce((n,g)=>n+g.items.filter(i=>!i.more).length,0);
     const cnt=$('iaContentCount');
-    if(cnt) cnt.textContent=total?`(${total})`:'(0)';
+    if(cnt){
+      const cat=iaState.catalog||{};
+      const files=(cat.counts&&cat.counts.unique_files)||0;
+      const proj=groups.filter(g=>g.type==='marker'||g.type==='label')
+        .reduce((n,g)=>n+g.items.filter(i=>!i.more).length,0);
+      cnt.textContent=files||total ? `(文件 ${files} · 项目对象 ${proj})` : '(0)';
+    }
 
     if(!iaState.projectName){
       box.innerHTML='<div class="ia-empty">还没有选择项目。</div>'; return;
@@ -15116,9 +15260,16 @@ function initTimelineSyncUI(){
           }
           const row=document.createElement('div');
           row.className='ia-row'+(iaShown(it)?'':' off');
+          const canToggle=it.canToggle!==false;
           const cb=document.createElement('input');
-          cb.type='checkbox'; cb.className='tree-check'; cb.checked=iaShown(it);
-          cb.addEventListener('change',()=>iaSetShown(it));
+          cb.type='checkbox'; cb.className='tree-check'; cb.checked=canToggle&&iaShown(it);
+          if(!canToggle){
+            cb.disabled=true;
+            cb.title=it.disabledTitle||'暂不可上图';
+            row.classList.add('off');
+          }else{
+            cb.addEventListener('change',()=>iaSetShown(it));
+          }
           row.appendChild(cb);
 
           const name=document.createElement('span');
@@ -15139,6 +15290,13 @@ function initTimelineSyncUI(){
             row.appendChild(st);
           }
 
+          if(it.generate){
+            const gen=document.createElement('button');
+            gen.type='button'; gen.className='ia-act'; gen.textContent='⚙';
+            gen.title='用现有的 Build tracks 生成航迹（项目级，不影响磁盘文件）';
+            gen.addEventListener('click',()=>{ try{ it.generate(); }catch(e){} });
+            row.appendChild(gen);
+          }
           const loc=document.createElement('button');
           loc.type='button'; loc.className='ia-act'; loc.textContent='⤢'; loc.title='定位';
           loc.addEventListener('click',()=>{ try{ it.go&&it.go(); }catch(e){} });
@@ -15195,11 +15353,13 @@ function initTimelineSyncUI(){
     iaState.projectName=name;
     if(!name){ iaState.project={}; iaState.sources=[]; iaState.items={}; iaState.groups=[]; iaRender(); return; }
     try{
-      const [pj, src, ui]=await Promise.all([
+      const [pj, src, ui, cat]=await Promise.all([
         api('/api/project/get?name='+encodeURIComponent(name)),
         api('/api/project/sources?name='+encodeURIComponent(name)),
         api('/api/project/ui-items?name='+encodeURIComponent(name)),
+        api('/api/project/content-index?name='+encodeURIComponent(name)),
       ]);
+      iaState.catalog=cat||null;
       iaState.project=(pj&&pj.project)||{};
       iaState.sources=(src&&src.sources)||[];
       iaState.files=(ui&&ui.files)||[];
