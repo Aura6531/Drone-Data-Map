@@ -1218,16 +1218,21 @@ def detach_source(project, source_id, delete_generated=False):
 
     (project.get("folders") or []).pop(idx)
 
+    # 重新计算：移除后每个内容项还被哪些来源引用
     refs = _item_ref_count(project)
     ui = project.get("ui") or {}
     items = ui.get("items") or {}
     orphans = [k for k in items if k not in refs]
+    still_referenced = [k for k in items if k in refs]
 
+    # 全部来源都移除时允许留下 orphan，**不清理** ui.items
     return {
         "removed": removed,
         "sources_left": len(project.get("folders") or []),
         "ui_items_kept": len(items),
+        "ui_items_shared": len(still_referenced),
         "ui_items_orphan": len(orphans),
+        "orphan_ids": sorted(orphans)[:100],
     }
 
 

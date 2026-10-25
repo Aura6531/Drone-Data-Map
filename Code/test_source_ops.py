@@ -273,6 +273,32 @@ try:
     except ValueError as e:
         chk("not enabled" in str(e).lower(), "delete_generated=True 明确拒绝", str(e))
 
+    print("\n=== 7) detach 共享内容：仍被另一来源引用 -> 状态不丢 ===")
+    write_project()
+    p = pm.load_project(NAME)
+    # 让 B 也指向 A 的目录（模拟父子/重叠来源共享同一批真实文件）
+    p["folders"][1]["path"] = str(old_dir)
+    p["folders"][1]["files"] = [dict(f) for f in p["folders"][0]["files"]]
+    shared_id = str(p["folders"][0]["files"][0].get("itemId"))
+    p["ui"].setdefault("items", {})[shared_id] = False
+
+    res = pm.detach_source(p, "src_A")
+    chk(res["ui_items_shared"] >= 1,
+        "被移除来源的条目仍被另一来源引用（计入 shared）", str(res))
+    chk(p["ui"]["items"].get(shared_id) is False,
+        "共享内容的显隐状态没丢", str(p["ui"]["items"].get(shared_id)))
+    chk(shared_id not in res["orphan_ids"],
+        "共享内容不会被当成 orphan", str(res["orphan_ids"]))
+    chk(len(p["folders"]) == 1, "只剩一个来源", [f["id"] for f in p["folders"]])
+
+    print("\n=== 8) 全部来源移除：留 orphan，不清理 ui.items ===")
+    res2 = pm.detach_source(p, "src_B")
+    chk(len(p["folders"]) == 0, "来源全部移除", str(p["folders"]))
+    chk(p["ui"]["items"].get(shared_id) is False,
+        "ui.items 原样保留（不顺手清理）", str(p["ui"]["items"]))
+    chk(res2["ui_items_orphan"] >= 1 and shared_id in res2["orphan_ids"],
+        "全部移除后登记为 orphan", str(res2["orphan_ids"])[:120])
+
 finally:
     pm.PROJECT_DIR = real
     shutil.rmtree(TMP, ignore_errors=True)
