@@ -59,6 +59,7 @@ const PY_SUITES = [
   'test_pano360_coverage.py', // 360 覆盖几何：径向标度 / 圆环内外半径 / 不落地判据
   'test_pano360_perspective.py', // 360 透视裁剪：方向约定与 stitch 一致（可自证）
   'test_sync_check.py',       // 视频/航迹时长同步自检：能抓到被裁过的视频
+  'test_ui_items.py',        // 内容身份：旧 ui 键迁移 / 离线身份 / 重接盘不丢状态
   'test_sources.py',          // 数据来源：id 稳定 / 只在内存补 / 原子写 / 不误改文件
   'test_i18n.py',             // 双语：键唯一 / zh-en 成对 / 英串当键 / 语言归一 / 线程隔离
   'test_i18n_report.py',      // 双语报告：真的生成 docx 并核对两种语言的模板文字

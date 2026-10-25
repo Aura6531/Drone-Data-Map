@@ -547,6 +547,229 @@ def ensure_source_ids(project):
     return added
 
 
+
+def item_id_for_path(path):
+    """内容身份：按**真实文件**取（`it_` 前缀）。
+
+    解析不了（文件不存在 / 目录离线 / OSError）时返回 None，
+    由调用方决定「沿用旧身份」还是「临时身份」。
+    """
+    try:
+        real = os.path.realpath(str(path))
+    except (OSError, ValueError, RuntimeError):
+        return None
+
+    if not real:
+        return None
+
+    try:
+        if not os.path.exists(real):
+            return None
+    except OSError:
+        return None
+
+    return "it_" + hashlib.sha1(os.path.normcase(real).encode("utf-8")).hexdigest()[:12]
+
+
+def item_id_provisional(source_path, relative_path):
+    """离线时的**临时**身份（`ip_` 前缀）。
+
+    只用「来源路径 + 相对路径」算，不碰磁盘；插回盘后由 reindex 迁移到 `it_…`。
+    """
+    base = os.path.normcase(os.path.abspath(str(source_path or "")))
+    rel = os.path.normcase(str(relative_path or "").replace("\\", "/").lstrip("/"))
+    return "ip_" + hashlib.sha1((base + "|" + rel).encode("utf-8")).hexdigest()[:12]
+
+
+def _iter_index_files(project):
+    """遍历 project.json 里记录的每个来源文件：(folder, file_entry, source_path, relative_path)。
+
+    这是**离线可用的**数据源 —— 不需要目录存在。
+    """
+    for folder in project.get("folders") or []:
+        if not isinstance(folder, dict):
+            continue
+        source_path = str(folder.get("path") or "")
+        for entry in folder.get("files") or []:
+            if not isinstance(entry, dict):
+                continue
+            rel = entry.get("relative_path") or entry.get("name") or ""
+            if rel:
+                yield folder, entry, source_path, str(rel)
+
+
+def ensure_item_ids(project):
+    """给索引里的文件补 itemId。
+
+    · 在线：算出 `it_…`；若原来存的是别的 id（例如离线时的 `ip_…`），
+      把它记到 `itemIdPrev`，供 ui 状态迁移；
+    · 离线：**沿用已有 id**（绝不把真实 id 降级成临时 id）；
+      从来没有 id 才给 `ip_…` 并标 `itemIdPending`。
+
+    返回统计（便于日志与测试）。
+    """
+    stats = {"total": 0, "real": 0, "kept": 0, "provisional": 0, "changed": 0}
+
+    for _folder, entry, source_path, rel in _iter_index_files(project):
+        stats["total"] += 1
+        abs_path = os.path.join(source_path, rel) if source_path else rel
+        real = item_id_for_path(abs_path)
+
+        if real:
+            prev = str(entry.get("itemId") or "")
+            if prev and prev != real:
+                entry["itemIdPrev"] = prev
+                stats["changed"] += 1
+            entry["itemId"] = real
+            entry.pop("itemIdPending", None)
+            stats["real"] += 1
+            continue
+
+        sid = str(entry.get("itemId") or "")
+        if sid:
+            # 离线：沿用索引里已有的身份
+            entry["itemIdPending"] = True
+            stats["kept"] += 1
+        else:
+            entry["itemId"] = item_id_provisional(source_path, rel)
+            entry["itemIdPending"] = True
+            stats["provisional"] += 1
+
+    return stats
+
+
+def _item_ref_count(project):
+    """统计每个 itemId 被多少个来源文件引用（用于「旧键能不能删」）。"""
+    refs = {}
+    for _folder, entry, _sp, _rel in _iter_index_files(project):
+        for key in ("itemId", "itemIdPrev"):
+            sid = str(entry.get(key) or "")
+            if sid:
+                refs[sid] = refs.get(sid, 0) + 1
+    return refs
+
+
+def _norm_rel(text):
+    return str(text or "").replace("\\", "/").lstrip("/").casefold()
+
+
+def migrate_ui_items(project):
+    """把旧 ui 键迁到 `ui.items[itemId]`，并把临时身份的状态迁到真实身份。
+
+    只修改内存里的 project 字典（调用方负责 save_project）。
+    返回统计：migrated / pending / ambiguous / shared / dropped / by_kind。
+    """
+    ui = project.setdefault("ui", {})
+    if not isinstance(ui, dict):
+        ui = {}
+        project["ui"] = ui
+    items = ui.setdefault("items", {})
+    if not isinstance(items, dict):
+        items = {}
+        ui["items"] = items
+
+    stats = {"migrated": 0, "pending": 0, "ambiguous": 0,
+             "shared": 0, "dropped": 0, "by_kind": {}}
+
+    refs = _item_ref_count(project)
+
+    # ---------- ① 临时身份 -> 真实身份（重新接盘后） ----------
+    for _folder, entry, _sp, _rel in _iter_index_files(project):
+        prev = str(entry.get("itemIdPrev") or "")
+        cur = str(entry.get("itemId") or "")
+        if not prev or not cur or prev == cur:
+            continue
+        if prev not in items:
+            continue
+
+        if cur not in items:
+            items[cur] = items[prev]
+
+        # 旧键只有在「没有其它来源仍引用」时才删
+        if refs.get(prev, 0) <= 1:
+            items.pop(prev, None)
+            stats["migrated"] += 1
+        else:
+            stats["shared"] += 1
+        entry.pop("itemIdPrev", None)
+
+    # ---------- ② 旧键 -> itemId ----------
+    # 建两张索引：relative_path -> [itemId]，basename -> [itemId]
+    by_rel = {}
+    by_name = {}
+    for _folder, entry, _sp, rel in _iter_index_files(project):
+        sid = str(entry.get("itemId") or "")
+        if not sid:
+            continue
+        by_rel.setdefault(_norm_rel(rel), []).append(sid)
+        base = _norm_rel(os.path.basename(rel.replace("\\", "/")))
+        if base:
+            by_name.setdefault(base, []).append(sid)
+
+    def _resolve(raw_key):
+        key = _norm_rel(raw_key)
+        if not key:
+            return None, 0
+        hits = by_rel.get(key) or []
+        if not hits:
+            hits = by_name.get(os.path.basename(key)) or []
+        uniq = sorted(set(hits))
+        if len(uniq) == 1:
+            return uniq[0], 1
+        if len(uniq) > 1:
+            return uniq[0], len(uniq)     # 歧义：取第一个（primary 排序后靠前）并计数
+        return None, 0
+
+    for legacy_key, kind in (("videos", "videos"), ("ortho", "ortho"), ("coverage", "coverage")):
+        bucket = ui.get(legacy_key)
+        if not isinstance(bucket, dict) or not bucket:
+            continue
+        kind_stat = stats["by_kind"].setdefault(kind, {"migrated": 0, "pending": 0, "ambiguous": 0})
+        for raw_key in list(bucket.keys()):
+            value = bucket[raw_key]
+            sid, hits = _resolve(raw_key)
+            if not sid:
+                # 映射不上：保留旧键，等来源恢复后再补迁
+                stats["pending"] += 1
+                kind_stat["pending"] += 1
+                continue
+            if hits > 1:
+                stats["ambiguous"] += 1
+                kind_stat["ambiguous"] += 1
+            if sid not in items:
+                items[sid] = value
+            bucket.pop(raw_key, None)
+            stats["dropped"] += 1
+            stats["migrated"] += 1
+            kind_stat["migrated"] += 1
+        if not bucket:
+            ui.pop(legacy_key, None)
+
+    ui["itemsVersion"] = max(1, int(ui.get("itemsVersion") or 0))
+    ui["itemsMigratedAt"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    return stats
+
+
+def load_items_view(project):
+    """只读视图：给前端/接口用的「内容身份 + 显隐」清单。"""
+    ui = project.get("ui") or {}
+    items = ui.get("items") or {}
+    pending = []
+
+    for _folder, entry, source_path, rel in _iter_index_files(project):
+        sid = str(entry.get("itemId") or "")
+        if entry.get("itemIdPending"):
+            pending.append({"itemId": sid, "relative_path": rel, "source_path": source_path})
+
+    return {
+        "items": items,
+        "pending": pending,
+        "itemsVersion": ui.get("itemsVersion", 0),
+        "migrated_at": ui.get("itemsMigratedAt"),
+    }
+
+
 def load_project(project_name):
 
     error = validate_project_name(project_name)
@@ -597,6 +820,12 @@ def load_project(project_name):
     # 旧项目没有来源 id：只在内存里补，不在这里写盘
     # （第一次明确保存时自然带上；save_project 是原子写）
     ensure_source_ids(project)
+
+    # 内容身份（P1b）：同样只在内存里补 —— 在线算 it_…，离线用既有 id 或 ip_…
+    try:
+        ensure_item_ids(project)
+    except Exception:
+        pass
 
     return project
 
@@ -8452,6 +8681,20 @@ class ProjectManagerHandler(
 
             return
 
+        if path == "/api/project/ui-items":
+            # 只读：内容身份 + 显隐状态 + 还没映射的待补项
+            try:
+                q = parse_qs(parsed.query)
+                project_name = (q.get("name") or [""])[0]
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                view = load_items_view(project)
+                json_response(self, {"success": True, **view})
+            except Exception as exc:
+                json_response(self, {"success": False, "error": str(exc)}, 400)
+            return
+
         if path == "/api/project/sources":
             # 左栏「数据来源」用：列出项目登记的本机目录及其健康状态。
             # 只读 project.json + 判断目录是否存在，**不扫描内容**。
@@ -9034,6 +9277,22 @@ class ProjectManagerHandler(
                 json_response(self, {"success": True, "deleted": deleted, "failed": failed})
             except Exception as e:
                 json_response(self, {"success": False, "error": str(e)}, status=400)
+            return
+
+        if path == "/api/project/ui-migrate":
+            # 把旧 ui 键迁到 ui.items（会**写盘**；只改 ui，不碰磁盘文件）
+            try:
+                body = self.read_json()
+                project_name = str(body.get("project_name") or "").strip()
+                project = load_project(project_name) if project_name else None
+                if not project:
+                    raise ValueError("Project not found.")
+                stats = migrate_ui_items(project)
+                save_project(project_name, project)
+                json_response(self, {"success": True, "stats": stats,
+                                     "items": (project.get("ui") or {}).get("items") or {}})
+            except Exception as exc:
+                json_response(self, {"success": False, "error": str(exc)}, 400)
             return
 
         if path == "/api/project/ui-state":
