@@ -10,6 +10,7 @@ import json
 import pathlib
 import re
 import socket
+import subprocess
 import sys
 import threading
 import urllib.request
@@ -448,22 +449,64 @@ else:
         # 产品规则（2026-10-25 明确写进测试）：a4 档**总是**缩放到 2480 宽，
         # 原片比 2480 窄时会有意放大 —— 目的是让报告里那张图正好铺满 A4 正文宽。
         # 以前这条规则靠「素材一定是 4K」隐含成立，现在显式断言。
-        _narrow = next((v for v in videos if v.name != video.name), None)
-        if _narrow:
-            # 注意：此刻 pm.resolve_project_video 是「固定返回样本视频」的 lambda，
-            # 先把它存下来，测完装回去（后续断言还要用）。
+        # 窄素材必须**按实测宽度**挑（不能用「第一支不同的视频」想当然）。
+        def _probe_width(p):
+            """用 ffprobe 量视频宽度；量不出来返回 None。"""
+            import shutil as _shutil
+            ffmpeg = pm.find_ffmpeg()
+            if not ffmpeg:
+                return None
+            probe = _shutil.which("ffprobe") or str(pathlib.Path(ffmpeg).with_name("ffprobe.exe"))
+            if not pathlib.Path(probe).exists():
+                probe = _shutil.which("ffprobe")
+            if not probe:
+                return None
+            try:
+                out = subprocess.run(
+                    [probe, "-v", "error", "-select_streams", "v:0",
+                     "-show_entries", "stream=width", "-of", "csv=p=0", str(p)],
+                    capture_output=True, text=True, timeout=60,
+                )
+                return int((out.stdout or "").strip().splitlines()[0])
+            except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+                return None
+
+        _narrow_ok = False
+        _tried = []
+        # 逐个候选（窄的、体积从小到大）试着抽一帧：抽不出来就换下一个。
+        # 只看宽度不够 —— Data/ 里有几支极短的样本视频，抽帧会失败。
+        for _cand in sorted((v for v in videos if v.name != video.name),
+                            key=lambda v: v.stat().st_size):
+            _w = _probe_width(_cand)
+            if _w is None or _w >= pm.REPORT_IMAGE_WIDTH_A4:
+                continue
+            _tried.append(f"{_cand.name}({_w}px)")
             _sample_resolve = pm.resolve_project_video
-            pm.resolve_project_video = lambda *a, **k: _narrow
+            pm.resolve_project_video = lambda *a, **k: _cand
             try:
                 tiny = pm.make_video_snapshot({
                     "project_name": "测试", "folder_index": 0,
-                    "path": _narrow.name, "time": 60, "mode": "a4",
+                    "path": _cand.name, "time": 60, "mode": "a4",
                 })
-                chk(tiny["width"] == pm.REPORT_IMAGE_WIDTH_A4,
-                    "窄素材进 a4 档同样铺满 A4 正文宽（允许放大，这是有意的）",
-                    f"{_narrow.name}: {tiny['width']}x{tiny['height']}")
+            except Exception:
+                continue          # 这支抽不出来，换下一支
             finally:
                 pm.resolve_project_video = _sample_resolve
+
+            print(f"  （窄素材：{_cand.name} = {_w}px < {pm.REPORT_IMAGE_WIDTH_A4}px）")
+            chk(_w < pm.REPORT_IMAGE_WIDTH_A4,
+                '窄素材确实比 A4 正文宽更窄（否则这条断言没意义）', f"{_w}px")
+            chk(tiny["width"] == pm.REPORT_IMAGE_WIDTH_A4,
+                "窄素材进 a4 档同样铺满 A4 正文宽（允许放大，这是有意的）",
+                f"{_cand.name}: {tiny['width']}x{tiny['height']}")
+            _narrow_ok = True
+            break
+
+        if not _narrow_ok:
+            print("  [SKIP] 没有可用的窄素材（宽度 <%dpx 且能抽帧），跳过这条规则断言"
+                  % pm.REPORT_IMAGE_WIDTH_A4)
+            if _tried:
+                print("         试过：", ", ".join(_tried[:6]))
 
         # 不给落点就不叠标志（老标记点没有这个字段）
         plain = pm.make_video_snapshot({
