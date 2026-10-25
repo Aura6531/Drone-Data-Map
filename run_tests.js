@@ -25,6 +25,7 @@ const PYTHON = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 
 
 const NODE_SUITES = [
   'check_page.js',      // 页面静态断言（最全的一套）
+  'test_ia_catalog.js',    // P3c 接线：catalog 成员 / 运行时映射 / 不可上图禁用 / 生成入口
   'test_ia_group.js',      // 分组勾选框：单图层「有显示即勾选」/ 点击语义（真跑函数）
   'test_ia_panel.js',    // P2 新左栏：三段结构 / 来源动作 / 内容分组 / ui.items 读写
   'test_boot.js',       // 页面顶层脚本真跑一遍

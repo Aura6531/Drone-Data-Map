@@ -700,9 +700,15 @@ console.log('\n=== 全自动流水线 ===');
   chk(!/flow-auto/.test(cssClean), '复选框的样式与说明文字也删了');
   chk(!/dsh-auto-pipeline/.test(body), '记住勾选状态的 localStorage 逻辑已删除');
   // 两处：新建项目、导入数据（原来还有第三处「补齐」按钮，已按需求去掉）
-  chk((body.match(/await runAutoPipeline\(\);/g) || []).length === 2,
-    '新建项目与导入数据之后都直接跑流水线（不再判断勾选）',
+  // 2026-10-25（P3）：新增了第三个调用点 —— 内容行里的 ⚙ 生成按钮（iaGenerateTracks）。
+  // 它**不是**自动流程，必须由用户确认后触发，所以这里是 2 处自动 + 1 处显式入口。
+  chk((body.match(/await runAutoPipeline\(\);/g) || []).length === 3,
+    '自动流程 2 处 + ⚙ 显式生成 1 处（不再判断勾选）',
     String((body.match(/await runAutoPipeline\(\);/g) || []).length) + ' 处');
+  chk(/function iaGenerateTracks[\s\S]{0,600}?await runAutoPipeline\(\);/.test(body),
+    '第三处调用在 iaGenerateTracks（用户点 ⚙ 才跑，且先确认）');
+  chk(/askConfirm\([\s\S]{0,300}?整个项目/.test(body),
+    '⚙ 生成前明确提示是项目级');
   chk(!/autoPipeline&&autoPipeline\.checked/.test(body), '没有残留的勾选判断');
   chk(/hide\(projectNotice\);/.test(body),
     '选中项目后不再重复显示「当前项目：xxx」（下拉框已经写着是哪个项目）');
