@@ -304,3 +304,153 @@
 | GET /api/project/sources | ✅ 返回 id / 路径 / 在线状态 / 计数 |
 | 测试 Code/test_sources.py | ✅ 6 组断言，已登记进 
 un_tests.js |
+
+---
+
+## 10. 实现边界（P1 开工前定稿）
+
+> 本节回应 2026-10-25 提出的五个边界问题。所有接口都以「只读扫描 + 只写 project.json」为原则，
+> 任何写/删都必须先过 `resolve()` + `relative_to(source.path)` 的校验。
+
+### 10.1 索引刷新（reindex）：单来源 + 全部
+
+| 接口 | 用途 | 说明 |
+|---|---|---|
+| `POST /api/project/source/reindex` | 刷新**一个**来源 | body: `{project_name, source_id}` |
+| `POST /api/project/sources/reindex` | 刷新**全部**（或指定若干） | body: `{project_name, source_ids?: []}`；省略 = 所有在线来源 |
+
+**执行模型**：初版**同步**执行（`rglob` + `stat`，实测 150 个文件约 30~80 ms），
+返回里带 `duration_ms`；单个来源文件数 > 5000 或耗时 > 2 s 时，前端显示「扫描中…」并允许继续操作，
+后端按 `source_id` 加互斥锁，第二个并发请求直接返回 `{"skipped": "already running"}`。
+
+**返回结构**
+
+```json
+{
+  "success": true,
+  "duration_ms": 74,
+  "sources": [
+    {
+      "id": "src_bd464df53aaa",
+      "path": "A:\\…\\360全景照片",
+      "status": "ok",                  // ok | missing | denied | partial | timeout
+      "indexed_at": "2026-10-25T10:41:00",
+      "counts": {"files":150,"mp4":0,"srt":0,"jpg":150,"other":0,"bytes":5208838144},
+      "warnings": [{"path":"…\\子目录","error":"PermissionError"}]
+    }
+  ]
+}
+```
+
+**失败状态语义**
+
+| status | 判据 | UI | 是否写回索引 |
+|---|---|---|---|
+| `ok` | 全部可读 | ✓ 索引于 xx | 是 |
+| `partial` | 部分子目录 `PermissionError`/`OSError` | ⚠ 部分不可读（N 项） | 是（只写读到的） |
+| `missing` | 根目录不存在 | ⚠ 找不到 | **否**（保留旧索引，标 `missing`） |
+| `denied` | 根目录 `PermissionError` | ⚠ 无法读取 | 否 |
+| `timeout` | 超过 30 s | ⚠ 扫描超时，可重试 | 否 |
+
+> 失败时**绝不删除**已有索引条目 —— 否则插错盘/断网就会把清单清空。
+
+### 10.2 来源重定位（relocate）：先给匹配报告，再确认
+
+不能因为「id 还在」就认定是原数据。两步式：
+
+**第一步：预检（不写盘）**
+
+`POST /api/project/source/relocate` `{project_name, source_id, new_path, confirm: false}`
+
+```json
+{
+  "success": true,
+  "verdict": "likely",             // same | likely | different
+  "old_count": 150,
+  "new_count": 148,
+  "matched": 147,                  // 相对路径完全相同的文件数
+  "missing": ["DJI_…0003_V.JPG"],
+  "added":   ["DJI_…0151_V.JPG"],
+  "match_ratio": 0.98,
+  "affects": {"generated_kept": 12, "generated_orphan": 1}
+}
+```
+
+判定规则（相对路径集合比较，大小写不敏感）：
+
+- `same`：`match_ratio ≥ 0.90` 且新增 ≤ 10%
+- `likely`：`match_ratio ≥ 0.50`
+- `different`：其它
+
+**第二步：确认**
+
+`confirm: true` 时才真正改写 `path` / `name`：
+
+- **保留 `id`**（这样 `ui` 显隐、生成物关联都不丢）；
+- 生成物按**相对路径**重新绑定：仍存在的 → `kept`；找不到的 → 标 `orphan`（不移除记录、不删文件）；
+- `verdict === "different"` 时前端**必须**弹确认框：「新目录内容与原来差异较大（匹配 12%），
+  仍要把它当作该来源的新位置吗？」，并列出 missing/added 各前 5 条；
+- 全过程**不移动、不复制、不删除任何文件**。
+
+### 10.3 来源目录重叠：允许登记，内容按真实文件去重
+
+父目录 + 子目录同时登记是正常需求（例：先加 `D:\项目部`，后加 `D:\项目部\0918`），
+所以**不禁止重叠**，但内容清单必须去重：
+
+- **去重键**：`os.path.normcase(os.path.realpath(file))`（`realpath` 能把 junction/软链接指到同一真实文件）
+- 每个内容项记录 `sources: [sourceId, …]`，**主来源** = 路径最短（层级最高）的那个；
+  行内显示「D:\项目部 ·也被 0918 包含」
+- 生成 / 删除 / 重命名等写操作**只对主来源执行一次**，其余来源只是引用
+- 同一路径重复登记仍然拒绝（现有 `add_folder` 已去重）
+- 登记时若检测到父子关系，给一条**非阻塞提示**：「该目录包含已登记的 0918（或反之），
+  重叠的 N 个文件只会出现一次」。初版只提示，不自动合并/拆分。
+
+### 10.4 过期与失效：不止 mtime
+
+只比「视频 mtime vs GeoJSON mtime」会漏掉：外部替换 SRT、生成参数变了、生成物损坏。
+所以索引里为每个视频记一份 **fingerprint**：
+
+```json
+"gen": {
+  "video": {"size": 123456789, "mtime_ns": 1710000000000000000},
+  "srt":   {"size": 45678,     "mtime_ns": 1710000000000000000},
+  "geojson": {"size": 98765,   "mtime_ns": 1710000000000000000,
+              "digest": "sha1:…"},          // 仅 reindex/手动校验时计算
+  "params_digest": "sha1:…",                // 合并策略 / 高度基准 / 采样间隔等
+  "schema": 2
+}
+```
+
+**状态推导（按优先级）**
+
+| 状态 | 判据 | UI | 建议动作 |
+|---|---|---|---|
+| `missing` | 生成物文件不存在 | 缺 GeoJSON / 缺 SRT | 生成 |
+| `stale_input` | 视频或 SRT 的 (size,mtime_ns) 与记录不符 | 已过期（源已变） | 重新生成 |
+| `stale_params` | `params_digest` 变化 | 已过期（参数已变） | 重新生成 |
+| `corrupt` | `digest` 不符或 JSON 解析失败 | 生成物损坏 | 重新生成 |
+| `unknown` | 旧索引没有 fingerprint | 未校验 | 重建索引一次 |
+| `ok` | 以上都不成立 | 已生成 | — |
+
+- 日常读取只做**轻量校验**（size + mtime_ns），不算 sha1；
+- 只在 `reindex` 或用户点「校验」时算 `digest`；
+- `schema` 升级时，旧条目统一标 `unknown`，不猜。
+
+### 10.5 测试基线（2026-10-25 实测，以此为准）
+
+```
+命令：node run_tests.js            （PYTHON=DSH 自带 python）
+套件：38 套
+结果：36 通过 / 2 失败
+失败：test_photos.js、test_report.py
+```
+
+两条都是**真失败，不是数据依赖 SKIP**：
+
+| 套件 | 失败原因 | 性质 |
+|---|---|---|
+| `test_photos.js` | 5 条断言仍在找**已删除**的「加载全部照片」按钮与「加载全部轨迹」文案 | **断言过期**（UI 已改），应更新测试 |
+| `test_report.py` | 3 条关于导出分辨率 / 标志缩放的断言不符（实测 2048×1024、比例 0.78） | 待查：测试期望过时 or 真 bug |
+
+> 结论：**基线 = 36/38，且这 2 套在 P1 开工前必须先处理 `test_photos.js` 的过期断言**，
+> 否则它会像当年 `check_page.js` 那样长期掩盖真实回归。`test_report.py` 单独排查。
