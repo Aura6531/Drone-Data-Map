@@ -329,7 +329,13 @@ videos = sorted((ROOT / "Data").glob("**/*.MP4")) + sorted((ROOT / "Data").glob(
 if not videos:
     print("  （跳过：Data/ 下没有 MP4 可抽）")
 else:
-    video = videos[0]
+    # 2026-10-25：不能直接拿 videos[0]——Data/ 里现在还有 360 全景转码
+    # （2048x1024 等距柱状），字母序会排在无人机视频前面，
+    # 让「原分辨率 ≥1080p / A4 会缩小」这些断言全部误报。
+    # 选一支有代表性的：优先 *_V.MP4（3840x2160 主流），否则体积最大的。
+    _vs = [v for v in videos if v.name.upper().endswith("_V.MP4")]
+    video = _vs[0] if _vs else max(videos, key=lambda v: v.stat().st_size)
+    print(f"  （抽帧样本：{video.name}）")
     real_resolve = pm.resolve_project_video
     pm.resolve_project_video = lambda *args, **kwargs: video
 
@@ -361,7 +367,10 @@ else:
         chk(small["width"] == pm.REPORT_IMAGE_WIDTH_A4,
             f"压缩档宽度是 {pm.REPORT_IMAGE_WIDTH_A4}px（A4 正文宽 @320ppi）",
             f"{small['width']}x{small['height']}")
-        chk(small["height"] < full["height"], "压缩档等比缩了高度")
+        _expect_h = max(2, round(full["height"] * pm.REPORT_IMAGE_WIDTH_A4 / full["width"]))
+        chk(small["height"] == _expect_h,
+            "压缩档高度按同一比例换算（等比，不是拉伸/裁切）",
+            f"{small['width']}x{small['height']}，期望高 {_expect_h}")
 
         leftovers = list((ROOT / "report_cache").glob("frame_*.png"))
         chk(not leftovers, "中间的 PNG 没有留在 report_cache 里", str([p.name for p in leftovers]))
@@ -427,11 +436,34 @@ else:
                 globals()[f"spot_side_{mode}"] = side
                 globals()[f"spot_area_{mode}"] = (spotted["width"], spotted["height"])
 
-        # 标志大小按图宽等比：4K 档应约为压缩档的 3840/2480 ≈ 1.55 倍
+        # 标志大小按图宽等比。理论比值 = full 宽 / A4 宽
+        # （原断言把它写死成 4K 的 1.55 倍；素材换成别的分辨率就会误报，
+        #  所以改成对理论值取 10% 误差 —— 判定更准，也没有放宽）
         ratio = (spot_side_full / spot_side_a4) if spot_side_a4 else 0
-        chk(1.3 <= ratio <= 1.8,
-            "标志随输出分辨率等比放大（4K 档 ≈ 压缩档的 1.55 倍，不是固定像素）",
-            f"{spot_side_full}px / {spot_side_a4}px = {ratio:.2f}")
+        _expect_ratio = full["width"] / pm.REPORT_IMAGE_WIDTH_A4
+        chk(abs(ratio - _expect_ratio) <= 0.1,
+            "标志随输出分辨率等比缩放（比值 = full 宽 / A4 宽，不是固定像素）",
+            f"{spot_side_full}px / {spot_side_a4}px = {ratio:.2f}，期望 {_expect_ratio:.2f}")
+
+        # 产品规则（2026-10-25 明确写进测试）：a4 档**总是**缩放到 2480 宽，
+        # 原片比 2480 窄时会有意放大 —— 目的是让报告里那张图正好铺满 A4 正文宽。
+        # 以前这条规则靠「素材一定是 4K」隐含成立，现在显式断言。
+        _narrow = next((v for v in videos if v.name != video.name), None)
+        if _narrow:
+            # 注意：此刻 pm.resolve_project_video 是「固定返回样本视频」的 lambda，
+            # 先把它存下来，测完装回去（后续断言还要用）。
+            _sample_resolve = pm.resolve_project_video
+            pm.resolve_project_video = lambda *a, **k: _narrow
+            try:
+                tiny = pm.make_video_snapshot({
+                    "project_name": "测试", "folder_index": 0,
+                    "path": _narrow.name, "time": 60, "mode": "a4",
+                })
+                chk(tiny["width"] == pm.REPORT_IMAGE_WIDTH_A4,
+                    "窄素材进 a4 档同样铺满 A4 正文宽（允许放大，这是有意的）",
+                    f"{_narrow.name}: {tiny['width']}x{tiny['height']}")
+            finally:
+                pm.resolve_project_video = _sample_resolve
 
         # 不给落点就不叠标志（老标记点没有这个字段）
         plain = pm.make_video_snapshot({
