@@ -1036,3 +1036,87 @@ check_page.js      → 全部通过
 `test_ia_panel.js` 里对应那条只检查接线的断言也改成
 「状态由 `iaGroupCheckState` 算、动作由 `iaGroupClickPlan` 决定」，
 行为交给 `test_ia_group.js`。
+
+### 14.2 P3a 落地：目录项数据契约与只读接口（2026-10-25）
+
+**接口**：`GET /api/project/content-index?name=<项目名>`
+
+- **只读**：只读已保存的 `project.json` → `folders[].files[]`；
+  不扫描磁盘、不 stat、不打开媒体、不写 `project.json`（测试 9 断言字节与 mtime 不变）。
+- 成员唯一来源 = 已保存索引；运行时集合（`loadedTracks` / `photoGroups` / `orthoList` /
+  `coverageItems`）**不参与成员判定**，只能补充"当前能不能画"。
+
+**返回结构**
+
+```jsonc
+{
+  "success": true,
+  "project": "东莞地铁",
+  "generated_at": "2026-10-25T23:30:00",
+  "counts": {
+    "unique_files": 251,      // 去重后的成员数（=目录行数）
+    "index_files": 260,       // 索引里的引用条数（含重复引用）
+    "duplicate_refs": 9,      // 被合一的重复引用数
+    "unknown": 0,
+    "by_type": {"video": 1, "subtitle": 3, "photo": 190, "ortho": 1, ...}
+  },
+  "project_items": {"markers": 11, "labels": 2, "vectors": 0},  // 项目对象，单独统计
+  "items": [
+    {
+      "itemId": "it_ab12cd34ef56",       // 稳定身份（P1b 规则：it_ 真实 / ip_ 临时）
+      "name": "DJI_0001_V.MP4",
+      "relative_path": "DJI_0001_V.MP4",
+      "extension": ".mp4",
+      "size": 734003200,
+      "mtime": 1690000000123456789,      // 索引里有就给；旧索引没有 => null
+      "mtime_source": "index",           // "index" | "unknown"
+      "type": "video",                   // video/subtitle/photo/ortho/track/coverage_export/
+                                         // vector/coverage/meta/unknown
+      "type_label": "视频",
+      "classification": "extension",     // "extension" | "heuristic"
+      "classification_note": "",
+      "uncertain": false,                // partial 扫描留下的不确定条目
+      "offline": false,                  // 来源不可用
+      "pending": false,                  // ip_ 临时身份
+      "sources": [                       // 重叠来源时会有多条
+        {"source_id": "src_...", "source_name": "正射影像", "source_path": "D:\\...",
+         "relative_path": "DJI_0001_V.MP4", "available": true,
+         "index_status": "ok", "indexed_at": "2026-10-25T10:00:00", "uncertain": false}
+      ],
+      "artifacts": {"srt": true, "track": true, "npz": false},
+      "displayable": "runtime",          // true | false | "runtime" | "single_layer"
+      "processable": true,
+      "status": {"text": "已生成", "level": "ok",
+                 "stale": "unknown",     // §10.4 指纹**未实现**，一律 unknown
+                 "fingerprint": "none"}
+    }
+  ]
+}
+```
+
+**规则**
+
+1. **1:1**：索引里每个文件都进目录；识别不了的扩展名 → `type:"unknown"`，
+   照常出现、可搜索、可筛选，不静默过滤。
+2. **去重按 `itemId`**：父子/重叠来源指向同一真实文件 → 一条 + 多条 `sources`；
+   **同名不同文件**（itemId 不同）不合并。
+3. **离线**：来源不可用时照索引返回，`offline:true`、`sources[].available:false`，
+   状态文案为「来源离线 · 缺 SRT」这类**前置条件 + 具体状态**。
+4. **uncertain**：partial 扫描里保留的旧条目 `uncertain:true`，状态加「索引不确定」。
+5. **mtime**：`scan_folder_lenient()` 新增 `mtime_ns`（兼容旧索引：缺字段 → `null` + `unknown`）。
+   不根据 mtime 推断"最新/过期"。
+6. **覆盖导出 vs 航迹**：只看文件名（`{网格}_{metric}{阈值}.geojson`，如 `_count1` / `_resolvable20cm`）
+   → `coverage_export`；其余 `.geojson` → `track`。
+   **不**用「同目录有 .npz」判断 —— 真航迹常和 npz 同目录（实测踩到）。
+   `classification:"heuristic"` 如实标注，不假装是权威判定。
+7. **`displayable`**：`true`（可直接上图）/ `"runtime"`（需运行时图层：视频/照片）/
+   `"single_layer"`（正射/覆盖，单图层互斥）/ `false`（SRT、未知、覆盖导出等）。
+8. **指纹能力**：`status.stale` 恒为 `"unknown"`，`fingerprint:"none"` ——
+   §10.4 的 `params_digest` / 内容 digest **尚未实现**，这里不冒充已实现。
+9. **项目对象**（位置点 / 文字标注 / KML）在 `project_items` 里单独计数，
+   **不会**伪装成磁盘文件混进 `items`。
+
+**测试**：`Code/test_content_index.py`（已登记，套件 42 → 43）覆盖
+1:1 入目录、未知扩展名、生成物状态、mtime 有无、重叠去重、同名不合并、离线、
+partial/uncertain、覆盖导出区分、只读（project.json 字节与 mtime 不变）、
+缺 itemId 的稳定身份、pending 透传、字段齐全。

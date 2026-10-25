@@ -906,10 +906,17 @@ def scan_folder_lenient(folder_path, walker=None):
                 relative_path = str(file_path.relative_to(root))
             except ValueError:
                 continue
+            # mtime 只作为「索引时间点」的旁证：旧索引没有这个字段，
+            # 读取时按 unknown 处理（不能误报"最新/已过期"）。
+            try:
+                mtime_ns = file_path.stat().st_mtime_ns
+            except OSError:
+                mtime_ns = None
             files.append({
                 "name": file_path.name,
                 "extension": file_path.suffix.lower(),
                 "size": size,
+                "mtime_ns": mtime_ns,
                 "relative_path": relative_path,
             })
 
@@ -1277,6 +1284,363 @@ def detach_source(project, source_id, delete_generated=False):
         "ui_items_orphan": len(orphans),
         "orphan_ids": sorted(orphans)[:100],
     }
+
+
+
+# ============================================================
+# P3a：内容目录（catalog）
+# ============================================================
+# 唯一成员来源是 project.folders[].files[]（已保存的来源索引）。
+# 这里**不碰磁盘**：不 stat、不打开、不解析。运行时集合（航迹/照片组/正射）
+# 只能补充"当前能不能画"，不能决定目录里有哪些条目。
+
+CONTENT_TYPE_BY_EXT = {
+    ".mp4": "video", ".mov": "video", ".avi": "video", ".mkv": "video",
+    ".srt": "subtitle",
+    ".jpg": "photo", ".jpeg": "photo", ".png": "photo", ".webp": "photo", ".dng": "photo",
+    ".tif": "ortho", ".tiff": "ortho",
+    ".geojson": "geojson",
+    ".kml": "vector", ".kmz": "vector",
+    ".npz": "coverage",
+    ".json": "meta",
+    ".lrp": "meta",
+}
+
+CONTENT_TYPE_LABEL = {
+    "video": "视频",
+    "subtitle": "SRT / 字幕",
+    "photo": "照片 / 图像",
+    "ortho": "正射影像",
+    "geojson": "轨迹 GeoJSON",
+    "track": "轨迹 GeoJSON",
+    "coverage_export": "覆盖导出（GeoJSON）",
+    "vector": "KML / 矢量",
+    "coverage": "覆盖数据",
+    "meta": "元数据",
+    "unknown": "未识别",
+}
+
+# 覆盖导出文件名的启发式（coverage_api.write_geojson 用 {npz.stem}_{suffix}.geojson）
+_COVERAGE_SUFFIX_RE = None
+
+
+def _coverage_suffix_re():
+    global _COVERAGE_SUFFIX_RE
+    if _COVERAGE_SUFFIX_RE is None:
+        import re as _re
+        _COVERAGE_SUFFIX_RE = _re.compile(
+            r"_(count|area|resolvable)\d*(cm)?$", _re.IGNORECASE
+        )
+    return _COVERAGE_SUFFIX_RE
+
+
+def _content_stem(name):
+    """去掉扩展名，并把 DJI 的 _V/_T/_S 后缀去掉，便于配对视频/字幕/航迹。"""
+    stem = str(name or "")
+    low = stem.lower()
+    for ext in (".geojson", ".srt", ".mp4", ".mov", ".tif", ".tiff", ".npz", ".json", ".lrp"):
+        if low.endswith(ext):
+            stem = stem[: -len(ext)]
+            break
+    low = stem.lower()
+    for suffix in ("_v", "_t", "_s"):
+        if low.endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    return stem
+
+
+def classify_content_file(name, relative_path, siblings):
+    """按扩展名 + 少量启发式判定类型（不读文件内容）。
+
+    `siblings`：同一来源下所有已索引的相对路径（用于判断覆盖导出/配对）。
+    返回 (type, certainty, note)。
+    certainty: 'extension'（只看扩展名）/ 'heuristic'（用了文件名或同目录旁证）
+    """
+    ext = os.path.splitext(str(name or ""))[1].lower()
+    base_type = CONTENT_TYPE_BY_EXT.get(ext)
+
+    if base_type == "geojson":
+        stem = _content_stem(name)
+        rel_dir = os.path.dirname(str(relative_path or "").replace("\\", "/"))
+        # ① 同目录有 .npz（覆盖网格），且本文件名带 {metric}{阈值} 尾巴 -> 覆盖导出
+        has_npz = any(
+            str(s).lower().endswith(".npz")
+            for s in siblings
+            if os.path.dirname(str(s).replace("\\", "/")) == rel_dir
+        )
+        # 只看文件名：coverage_api.write_geojson 产出 `{npz.stem}_{metric}{阈值}.geojson`，
+        # 例如 DJI_0001_count1.geojson / DJI_0001_resolvable20cm.geojson。
+        # **不能**用「同目录有 .npz」当判据 —— 真航迹经常和 npz 放在同一个文件夹。
+        if _coverage_suffix_re().search(stem):
+            note = "文件名形如覆盖导出（{网格}_{metric}{阈值}）"
+            if has_npz:
+                note += "；同目录也有 .npz"
+            return "coverage_export", "heuristic", note
+        return "track", "heuristic", ""
+
+    if base_type == "tif" or base_type == "ortho":
+        low = str(name or "").lower()
+        if "dsm" in low or "dem" in low:
+            return "ortho", "heuristic", "疑似高程数据（dsm/dem），通常不作底图"
+        return "ortho", "extension", ""
+
+    if base_type:
+        return base_type, "extension", ""
+
+    return "unknown", "extension", ""
+
+
+def _content_source_refs(project):
+    """返回 [(folder_index, folder, entry, relative_path)]，只看已保存索引。"""
+    refs = []
+    for folder_index, folder in enumerate(project.get("folders") or []):
+        if not isinstance(folder, dict):
+            continue
+        for entry in folder.get("files") or []:
+            if not isinstance(entry, dict):
+                continue
+            rel = str(entry.get("relative_path") or entry.get("name") or "").replace("\\", "/")
+            refs.append((folder_index, folder, entry, rel))
+    return refs
+
+
+def build_content_catalog(project, generated_at=None):
+    """把 folders[].files[] 变成统一目录（按 itemId 去重，保留全部来源引用）。
+
+    **只读**：不访问磁盘、不改 project。
+    """
+    project = project or {}
+    folders = [f for f in (project.get("folders") or []) if isinstance(f, dict)]
+
+    # 每个来源的旁证集合（判断覆盖导出/配对）
+    siblings_by_source = {}
+    for idx, folder in enumerate(folders):
+        siblings_by_source[idx] = [
+            str(e.get("relative_path") or e.get("name") or "")
+            for e in (folder.get("files") or []) if isinstance(e, dict)
+        ]
+
+    items = {}
+    order = []
+    duplicates = 0
+
+    for folder_index, folder, entry, rel in _content_source_refs(project):
+        name = str(entry.get("name") or os.path.basename(rel) or "")
+        item_id = str(entry.get("itemId") or "")
+        if not item_id:
+            # 没有身份就按 来源+相对路径 造一个稳定键（不影响已有 id 规则）
+            item_id = "no-id:%s|%s" % (folder.get("id") or folder_index, rel.lower())
+
+        # 可用性：优先用索引里记录的值；旧 project.json 没有这个字段时才 isdir 一次
+        # （每个来源 1 次 stat，不是扫描；目录层面的判断是 O(来源数)）。
+        if "exists" in folder:
+            available = bool(folder.get("exists"))
+        else:
+            try:
+                available = os.path.isdir(str(folder.get("path") or ""))
+            except OSError:
+                available = False
+        index_status = str(folder.get("index_status") or "")
+        if not entry.get("uncertain") and not folder.get("indexed_at"):
+            index_status = index_status or "unindexed"
+
+        ref = {
+            "source_id": folder.get("id"),
+            "source_name": folder.get("name"),
+            "source_path": folder.get("path"),
+            "relative_path": rel,
+            "available": available,
+            "index_status": index_status,
+            "indexed_at": folder.get("indexed_at"),
+            "uncertain": bool(entry.get("uncertain")),
+        }
+
+        if item_id in items:
+            items[item_id]["sources"].append(ref)
+            items[item_id]["uncertain"] = items[item_id]["uncertain"] or ref["uncertain"]
+            items[item_id]["offline"] = items[item_id]["offline"] or not available
+            duplicates += 1
+            continue
+
+        ext = str(entry.get("extension") or os.path.splitext(name)[1]).lower()
+        ctype, certainty, note = classify_content_file(
+            name, rel, siblings_by_source.get(folder_index, [])
+        )
+
+        mtime_ns = entry.get("mtime_ns")
+        item = {
+            "itemId": item_id,
+            "name": name,
+            "relative_path": rel,
+            "extension": ext,
+            "size": int(entry.get("size") or 0),
+            "mtime": int(mtime_ns) if isinstance(mtime_ns, int) else None,
+            "mtime_source": "index" if isinstance(mtime_ns, int) else "unknown",
+            "type": ctype,
+            "type_label": CONTENT_TYPE_LABEL.get(ctype, ctype),
+            "classification": certainty,
+            "classification_note": note,
+            "uncertain": bool(entry.get("uncertain")),
+            "offline": not available,
+            "pending": bool(entry.get("itemIdPending")),
+            "sources": [ref],
+        }
+        items[item_id] = item
+        order.append(item_id)
+
+    # ---- 生成物/处理状态（只用索引里的文件，不读内容） ----
+    by_stem = {}
+    for item_id in order:
+        it = items[item_id]
+        by_stem.setdefault(_content_stem(it["name"]).lower(), []).append(it)
+
+    def _siblings(it):
+        out = []
+        for ref in it["sources"]:
+            folder = next((f for f in folders if f.get("id") == ref["source_id"]), None)
+            if not folder:
+                continue
+            out.extend(
+                str(e.get("relative_path") or "").replace("\\", "/")
+                for e in (folder.get("files") or []) if isinstance(e, dict)
+            )
+        return out
+
+    for item_id in order:
+        it = items[item_id]
+        ctype = it["type"]
+        sibs = _siblings(it)
+        stem = _content_stem(it["name"]).lower()
+
+        def has(exts, same_stem=True):
+            for s in sibs:
+                low = s.lower()
+                if not any(low.endswith(e) for e in exts):
+                    continue
+                if not same_stem:
+                    return True
+                if _content_stem(os.path.basename(low)).lower() == stem or \
+                   os.path.basename(low).lower().startswith(stem):
+                    return True
+            return False
+
+        artifacts = {"srt": False, "track": False, "npz": False}
+        if ctype == "video":
+            artifacts["srt"] = has((".srt",))
+            artifacts["track"] = any(
+                o["type"] == "track" and _content_stem(o["name"]).lower() == stem
+                for o in by_stem.get(stem, [])
+            )
+        elif ctype == "subtitle":
+            artifacts["srt"] = True
+        elif ctype == "coverage":
+            artifacts["npz"] = True
+
+        it["artifacts"] = artifacts
+
+        # 可显示 / 可处理：只按类型给保守结论，不猜"哪个 tif 能当底图"
+        if ctype in ("video", "photo"):
+            it["displayable"] = "runtime"          # 需要运行时图层（未加载时不可直接上图）
+            it["processable"] = True
+        elif ctype == "track":
+            it["displayable"] = True
+            it["processable"] = True
+        elif ctype in ("ortho", "coverage"):
+            it["displayable"] = "single_layer"     # 单图层互斥，需加载
+            it["processable"] = True
+        elif ctype == "vector":
+            it["displayable"] = True
+            it["processable"] = False
+        else:
+            it["displayable"] = False
+            it["processable"] = False
+
+        it["status"] = _content_status(it, artifacts)
+
+    by_type = {}
+    for item_id in order:
+        it = items[item_id]
+        by_type[it["type"]] = by_type.get(it["type"], 0) + 1
+
+    index_files = sum(len([e for e in (f.get("files") or []) if isinstance(e, dict)]) for f in folders)
+    project_items = {
+        "markers": len(project.get("markers") or []),
+        "labels": len(project.get("labels") or []),
+        "vectors": len(project.get("vectors") or []),
+    }
+
+    return {
+        "success": True,
+        "project": project.get("name"),
+        "generated_at": generated_at or time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "counts": {
+            "unique_files": len(order),
+            "index_files": index_files,
+            "duplicate_refs": duplicates,
+            "unknown": by_type.get("unknown", 0),
+            "by_type": by_type,
+        },
+        "project_items": project_items,
+        "items": [items[i] for i in order],
+    }
+
+
+def _content_status(it, artifacts):
+    """处理状态：只根据索引能可靠判定的部分；指纹/过期一律 unknown。"""
+    ctype = it["type"]
+    level = "ok"
+    text = ""
+
+    if ctype == "video":
+        if not artifacts.get("srt"):
+            level, text = "warn", "缺 SRT"
+        elif not artifacts.get("track"):
+            level, text = "warn", "未生成航迹"
+        else:
+            text = "已生成"
+    elif ctype == "subtitle":
+        text = "字幕"
+    elif ctype == "photo":
+        text = "照片"
+    elif ctype == "ortho":
+        text = "正射影像"
+    elif ctype == "track":
+        text = "航迹"
+    elif ctype == "coverage_export":
+        level, text = "muted", "覆盖导出（不是航迹）"
+    elif ctype == "coverage":
+        text = "覆盖网格"
+    elif ctype == "vector":
+        text = "矢量"
+    elif ctype == "unknown":
+        level, text = "warn", "未识别"
+    elif ctype == "meta":
+        text = "元数据"
+
+    # 来源离线是**前置条件**，不是替代：离线时仍要说清这条文件本身缺什么
+    if it["offline"]:
+        level = "warn"
+        text = ("来源离线 · " + text) if text else "来源离线"
+
+    if it["uncertain"] and not text.endswith("索引不确定"):
+        text = (text + " · 索引不确定") if text else "索引不确定"
+        if level == "ok":
+            level = "warn"
+
+    return {
+        "text": text,
+        "level": level,
+        "stale": "unknown",       # §10.4 指纹未实现：这里如实返回 unknown
+        "fingerprint": "none",    # 同上：不假装有 digest
+    }
+
+
+def load_content_catalog(project_name):
+    project = load_project(project_name)
+    if not project:
+        return None
+    return build_content_catalog(project)
 
 
 def load_project(project_name):
@@ -9200,6 +9564,20 @@ class ProjectManagerHandler(
                     raise ValueError("Project not found.")
                 view = load_items_view(project)
                 json_response(self, {"success": True, **view})
+            except Exception as exc:
+                json_response(self, {"success": False, "error": str(exc)}, 400)
+            return
+
+        if path == "/api/project/content-index":
+            # P3a：只读内容目录。**不扫描磁盘、不解析媒体、不写 project.json**。
+            try:
+                name = str((parse_qs(urlparse(self.path).query).get("name") or [""])[0]).strip()
+                if not name:
+                    raise ValueError("Project name is required.")
+                data = load_content_catalog(name)
+                if data is None:
+                    raise ValueError("Project not found.")
+                json_response(self, data)
             except Exception as exc:
                 json_response(self, {"success": False, "error": str(exc)}, 400)
             return
