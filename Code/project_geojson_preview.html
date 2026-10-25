@@ -1512,6 +1512,20 @@ button.secondary{background:#e8eef8;color:#2563eb}button:disabled{opacity:.55;cu
   .ia-filters select{max-width:110px}
 }
 
+
+/* 矮窗口：来源卡允许收缩，内容卡保底 200px，避免内容区被挤没 */
+#iaSourcesCard{flex:0 0 auto;min-height:0}
+#iaContentsCard{flex:1 1 auto;min-height:200px}
+#iaContents{flex:1 1 auto !important;min-height:200px !important}
+#viewProject{overflow:auto}
+@media (max-height:900px){
+  .ia-sources{max-height:150px}
+}
+@media (max-height:760px){
+  .ia-sources{max-height:110px}
+  #iaContentsCard{min-height:160px}
+}
+
 </style>
 </head>
 <body>
